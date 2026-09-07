@@ -11,6 +11,7 @@ Suivi de toutes les transcriptions/résumés fournis par l'utilisateur, pour ne 
 | 5 | `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` | Système de score 0-100, sizing stop=taille du canal, checklist pré-trade complète | **Règle MTF trouvée mais différente** : "ne jamais trader un range si un range TF supérieur est actif" (pas X→X-2) | Précise fortement (sizing, scoring) — possible tension à réconcilier sur la compensation Fibonacci par qualité de signal |
 | 6 | `TRADING_LESSONS_NEUROBIOLOGIE.md` | Neurosciences (amygdale/hippocampe/cortex préfrontal), règles mécaniques (latence 10s, session max 60-90min), 4 profils de réponse primaire | Non abordé — toujours en attente | Complète la checklist pré-trade (source #5) avec des garde-fous neuro |
 | 7 | `TRADING_LESSONS_CHAOS_DOPAMINE.md` | Théorie du chaos (Feigenbaum), circuit dopamine/anticipation, "method hopping" = erreur critique | Non abordé — toujours en attente | 4ᵉ confirmation de la "3ème borne de range" comme pilier central |
+| 8 | `TRADING_LESSONS_DOPAMINE_SEROTONINE.md` | Duel dopamine/sérotonine, expérience du marshmallow, boucle toxique du "succès chanceux" | Non abordé — toujours en attente | Explique neurologiquement le rejet du scalping ET du très long terme |
 
 ## Items ouverts toujours en suspens (rappel, voir PLAN.md)
 1. XRP absent du backtest multi-timeframe (données non trouvées)
