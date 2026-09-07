@@ -30,6 +30,8 @@ Le projet formalise, à partir du manuel officiel PRO Indicators (Philippe Roux)
 | `PROXY_V2_TSI_CYCLE_STRUCTURE.md` | Signal Phase 2 reconstruit à partir du corpus (TSI + cycle + structure), résultat le plus solide à ce jour |
 | `AUDIT_QUALITE_ET_CORRECTION_CYCLE.md` | Audit qualité, contrôle aléatoire, bug de signe trouvé et corrigé, liste des lacunes encore ouvertes |
 | `FUNDING_RATE_ANALYSIS.md` | Analyse du coût de funding Binance Futures, jamais modélisé jusqu'ici (nouveau) |
+| `CASCADE3_H1_EXECUTION_TEST.md` | Test cascade Daily→H4→H1, refait le 2026-09-07 avec le moteur de risque actuel (`code/position_engine.py`) ; conclusion NO-GO reconduite |
+| `code/position_engine.py`, `code/test_position_engine.py` | Moteur de gestion de position factorisé (fin de la duplication `backtest_phase2.py`/`_v4.py`/`_v5.py`) + tests unitaires sur cas synthétiques (nouveau) |
 
 ### Historique / supersédé (pour archive — ne pas utiliser comme source de vérité)
 
@@ -40,6 +42,6 @@ Le projet formalise, à partir du manuel officiel PRO Indicators (Philippe Roux)
 | `PHASE2_CORRECTION_BREAKEVEN.md` | Documente une correction intermédiaire (breakeven différé à la Confirmation) désormais pleinement intégrée et documentée dans la version finale du moteur | `PHASE2_V4_IMPLEMENTATION_COMPLETE.md` |
 | `PHASE2_CORRECTION_CLOSES.md` | Documente une correction intermédiaire (validation sur clôtures, pas sur mèches) désormais pleinement intégrée dans la version finale du moteur | `PHASE2_V4_IMPLEMENTATION_COMPLETE.md` |
 | `PHASE2_V3_ATTEMPT_REGRESSION.md` | Tentative combinée (Règle de Trois + amplitude réelle + Extreme Channel) rejetée en l'état — régression sur H4 due à un bug de calibration (fenêtres en nombre de bougies, pas en durée réelle), corrigé depuis | `PHASE2_V4_IMPLEMENTATION_COMPLETE.md` (le document lui-même l'indique : « remplace le cadre accepté/rejeté utilisé précédemment ») |
-| `CASCADE3_H1_EXECUTION_TEST.md` | Résultat négatif/inconclusif calculé avec un moteur de risque antérieur à la correction « clôtures vs mèches » — conclusion signalée comme potentiellement obsolète dans `PLAN.md` et `AUDIT_QUALITE_ET_CORRECTION_CYCLE.md`, à refaire avec le moteur actuel avant d'être considérée comme définitive | Pas encore refait à ce jour — voir `PLAN.md` (lot A délégué) pour le suivi |
+| ~~`CASCADE3_H1_EXECUTION_TEST.md` (version pré-correction)~~ | Résultat négatif/inconclusif calculé avec un moteur de risque antérieur à la correction « clôtures vs mèches » | `CASCADE3_H1_EXECUTION_TEST.md` a été refait le 2026-09-07 avec le moteur actuel (position_engine.py) — conclusion reconduite (voir référence actuelle ci-dessus) |
 
 Les fichiers `.csv` du dépôt (résultats bruts de backtest) ne sont pas reclassés ici : ils restent les données sources citées par les documents ci-dessus, à jour ou historiques selon le document qui les référence.
