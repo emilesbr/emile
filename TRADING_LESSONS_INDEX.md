@@ -7,6 +7,7 @@ Suivi de toutes les transcriptions/résumés fournis par l'utilisateur, pour ne 
 | 1 | `TRADING_LESSONS_PSYCHOLOGY.md` | Psychologie, écart démo/réel (95%→30%), progression 2-3 ans, "3ème borne de range" | Non abordé — toujours en attente | Précise (3ème borne = setup prioritaire) |
 | 2 | `TRADING_LESSONS_STRUCTURE_APPRENTISSAGE.md` | Parcours pédagogique (niveaux Blanc/Vert/Jaune/Orange), écosystème Discord, conseil pratique (ne pas démarrer le trial avant maîtrise du PDF) | Non abordé — toujours en attente | Confirme séquence range→tendance |
 | 3 | `TRADING_LESSONS_ALTERNATIVE_MANUELLE.md` | Probable TL#4 : méthodes manuelles (canal Supports/Apex/Tangente, Fourchette d'Andrews, TSI 14/7/9), règle d'arrêt "structure en élargissement" | Non abordé — toujours en attente | Nouveau : règle d'arrêt élargissement + méthode canal codable |
+| 4 | `TRADING_LESSONS_ANALYSE_SANS_INDICATEURS.md` | Régénération probable de la même vidéo que #3 — delta seulement : cadre High TF/Low TF explicite, "scénario Wall Street" (nom), SuperTrend | Cadre High/Low TF générique trouvé, mais **ne confirme pas** la règle spécifique X→X-2 | Renforce (ne contredit pas) #3 |
 
 ## Items ouverts toujours en suspens (rappel, voir PLAN.md)
 1. XRP absent du backtest multi-timeframe (données non trouvées)
