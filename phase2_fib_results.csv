@@ -1,0 +1,65 @@
+symbol,profile,variant,n_trades,max_dd_%,total_return_%,win_rate_%,profit_factor
+BTCUSDT,FAIBLE,baseline_v7 (sans_fibonacci),504,-9.1,23.1,42.7,1.6
+BTCUSDT,FAIBLE,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",167,-7.0,-6.5,37.7,0.72
+BTCUSDT,FAIBLE,"fib_optimal [23%,50%] (entree_fraiche_seule)",159,-7.1,-6.7,37.1,0.71
+BTCUSDT,FAIBLE,"fib_favorable_incl_pyramide [23%,61.8%]",143,-7.6,-7.5,36.4,0.62
+BTCUSDT,MODERE,baseline_v7 (sans_fibonacci),504,-13.4,61.0,42.7,1.77
+BTCUSDT,MODERE,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",167,-12.8,-11.3,37.7,0.7
+BTCUSDT,MODERE,"fib_optimal [23%,50%] (entree_fraiche_seule)",159,-13.1,-11.6,37.1,0.68
+BTCUSDT,MODERE,"fib_favorable_incl_pyramide [23%,61.8%]",143,-13.0,-12.6,36.4,0.6
+BTCUSDT,AGRESSIF,baseline_v7 (sans_fibonacci),504,-14.7,115.8,42.7,2.01
+BTCUSDT,AGRESSIF,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",167,-14.0,-11.2,37.7,0.76
+BTCUSDT,AGRESSIF,"fib_optimal [23%,50%] (entree_fraiche_seule)",159,-14.4,-11.6,37.1,0.74
+BTCUSDT,AGRESSIF,"fib_favorable_incl_pyramide [23%,61.8%]",143,-13.4,-12.8,36.4,0.66
+BTCUSDT,TRES_AGRESSIF,baseline_v7 (sans_fibonacci),504,-22.4,157.1,42.3,2.09
+BTCUSDT,TRES_AGRESSIF,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",167,-13.7,-10.7,37.7,0.81
+BTCUSDT,TRES_AGRESSIF,"fib_optimal [23%,50%] (entree_fraiche_seule)",159,-14.1,-11.2,37.1,0.79
+BTCUSDT,TRES_AGRESSIF,"fib_favorable_incl_pyramide [23%,61.8%]",143,-13.5,-12.9,36.4,0.69
+ETHUSDT,FAIBLE,baseline_v7 (sans_fibonacci),417,-6.1,55.2,45.6,2.4
+ETHUSDT,FAIBLE,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",147,-6.4,-4.6,36.1,0.8
+ETHUSDT,FAIBLE,"fib_optimal [23%,50%] (entree_fraiche_seule)",140,-6.1,-4.2,35.7,0.81
+ETHUSDT,FAIBLE,"fib_favorable_incl_pyramide [23%,61.8%]",110,-7.9,-7.1,34.5,0.55
+ETHUSDT,MODERE,baseline_v7 (sans_fibonacci),417,-11.7,139.0,45.3,2.44
+ETHUSDT,MODERE,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",147,-14.2,-10.6,35.4,0.73
+ETHUSDT,MODERE,"fib_optimal [23%,50%] (entree_fraiche_seule)",140,-13.2,-10.1,35.0,0.73
+ETHUSDT,MODERE,"fib_favorable_incl_pyramide [23%,61.8%]",110,-17.1,-15.4,33.6,0.48
+ETHUSDT,AGRESSIF,baseline_v7 (sans_fibonacci),417,-16.6,249.4,45.3,2.5
+ETHUSDT,AGRESSIF,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",147,-19.6,-14.3,35.4,0.73
+ETHUSDT,AGRESSIF,"fib_optimal [23%,50%] (entree_fraiche_seule)",140,-18.4,-13.7,35.0,0.73
+ETHUSDT,AGRESSIF,"fib_favorable_incl_pyramide [23%,61.8%]",110,-23.8,-21.3,33.6,0.47
+ETHUSDT,TRES_AGRESSIF,baseline_v7 (sans_fibonacci),417,-33.6,355.4,43.6,2.47
+ETHUSDT,TRES_AGRESSIF,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",147,-22.9,-16.8,34.0,0.72
+ETHUSDT,TRES_AGRESSIF,"fib_optimal [23%,50%] (entree_fraiche_seule)",140,-21.8,-16.2,33.6,0.72
+ETHUSDT,TRES_AGRESSIF,"fib_favorable_incl_pyramide [23%,61.8%]",110,-27.8,-25.1,32.7,0.45
+BNBUSDT,FAIBLE,baseline_v7 (sans_fibonacci),544,-12.6,17.0,42.1,1.41
+BNBUSDT,FAIBLE,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",153,-14.7,-12.1,28.1,0.43
+BNBUSDT,FAIBLE,"fib_optimal [23%,50%] (entree_fraiche_seule)",143,-14.9,-11.9,26.6,0.41
+BNBUSDT,FAIBLE,"fib_favorable_incl_pyramide [23%,61.8%]",136,-13.7,-13.3,24.3,0.31
+BNBUSDT,MODERE,baseline_v7 (sans_fibonacci),544,-20.1,26.6,41.4,1.35
+BNBUSDT,MODERE,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",153,-25.5,-21.7,27.5,0.42
+BNBUSDT,MODERE,"fib_optimal [23%,50%] (entree_fraiche_seule)",143,-25.7,-21.4,25.9,0.4
+BNBUSDT,MODERE,"fib_favorable_incl_pyramide [23%,61.8%]",136,-23.1,-22.8,24.3,0.31
+BNBUSDT,AGRESSIF,baseline_v7 (sans_fibonacci),544,-23.5,32.6,41.4,1.32
+BNBUSDT,AGRESSIF,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",153,-31.6,-28.0,27.5,0.4
+BNBUSDT,AGRESSIF,"fib_optimal [23%,50%] (entree_fraiche_seule)",143,-32.0,-27.9,25.9,0.38
+BNBUSDT,AGRESSIF,"fib_favorable_incl_pyramide [23%,61.8%]",136,-28.1,-27.7,24.3,0.31
+BNBUSDT,TRES_AGRESSIF,baseline_v7 (sans_fibonacci),544,-31.9,57.3,40.4,1.42
+BNBUSDT,TRES_AGRESSIF,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",153,-35.4,-32.3,26.8,0.36
+BNBUSDT,TRES_AGRESSIF,"fib_optimal [23%,50%] (entree_fraiche_seule)",143,-35.9,-32.4,25.2,0.34
+BNBUSDT,TRES_AGRESSIF,"fib_favorable_incl_pyramide [23%,61.8%]",136,-32.5,-32.0,23.5,0.26
+SOLUSDT,FAIBLE,baseline_v7 (sans_fibonacci),361,-8.7,24.5,41.6,1.82
+SOLUSDT,FAIBLE,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",111,-6.6,-5.9,25.2,0.64
+SOLUSDT,FAIBLE,"fib_optimal [23%,50%] (entree_fraiche_seule)",102,-4.8,-3.7,26.5,0.75
+SOLUSDT,FAIBLE,"fib_favorable_incl_pyramide [23%,61.8%]",98,-9.2,-8.6,21.4,0.41
+SOLUSDT,MODERE,baseline_v7 (sans_fibonacci),361,-17.9,63.0,41.3,1.92
+SOLUSDT,MODERE,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",111,-12.0,-10.3,25.2,0.69
+SOLUSDT,MODERE,"fib_optimal [23%,50%] (entree_fraiche_seule)",102,-9.4,-6.3,26.5,0.8
+SOLUSDT,MODERE,"fib_favorable_incl_pyramide [23%,61.8%]",98,-16.7,-15.7,21.4,0.45
+SOLUSDT,AGRESSIF,baseline_v7 (sans_fibonacci),361,-24.2,120.2,41.3,2.03
+SOLUSDT,AGRESSIF,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",111,-16.5,-12.5,25.2,0.74
+SOLUSDT,AGRESSIF,"fib_optimal [23%,50%] (entree_fraiche_seule)",102,-13.1,-7.2,26.5,0.86
+SOLUSDT,AGRESSIF,"fib_favorable_incl_pyramide [23%,61.8%]",98,-21.9,-20.4,21.4,0.48
+SOLUSDT,TRES_AGRESSIF,baseline_v7 (sans_fibonacci),361,-42.7,228.2,40.4,2.15
+SOLUSDT,TRES_AGRESSIF,"fib_favorable [23%,61.8%] (entree_fraiche_seule)",111,-21.3,-11.8,25.2,0.85
+SOLUSDT,TRES_AGRESSIF,"fib_optimal [23%,50%] (entree_fraiche_seule)",102,-18.2,-6.4,26.5,0.95
+SOLUSDT,TRES_AGRESSIF,"fib_favorable_incl_pyramide [23%,61.8%]",98,-26.5,-24.3,21.4,0.53
