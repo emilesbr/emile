@@ -10,6 +10,7 @@ Suivi de toutes les transcriptions/résumés fournis par l'utilisateur, pour ne 
 | 4 | `TRADING_LESSONS_ANALYSE_SANS_INDICATEURS.md` | Régénération probable de la même vidéo que #3 — delta seulement : cadre High TF/Low TF explicite, "scénario Wall Street" (nom), SuperTrend | Cadre High/Low TF générique trouvé, mais **ne confirme pas** la règle spécifique X→X-2 | Renforce (ne contredit pas) #3 |
 | 5 | `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` | Système de score 0-100, sizing stop=taille du canal, checklist pré-trade complète | **Règle MTF trouvée mais différente** : "ne jamais trader un range si un range TF supérieur est actif" (pas X→X-2) | Précise fortement (sizing, scoring) — possible tension à réconcilier sur la compensation Fibonacci par qualité de signal |
 | 6 | `TRADING_LESSONS_NEUROBIOLOGIE.md` | Neurosciences (amygdale/hippocampe/cortex préfrontal), règles mécaniques (latence 10s, session max 60-90min), 4 profils de réponse primaire | Non abordé — toujours en attente | Complète la checklist pré-trade (source #5) avec des garde-fous neuro |
+| 7 | `TRADING_LESSONS_CHAOS_DOPAMINE.md` | Théorie du chaos (Feigenbaum), circuit dopamine/anticipation, "method hopping" = erreur critique | Non abordé — toujours en attente | 4ᵉ confirmation de la "3ème borne de range" comme pilier central |
 
 ## Items ouverts toujours en suspens (rappel, voir PLAN.md)
 1. XRP absent du backtest multi-timeframe (données non trouvées)
