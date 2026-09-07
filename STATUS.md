@@ -39,6 +39,7 @@ Le projet formalise, à partir du manuel officiel PRO Indicators (Philippe Roux)
 | `code/proxy_v2.py`, `code/test_proxy_v2.py` | Signal proxy (TSI+cycle+structure), calcul du cycle désormais causal (`compute_cycle_phase_causal`, réserve P0 traitée) + 4 tests de régression (dont le test de causalité elle-même) |
 | `code/cycle_causal_window_selection.py` | Sélection empirique de la fenêtre causale (150) par stabilité inter-tiers temporels sur BTC/ETH/BNB/SOL réels |
 | `code/regime_classifier.py`, `code/backtest_phase2_v6.py`, `code/backtest_phase2_v7.py` | Moteurs v6 (régime) et v7 (validation croisée MTF) |
+| `code/run_all.py`, `code/test_run_all.py` | Point d'entrée unique pour rejouer les 12 moteurs `backtest_phase2_*.py` d'un coup (`--only alias1,alias2` ou `--confirm-full`), critère de sortie Phase 2→3 item 4 (`PLAN.md`). N'écrit jamais dans le dépôt (sortie dans `code/run_all_output/`) — ne remplace pas les CSV commités, qui restent la référence tant qu'il n'a pas été relancé et ses sorties comparées à la main. Rejeu complet mesuré : 158,8s (~2,6 min) |
 
 ### Historique / supersédé (pour archive — ne pas utiliser comme source de vérité)
 
