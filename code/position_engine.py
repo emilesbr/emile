@@ -108,7 +108,8 @@ def process_tranche(tr, i, o, low, c, long_signal_prev, val_close_frac, conf_clo
 
 def run_position_engine(n, o, high, low, c, long_signal, open_tranche_fn,
                          val_close_frac, conf_close_frac, conf_to_be, max_tranches, fee,
-                         update_levels_fn=None, mark_new_tranches=True, same_bar_reentry=True):
+                         update_levels_fn=None, mark_new_tranches=True, same_bar_reentry=True,
+                         record_trace=False):
     """Boucle générique de gestion de position, à tranche unique ou multiple.
 
     - n : nombre de bougies.
@@ -160,10 +161,25 @@ def run_position_engine(n, o, high, low, c, long_signal, open_tranche_fn,
       existantes ne sont pas non plus re-traitées ce pas-ci (il n'y en a
       pas). Conservé tel quel pour ne pas changer les résultats numériques
       du refactoring.
+    - record_trace : si True (défaut False, AUCUN changement de comportement
+      ni de résultat numérique pour les appelants existants -- bookkeeping
+      additive uniquement), le moteur enregistre en plus une trace par
+      trade : bougie d'ouverture, prix d'entrée, et pour chaque bougie où
+      le trade est DÉJÀ ouvert (donc PAS sa propre bougie d'ouverture : la
+      taille exposée à l'instant même de l'entrée n'est pas retenue comme
+      pertinente pour un coût qui suppose une position déjà détenue, ex. le
+      funding) un instantané (indice de bougie, taille RESTANTE avant que
+      cette bougie ne déclenche une éventuelle clôture partielle
+      Validation/Confirmation/stop). Conçu pour `funding_rate_exact.py` :
+      la taille exposée à un événement qui tombe pile sur cette bougie est
+      exactement cette valeur.
 
     Retourne un dict avec : n_trades, final_equity, max_dd_%, total_return_%,
     win_rate_%, profit_factor, avg_trade_%, equity_curve (array numpy, pour
     usage interne/diagnostic -- pas forcément exportée en CSV par l'appelant).
+    Si `record_trace=True`, ajoute la clé "trace" : liste de dicts
+    {trade_id, open_i, close_i, entry_price, realized_pnl, snapshots}, où
+    `snapshots` est une liste de tuples (i, remaining_before_bar_i).
     """
     equity = 1.0
     equity_curve = np.empty(n)
@@ -171,6 +187,7 @@ def run_position_engine(n, o, high, low, c, long_signal, open_tranche_fn,
     tranches = []
     trades = []
     win_streak = 0
+    trace = [] if record_trace else None
 
     for i in range(1, n):
         long_signal_prev = bool(long_signal[i - 1])
@@ -178,6 +195,9 @@ def run_position_engine(n, o, high, low, c, long_signal, open_tranche_fn,
         process_this_step = same_bar_reentry or had_open_at_start
 
         if process_this_step:
+            if record_trace:
+                for tr in tranches:
+                    trace[tr["_trade_id"]]["snapshots"].append((i, tr["remaining"]))
             remaining_tranches = []
             for tr in tranches:
                 if update_levels_fn is not None:
@@ -192,6 +212,9 @@ def run_position_engine(n, o, high, low, c, long_signal, open_tranche_fn,
                 if closed:
                     trades.append(realized)
                     win_streak = win_streak + 1 if realized > 0 else 0
+                    if record_trace:
+                        trace[tr["_trade_id"]]["close_i"] = i
+                        trace[tr["_trade_id"]]["realized_pnl"] = realized
                 else:
                     remaining_tranches.append(tr)
             tranches = remaining_tranches
@@ -201,6 +224,13 @@ def run_position_engine(n, o, high, low, c, long_signal, open_tranche_fn,
         if can_open_this_step:
             new_tr = open_tranche_fn(i, tranches, win_streak)
             if new_tr is not None:
+                if record_trace:
+                    new_tr["_trade_id"] = len(trace)
+                    trace.append({
+                        "trade_id": new_tr["_trade_id"], "open_i": i,
+                        "entry_price": new_tr["entry"], "entry_size": new_tr["remaining"],
+                        "close_i": None, "realized_pnl": None, "snapshots": [],
+                    })
                 tranches.append(new_tr)
                 equity *= (1 - fee * new_tr["remaining"])
 
@@ -211,7 +241,7 @@ def run_position_engine(n, o, high, low, c, long_signal, open_tranche_fn,
     trades_arr = np.array(trades) if trades else np.array([])
     eq_series = pd.Series(equity_curve)
     max_dd = (eq_series / eq_series.cummax() - 1).min()
-    return {
+    result = {
         "n_trades": len(trades_arr),
         "final_equity": equity,
         "max_dd_%": round(max_dd * 100, 1),
@@ -222,3 +252,6 @@ def run_position_engine(n, o, high, low, c, long_signal, open_tranche_fn,
         "avg_trade_%": round(trades_arr.mean() * 100, 3) if len(trades_arr) else None,
         "equity_curve": equity_curve,
     }
+    if record_trace:
+        result["trace"] = trace
+    return result

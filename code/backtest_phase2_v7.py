@@ -72,7 +72,7 @@ def attach_higher_context(df_low: pd.DataFrame, df_high: pd.DataFrame, high_dura
 
 
 def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: bool = True,
-           use_mtf_stop: bool = False) -> dict:
+           use_mtf_stop: bool = False, record_trace: bool = False) -> dict:
     """`use_mtf_stop` (défaut False, préserve le comportement historique de
     v7) : si True, le stop ("Extreme Channel") utilisé à l'entrée est celui
     calculé sur le VRAI D1 (`ctx_support` D1, transmis sans lookahead par
@@ -149,12 +149,22 @@ def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: 
         n, o, high, low, c, gated_long_signal, open_tranche_fn,
         val_close_frac=p["val_close"], conf_close_frac=p["conf_close"],
         conf_to_be=True, max_tranches=MAX_TRANCHES, fee=FEE,
+        record_trace=record_trace,
     )
-    return {
+    result = {
         "n_trades": raw["n_trades"], "max_dd_%": raw["max_dd_%"],
         "total_return_%": raw["total_return_%"], "win_rate_%": raw["win_rate_%"],
         "profit_factor": raw["profit_factor"],
     }
+    if record_trace:
+        # dates H4 (une par bougie, même longueur que o/high/low/c) -- pour
+        # que l'appelant (funding_rate_exact.py) puisse aligner chaque
+        # instantané de trace["snapshots"] sur un timestamp réel et donc
+        # sur les vrais événements de funding (toutes les 8h).
+        result["trace"] = raw["trace"]
+        result["dates"] = h4["date"].values
+        result["final_equity"] = raw["final_equity"]
+    return result
 
 
 def main():
