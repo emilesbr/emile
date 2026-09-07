@@ -1,0 +1,17 @@
+symbol,variant,n_trades,max_dd_%,total_return_%,win_rate_%,profit_factor,n_trades_pattern_a,n_trades_pattern_b
+BTCUSDT,"reference_1_pattern_2pct (MODERE, proxy_v2 seul)",492,-14.2,57.7,42.9,1.74,,
+BTCUSDT,"reference_1_pattern_1pct (FAIBLE, proxy_v2 seul, controle secondaire)",492,-9.8,21.9,43.1,1.57,,
+BTCUSDT,"pattern_a_seul_sans_pyramide_1pct (meme moteur que diversifie, Pattern B desactive)",312,-7.2,11.6,42.3,1.49,312.0,0.0
+BTCUSDT,diversifie_1pct_plus_1pct (proxy_v2 + cluster_technique),372,-7.0,11.9,44.9,1.48,312.0,60.0
+ETHUSDT,"reference_1_pattern_2pct (MODERE, proxy_v2 seul)",427,-14.3,94.5,45.9,2.09,,
+ETHUSDT,"reference_1_pattern_1pct (FAIBLE, proxy_v2 seul, controle secondaire)",427,-6.5,38.9,46.1,2.06,,
+ETHUSDT,"pattern_a_seul_sans_pyramide_1pct (meme moteur que diversifie, Pattern B desactive)",270,-8.1,12.1,44.8,1.54,270.0,0.0
+ETHUSDT,diversifie_1pct_plus_1pct (proxy_v2 + cluster_technique),308,-7.8,12.7,47.1,1.55,270.0,38.0
+BNBUSDT,"reference_1_pattern_2pct (MODERE, proxy_v2 seul)",525,-19.6,33.7,41.9,1.42,,
+BNBUSDT,"reference_1_pattern_1pct (FAIBLE, proxy_v2 seul, controle secondaire)",525,-12.5,20.5,42.7,1.48,,
+BNBUSDT,"pattern_a_seul_sans_pyramide_1pct (meme moteur que diversifie, Pattern B desactive)",329,-7.9,10.7,44.4,1.44,329.0,0.0
+BNBUSDT,diversifie_1pct_plus_1pct (proxy_v2 + cluster_technique),376,-8.1,10.1,44.7,1.41,329.0,47.0
+SOLUSDT,"reference_1_pattern_2pct (MODERE, proxy_v2 seul)",339,-17.4,55.0,39.5,1.83,,
+SOLUSDT,"reference_1_pattern_1pct (FAIBLE, proxy_v2 seul, controle secondaire)",339,-8.4,23.0,39.8,1.77,,
+SOLUSDT,"pattern_a_seul_sans_pyramide_1pct (meme moteur que diversifie, Pattern B desactive)",198,-4.1,19.7,42.4,2.07,198.0,0.0
+SOLUSDT,diversifie_1pct_plus_1pct (proxy_v2 + cluster_technique),246,-4.2,18.9,41.9,1.93,198.0,48.0
