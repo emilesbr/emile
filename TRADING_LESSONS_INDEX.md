@@ -29,6 +29,8 @@ Suivi de toutes les transcriptions/résumés fournis par l'utilisateur, pour ne 
 
 | 14 | `TRADING_LESSONS_STRUCTURES_ALTERATIONS.md` | "Maison de la Tendance" (Vague 3 étendue = norme), altérations Vague 1 (choc liquidité) et Vague 5 (excès spéculatif), règle Overlap | **5ᵉ confirmation** : "Loi de l'Unité de Temps Supérieure" | Exemple Bitcoin 2018→auj. éclaire l'instabilité inter-années déjà mesurée dans WALKFORWARD_ANALYSIS.md |
 
+| 17 | `TRADING_LESSONS_DISSONANCE_HPA.md` | Axe HPA, spirale de dégradation 3 phases (burnout clinique), 3 profils identitaires face à tendance adverse | N/A (psychologie pure) | ⚠️ Avertissement clinique sérieux sur le burnout — Phase 3 = arrêt total 6-12 mois + suivi médical |
+
 ## ⚠️ Révision à prévoir sur la Phase 2 (money management)
 Les sources #12 ET #13 (2 confirmations indépendantes, quasi mot-pour-mot) indiquent que le passage au breakeven devrait intervenir à la Confirmation (UT+2 / clôture dans le contexte opposé), pas à la Validation comme approximé dans `PHASE2_MONEYMANAGEMENT.md`. Si le backtest est retravaillé, corriger ce point en priorité — c'est maintenant la correction la mieux étayée de tout le corpus.
 
