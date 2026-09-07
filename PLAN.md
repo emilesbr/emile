@@ -162,4 +162,28 @@ Les 4 agents lancés en parallèle pour la vague 2 (UT+2, patterns géométrique
 - **Diversification/Cluster Technique et +Reverse table range** : ces 2 agents sont morts avant d'écrire le moindre fichier. **+Reverse table range relancé et traité** (session suivante, ce cycle) : `code/position_engine.py` (`process_reverse`, `reverse_at_limit`), `code/backtest_phase2_v7_reverse.py`, `code/test_position_engine.py` (8/8), cf. note dédiée `COUVERTURE_ENSEIGNEMENTS.md` et item 7 du backlog ci-dessus. **Diversification/Cluster Technique également relancé et traité** (session suivante, ce cycle, par un agent en parallèle) : `code/cluster_technique.py` (6/6 tests), `code/diversification.py` (5/5 tests), `code/backtest_phase2_diversification.py` — résultat MITIGÉ (cf. note dédiée `COUVERTURE_ENSEIGNEMENTS.md` et item 7 du backlog ci-dessus : effet marginal sur le drawdown proche de zéro une fois isolé de la pyramidalisation).
 
 ## Prochaine action immédiate
-P0, P0-bis, P1 "stop cross-timeframe", le test d'ablation du cycle, et désormais **tous les items du backlog** (diversification/Cluster Technique — item 7 — et "+Reverse table range" tous deux traités ce cycle, voir incident ci-dessus) sont **traités**. `MTF_CROSS_VALIDATION_H4_D1.md` a aussi été corrigé (chiffres causaux, plus les anciens chiffres batch 4× surestimés). Prochaine priorité réelle : règle "UT+2" exacte si elle reste ouverte (voir statut au fil du document — plusieurs mentions divergentes, à réconcilier), et repriorisation générale d'un backlog désormais entièrement soldé au moins une fois.
+P0, P0-bis, P1 "stop cross-timeframe", le test d'ablation du cycle, et désormais **tous les items du backlog** (diversification/Cluster Technique — item 7 — et "+Reverse table range" tous deux traités ce cycle, voir incident ci-dessus) sont **traités**. `MTF_CROSS_VALIDATION_H4_D1.md` a aussi été corrigé (chiffres causaux, plus les anciens chiffres batch 4× surestimés). Voir "Plan d'autonomie 8h" ci-dessous pour la suite.
+
+## Plan d'autonomie 8h (démarré après la clôture du backlog corpus)
+
+Le backlog "un élément du corpus par ligne" est soldé. Ce qui reste n'est plus "implémenter tel enseignement" mais consolider, requantifier et synthétiser un projet devenu tentaculaire (41 fichiers Python, 11 scripts `backtest_phase2_*.py` distincts, 67 tests). Rétrospective honnête (mode ingénieur senior) ayant motivé ce plan :
+
+**Ce qui ne satisferait pas un ingénieur senior en l'état** :
+1. Aucune synthèse : chaque feature a été testée isolément contre la baseline v7, personne n'a construit LA config recommandée combinant tout ce qui est validé (cycle causal, structure causale, UT+2 strict) en excluant ce qui dégrade (Fibonacci, gate Andrews) — pas de chiffre de référence unique à citer aujourd'hui.
+2. Hypothèses jamais croisées (H1-H12 trend_table, ×1.25 capital_tiers, jambe reverse "miroir", seuil confluence Cluster Technique) — chacune raisonnable isolément, jamais stress-testées ensemble.
+3. `v4.py`/`capital_tiers.py` tournent encore sur l'ancienne structure batch (pré-P0-bis) — dette de requantification connue, jamais résorbée.
+4. `regime_classifier.py` : zéro test, alors qu'il conditionne toutes les décisions d'entrée depuis v6.
+5. Walk-forward et OOS XRP jamais rejoués sur le moteur pleinement corrigé (P0+P0-bis) — faits une fois, avant les deux corrections.
+6. `cycle_ascending` (occurrence #3 du pattern récurrent) toujours non tranché.
+
+**Vagues prévues, priorisées par la formule du projet (probabilité × impact × coût de découverte tardive)** :
+
+- **Vague 3 (parallèle, fichiers disjoints)** :
+  - Tests unitaires pour `regime_classifier.py` (zéro couverture malgré un rôle central depuis v6)
+  - Rejeu de `v4.py`/`backtest_phase2_capital_tiers.py` avec la structure causale P0-bis (dette de requantification déjà identifiée, code déjà corrigé, juste jamais rejoué)
+  - Investigation dédiée de `cycle_ascending` (occurrence #3, non tranchée depuis le début) sur données réelles (pas seulement synthétique) — trancher si possible, sinon documenter pourquoi ça reste ouvert
+  - Pipeline unique rejouable (script qui relance tous les moteurs actuels d'un coup, remplace le geste manuel ad hoc)
+- **Vague 4 (séquentielle, après vague 3)** : synthèse — construire LA config recommandée (cycle+structure causaux, UT+2 strict, sans Fibonacci ni gate Andrews qui dégradent), produire un chiffre de référence unique, rejouer walk-forward + OOS XRP dessus.
+- **Vague 5 (si le temps le permet)** : pistes ouvertes non tranchées — autre hypothèse de gating Andrews (celle testée dégrade nettement, pas forcément la seule lecture possible), robustesse du seuil de confluence Cluster Technique.
+
+Chaque retour d'agent vérifié indépendamment dans un clone isolé avant tout commit, comme fait pour les 13 chantiers précédents — aucun changement de discipline. Check-in de clôture programmé à l'échéance des 8h (`send_later`) pour un rapport final, que le travail soit fini avant ou non.
