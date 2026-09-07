@@ -82,5 +82,30 @@ Inchangée — discussion différée après Phase 4.
 
 ---
 
+## Backlog priorisé (remplace la liste plate précédente)
+
+Un directeur d'ingénierie priorise par impact sur la validité de ce qui est déjà rapporté, avant d'ajouter de nouvelles fonctionnalités. D'où l'ordre ci-dessous — pas l'ordre de découverte.
+
+| # | Item | Impact si non traité | Effort | Priorité |
+|---|---|---|---|---|
+| 0 | **Calcul non causal de `compute_cycle_phase` (Hilbert sur série entière)** — cf. `COUVERTURE_ENSEIGNEMENTS.md` ⚠️ | Inflation non quantifiée de **toute** performance rapportée depuis v5 (v5/v6/v7, MTF, funding rate, OOS XRP) | Moyen (recalcul causal + rejouer tous les moteurs) | **P0 — bloquant avant Phase 3** |
+| 1 | Table "trade de tendance" à 5 étapes jamais testée | Élément IP documenté non implémenté ; on ne trade qu'en logique range même en régime Tendance | Élevé (nouveau barème complet) | P1 |
+| 2 | Stop "Extreme Channel" toujours same-timeframe malgré le nom | Incohérence documentation/code ; le stop ne bénéficie pas de la validation croisée déjà construite pour le signal | Faible-moyen (réutiliser `attach_higher_context` de v7 pour le stop aussi) | P1 |
+| 3 | Règle "UT+2" exacte (2 niveaux au-dessus, pas 1) | Le corpus (6 sources) décrit une règle plus stricte que celle testée | Moyen (nécessite une 3e timeframe, ex. Hebdo) | P2 |
+| 4 | Fibonacci retracement comme critère d'entrée | Entrée jamais filtrée par profondeur de retracement, critère répété dans 5 sources | Moyen | P2 |
+| 5 | Funding rate exact par timestamp | Coût actuellement à l'ordre de grandeur annuel seulement | Faible-moyen | P2 |
+| 6 | Capital par palier (<10k/10-100k/>100k€) | Sizing ignore la taille absolue du capital | Faible | P3 |
+| 7 | Règle "Wall Street", Andrews Pitchfork, canal manuel, Cluster Technique, "+Reverse" | Patterns/outils du corpus jamais construits | Élevé (5 items distincts) | P3 |
+
+**Règle de traitement** : P0 se traite avant toute nouvelle mesure de performance considérée comme fiable — continuer à produire des chiffres v7 sans corriger P0 revient à empiler des résultats sur une base non quantifiée. P1 peut être mené en parallèle de P0 (ne dépend pas du signal cycle). P2/P3 après.
+
+## Critères de sortie Phase 2 → Phase 3 (gate explicite, absent jusqu'ici)
+
+Jusqu'ici "assez fidèle pour passer en paper trading" n'était jamais défini. Critères proposés, à valider avant de déclarer la Phase 2 terminée :
+1. P0 (calcul causal du cycle) traité et les moteurs v5/v6/v7 rejoués avec — edge toujours positif et statistiquement significatif après correction
+2. Au minimum P1 traité (table trade de tendance testée, stop réellement cross-timeframe)
+3. Tests de régression (`code/test_*.py`) couvrant au moins : moteur de position (fait, 5/5), signal cycle (fait partiellement, 3/3 — cf. limites dans `code/test_proxy_v2.py`), classificateur de régime (pas encore fait)
+4. Un pipeline unique rejouable (actuellement chaque moteur se lance manuellement, script par script) pour éviter que "refaire avec le moteur actuel" reste un geste ad hoc à chaque fois
+
 ## Prochaine action immédiate
-Les trois lots délégués (A : qualité du code/tests + refonte cascade3 ; B : validation hors-échantillon du signe du cycle ; C : consolidation documentaire + funding rates) sont revenus et intégrés ci-dessus. Décision à prendre : combler en priorité les lacunes à plus fort impact documenté (table trade de tendance, Fibonacci, vrai stop cross-timeframe, règle UT+2 exacte) avant de considérer la Phase 2 comme suffisamment fidèle au corpus pour passer en Phase 3, conformément au principe : un élément documenté de la propriété intellectuelle de Philippe reste une lacune à combler tant qu'il n'est pas implémenté, indépendamment de la performance du proxy.
+Traiter P0 (recalcul causal de `compute_cycle_phase`) avant toute nouvelle campagne de résultats, en parallèle éventuellement de P1 (stop cross-timeframe, réutilisable depuis `attach_higher_context` de v7). Les trois lots précédemment délégués (A : qualité du code/tests + refonte cascade3 ; B : validation hors-échantillon du signe du cycle ; C : consolidation documentaire + funding rates) sont revenus et intégrés ci-dessus.
