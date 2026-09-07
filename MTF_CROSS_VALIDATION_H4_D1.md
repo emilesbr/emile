@@ -7,7 +7,11 @@ Exécution sur H4, référence/contexte sur D1 : un signal H4 n'est validé que 
 1. Le score proxy_v2 (TSI+cycle+structure) de la **dernière bougie D1 entièrement clôturée** (jointure `merge_asof` sans lookahead) est également ≥2
 2. Le régime D1 n'est pas EXCES
 
-## Résultat — le plus uniformément cohérent obtenu à ce jour
+## ⚠️ Chiffres de cette section obsolètes depuis la correction P0 (calcul causal du cycle)
+
+Le tableau et le constat ci-dessous datent d'avant la correction du calcul du cycle Hilbert (`compute_cycle_phase` batch → `compute_cycle_phase_causal`, cf. `code/proxy_v2.py`, traité en parallèle de cette tâche). Comme documenté dans `COUVERTURE_ENSEIGNEMENTS.md`, cette correction change le score `proxy_v2` utilisé par `prepare()` dans `code/backtest_phase2_v7.py`, donc TOUT chiffre produit par ce moteur (gate MTF compris) a changé. Rejouer cette section (H4 seul vs validé par D1) avec le moteur causal reste une tâche P0 ouverte, pas traitée ici (hors périmètre de cette tâche P1, dédiée au stop). La section suivante ("Correction P1"), elle, a été mesurée avec le moteur déjà causal (le plus à jour au moment de l'écriture).
+
+## Résultat — le plus uniformément cohérent obtenu à ce jour (chiffres pré-correction P0, à rejouer)
 
 | Actif (profil FAIBLE) | Trades | Win rate | Profit factor | Max DD | Retour |
 |---|---|---|---|---|---|
@@ -39,26 +43,27 @@ C'est le résultat le plus **uniformément** cohérent obtenu dans tout ce proje
 
 **Ce qui a changé** (`code/backtest_phase2_v7.py`) : `attach_higher_context` transmet maintenant, en plus du score et du régime, le `ctx_support` D1 — via la même jointure `merge_asof` sans lookahead (dernière bougie D1 entièrement close). `run_v7` expose un nouveau paramètre `use_mtf_stop` (défaut `False`, comportement historique inchangé) : à `True`, le stop réel à l'entrée est ce `ctx_support` D1 (niveau de prix absolu, substituable tel quel à `ctx_support` H4 — pas de problème d'échelle, les deux sont des prix, pas des distances).
 
-**Mesure — stop H4 (même UT) vs stop D1 réel, gate MTF activé dans les deux cas, 4 actifs × 4 profils** (détail complet : `phase2_v7_mtf_results.csv`, colonne `stop`) :
+**Mesure — stop H4 (même UT) vs stop D1 réel, gate MTF activé dans les deux cas, 4 actifs × 4 profils, moteur DÉJÀ CAUSAL** (`compute_cycle_phase_causal`, correction P0 intégrée au moment de cette mesure — chiffres les plus à jour du document ; détail complet : `phase2_v7_mtf_results.csv`, colonnes `profile`/`stop`) :
 
 | Actif (profil FAIBLE) | Stop | Trades | Win rate | Profit factor | Max DD | Retour | Retour/DD |
 |---|---|---|---|---|---|---|---|
-| BTC | H4 (même UT) | 520 | 54,0% | 2,60 | -7,0% | +54,9% | 7,84 |
-| BTC | D1 réel | 499 | 54,7% | **3,45** | **-2,6%** | +25,7% | **9,88** |
-| ETH | H4 (même UT) | 458 | 59,0% | 3,18 | -4,3% | +70,7% | **16,44** |
-| ETH | D1 réel | 459 | 58,6% | 3,01 | **-2,2%** | +25,3% | 11,50 |
-| BNB | H4 (même UT) | 499 | 51,5% | 2,12 | -6,0% | +49,4% | **8,23** |
-| BNB | D1 réel | 498 | 50,6% | 2,04 | **-3,2%** | +18,7% | 5,84 |
-| SOL | H4 (même UT) | 341 | 56,3% | 1,78 | -5,8% | +17,9% | **3,09** |
-| SOL | D1 réel | 336 | 54,5% | 1,50 | -7,9% | +5,5% | **0,70** |
+| BTC | H4 (même UT) | 504 | 42,7% | 1,60 | -9,1% | +23,1% | 2,54 |
+| BTC | D1 réel | 505 | 42,4% | **2,02** | **-3,1%** | +15,5% | **5,00** |
+| ETH | H4 (même UT) | 417 | 45,6% | 2,40 | -6,1% | +55,2% | **9,05** |
+| ETH | D1 réel | 418 | 45,0% | 2,41 | **-2,8%** | +20,9% | 7,46 |
+| BNB | H4 (même UT) | 544 | 42,1% | 1,41 | -12,6% | +17,0% | **1,35** |
+| BNB | D1 réel | 543 | 41,8% | 1,40 | **-5,6%** | +7,0% | 1,25 |
+| SOL | H4 (même UT) | 361 | 41,6% | 1,82 | -8,7% | +24,5% | **2,82** |
+| SOL | D1 réel | 361 | 41,0% | 1,54 | -3,6% | +6,9% | 1,92 |
 
-**Mécanisme identifié (pas une hypothèse — vérifié sur BTC)** : le `ctx_support` D1 réel est en moyenne ~2,7× plus loin du prix que le `ctx_support` calculé sur H4 (distance moyenne 10,1% vs 3,8% du prix ; le D1 est plus éloigné dans 78% des bougies). Le sizing du moteur (`size_frac = risk_pct / stop_pct`, risque fixe en % de l'equity) réduit donc mécaniquement la taille de position quand le stop réel D1 est utilisé — moins d'exposition, donc moins de retour composé, mais aussi (le plus souvent) moins de drawdown, dans une proportion qui varie par actif.
+**Mécanisme identifié (pas une hypothèse — vérifié sur BTC, indépendant du cycle donc inchangé par la correction P0)** : le `ctx_support` D1 réel est en moyenne ~2,7× plus loin du prix que le `ctx_support` calculé sur H4 (distance moyenne 10,1% vs 3,8% du prix ; le D1 est plus éloigné dans 78% des bougies). Le sizing du moteur (`size_frac = risk_pct / stop_pct`, risque fixe en % de l'equity) réduit donc mécaniquement la taille de position quand le stop réel D1 est utilisé — moins d'exposition, donc moins de retour composé, mais aussi (le plus souvent) moins de drawdown, dans une proportion qui varie par actif.
 
-**Résultat honnête, mesuré sur les 16 combinaisons (4 actifs × 4 profils), gate MTF activé** :
-- Le drawdown absolu diminue avec le stop D1 réel dans 14/16 cas (exceptions : BNB Très Agressif, SOL Faible, où il augmente légèrement).
+**Résultat honnête, mesuré sur les 16 combinaisons (4 actifs × 4 profils), gate MTF activé, moteur causal** :
+- Le drawdown absolu diminue avec le stop D1 réel dans **16/16 cas**, sans exception cette fois (avec le moteur pré-P0, deux exceptions apparaissaient sur BNB Très Agressif et SOL Faible ; elles disparaissent avec le cycle causal).
 - Le retour total diminue systématiquement (16/16) — cohérent avec le sizing plus petit.
-- **Le ratio retour/drawdown (calmar) se dégrade avec le stop D1 réel dans 14/16 combinaisons** — seules exceptions où le stop D1 réel améliore le ratio : BTC/FAIBLE et ETH/Très Agressif. SOL est le cas le plus net : le calmar chute d'un facteur ~4-5× avec le stop D1 réel, quel que soit le profil.
-- Le win rate et le profit factor sont globalement proches entre les deux configurations (parfois légèrement meilleurs avec D1, parfois légèrement moins bons), sans direction constante.
+- **Le ratio retour/drawdown (calmar) se dégrade avec le stop D1 réel dans 13/16 combinaisons** — seules exceptions où le stop D1 réel améliore le ratio : BTC/FAIBLE, BTC/MODERE, ETH/TRES_AGRESSIF. SOL et BNB restent les cas les plus nets où le calmar se dégrade avec le stop D1 réel, quel que soit le profil.
+- Le win rate et le profit factor sont globalement proches entre les deux configurations (BTC/ETH plutôt meilleurs avec D1, BNB/SOL plutôt légèrement moins bons), sans direction constante unique.
+- **Conclusion inchangée par la correction P0** : le sens du résultat (D1 réel réduit systématiquement retour ET drawdown, dégrade le ratio risque-ajusté dans la majorité des cas) est resté stable en recalculant avec le cycle causal — seule l'ampleur des chiffres bruts a changé (win rate/PF nettement plus faibles qu'avant P0, cohérent avec l'inflation du cycle batch documentée dans `COUVERTURE_ENSEIGNEMENTS.md`).
 
 **Conclusion mesurée, pas supposée** : le stop D1 réel n'améliore PAS la performance risque-ajustée dans la majorité des cas testés avec ce moteur de sizing à risque fixe — l'effet dominant est la réduction mécanique de la taille de position (stop plus loin ⇒ position plus petite ⇒ moins de retour, sans réduction proportionnelle du drawdown). Ce n'est pas un motif pour ne pas l'avoir implémenté (principe acté dans `COUVERTURE_ENSEIGNEMENTS.md` : la performance du proxy ne décide jamais si un élément du corpus doit être implémenté) — l'implémentation reste due et faite ; c'est en revanche un motif légitime pour garder `use_mtf_stop=False` comme réglage par défaut des campagnes de résultats tant qu'aucune analyse plus fine (ex. ajuster `risk_pct` en fonction de la distance du stop, ou ne prendre le stop D1 que lorsqu'il est plus PROCHE que le H4, pas plus loin) n'a été tentée. Ce point reste ouvert.
 
