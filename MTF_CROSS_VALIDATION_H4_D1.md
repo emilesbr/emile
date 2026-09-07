@@ -7,28 +7,26 @@ Exécution sur H4, référence/contexte sur D1 : un signal H4 n'est validé que 
 1. Le score proxy_v2 (TSI+cycle+structure) de la **dernière bougie D1 entièrement clôturée** (jointure `merge_asof` sans lookahead) est également ≥2
 2. Le régime D1 n'est pas EXCES
 
-## ⚠️ Chiffres de cette section obsolètes depuis la correction P0 (calcul causal du cycle)
+## Résultat — rejoué avec le moteur causal (P0), chiffres à jour
 
-Le tableau et le constat ci-dessous datent d'avant la correction du calcul du cycle Hilbert (`compute_cycle_phase` batch → `compute_cycle_phase_causal`, cf. `code/proxy_v2.py`, traité en parallèle de cette tâche). Comme documenté dans `COUVERTURE_ENSEIGNEMENTS.md`, cette correction change le score `proxy_v2` utilisé par `prepare()` dans `code/backtest_phase2_v7.py`, donc TOUT chiffre produit par ce moteur (gate MTF compris) a changé. Rejouer cette section (H4 seul vs validé par D1) avec le moteur causal reste une tâche P0 ouverte, pas traitée ici (hors périmètre de cette tâche P1, dédiée au stop). La section suivante ("Correction P1"), elle, a été mesurée avec le moteur déjà causal (le plus à jour au moment de l'écriture).
+**Historique de cette section** : le tableau ci-dessous montrait initialement des chiffres calculés avec l'ancien calcul batch (non causal) du cycle Hilbert, signalés obsolètes puis laissés en l'état "à rejouer" pendant le traitement du P1 (stop cross-timeframe, tâche distincte). Les chiffres avec le moteur causal (`compute_cycle_phase_causal`) existaient déjà dans `phase2_v7_mtf_results.csv` (produits lors du rejeu de la section "Correction P1" ci-dessous) mais n'avaient jamais été transcrits ici — corrigé à présent, sans nouveau calcul, juste lecture du CSV déjà à jour.
 
-## Résultat — le plus uniformément cohérent obtenu à ce jour (chiffres pré-correction P0, à rejouer)
-
-| Actif (profil FAIBLE) | Trades | Win rate | Profit factor | Max DD | Retour |
+| Actif (profil FAIBLE, stop H4) | Trades | Win rate | Profit factor | Max DD | Retour |
 |---|---|---|---|---|---|
-| BTC — H4 seul | 1498 | 46,3% | 1,91 | -9,5% | +179,8% |
-| BTC — validé par D1 | 520 | **54,0%** | **2,60** | **-7,0%** | +54,9% |
-| ETH — H4 seul | 1365 | 46,0% | 2,09 | -12,3% | +247,9% |
-| ETH — validé par D1 | 458 | **59,0%** | **3,18** | **-4,3%** | +70,7% |
-| BNB — H4 seul | 1209 | 47,4% | 1,89 | -8,0% | +134,7% |
-| BNB — validé par D1 | 499 | **51,5%** | **2,12** | **-6,0%** | +49,4% |
-| SOL — H4 seul | 1199 | 48,5% | 2,47 | -13,7% | +350,8% |
-| SOL — validé par D1 | 341 | **56,3%** | 1,78 | **-5,8%** | +17,9% |
+| BTC — H4 seul | 1402 | 39,4% | 1,52 | -14,8% | +81,8% |
+| BTC — validé par D1 | 504 | **42,7%** | **1,60** | **-9,1%** | +23,1% |
+| ETH — H4 seul | 1363 | 37,1% | 1,49 | -12,6% | +88,2% |
+| ETH — validé par D1 | 417 | **45,6%** | **2,40** | **-6,1%** | +55,2% |
+| BNB — H4 seul | 1399 | 41,2% | 1,37 | -17,2% | +46,3% |
+| BNB — validé par D1 | 544 | **42,1%** | **1,41** | **-12,6%** | +17,0% |
+| SOL — H4 seul | 1239 | 38,8% | 1,79 | -21,2% | +182,0% |
+| SOL — validé par D1 | 361 | **41,6%** | **1,82** | **-8,7%** | +24,5% |
 
-Détail complet (4 profils × 4 actifs) : `phase2_v7_mtf_results.csv`.
+Détail complet (4 profils × 4 actifs × 2 configurations de stop) : `phase2_v7_mtf_results.csv`.
 
-**Constat, sur les 4 actifs et les 4 profils, sans exception** : environ 3× moins de trades, win rate systématiquement plus élevé (+5 à +13 points), drawdown systématiquement réduit, profit factor amélioré dans la quasi-totalité des cas (seule exception : SOL, où il baisse légèrement malgré le reste). Le retour cumulé est plus faible (moins d'occasions de composer, cohérent avec 3× moins de trades) — les valeurs extrêmes précédemment suspectes (SOL Très Agressif +23878%) redeviennent nettement plus raisonnables (+75,8% sur ce profil).
+**Constat révisé (moteur causal) — la direction tient, l'ampleur est bien plus modeste qu'annoncé initialement** : sur les 4 actifs, sans exception, la validation par D1 réduit le nombre de trades (~2,5-3×), améliore le win rate et le profit factor, et réduit le drawdown — la direction du résultat original tient. Mais l'ampleur de l'amélioration, qui semblait spectaculaire avec le calcul batch (+5 à +13 points de win rate), est **beaucoup plus modeste avec le calcul causal** : +0,9 point (BNB) à +8,5 points (ETH) de win rate ; profit factor quasiment inchangé sur BNB/SOL (+0,03 à +0,04) et significatif seulement sur ETH (+0,91) ; le retour cumulé chute fortement partout (cohérent avec l'edge global lui-même surestimé ~4× par le batch, cf. `COUVERTURE_ENSEIGNEMENTS.md` P0).
 
-C'est le résultat le plus **uniformément** cohérent obtenu dans tout ce projet — pas un mélange d'améliorations et de dégradations selon l'actif, mais une direction constante partout. Ça confirme empiriquement ce que 7 sources indépendantes du corpus affirmaient : trader un timeframe isolément, sans validation croisée, dégrade la qualité du signal.
+Ce n'est plus "le résultat le plus uniformément spectaculaire du projet" (affirmation d'origine, à ne plus citer telle quelle) — c'est un résultat qui **confirme la direction** (valider un signal H4 par son contexte D1 aide, sans exception sur les 4 actifs) avec une ampleur bien plus modeste que ce qu'on pensait, cohérent avec 7 sources indépendantes du corpus sur l'intérêt de la validation croisée — mais qui ne suffit plus à lui seul à justifier un déploiement, vu la faiblesse de certains gains (BNB notamment, quasi neutre).
 
 ## Limites documentées
 - Toujours un proxy, pas le vrai signal PRO Framework

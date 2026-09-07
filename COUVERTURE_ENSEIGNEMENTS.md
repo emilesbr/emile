@@ -68,6 +68,21 @@ Lecture honnête : **sur H4 — le timeframe le plus testé et celui du résulta
 
 **Point connexe toujours non tranché** (inchangé, sans lien direct avec P0) : la condition composite `cycle_ascending` reste anti-corrélée au rendement futur sur sinusoïde synthétique pure, à l'inverse de la validation OOS réelle sur XRP — divergence documentée dans `code/test_proxy_v2.py` (docstring), toujours ouverte.
 
+### Test d'ablation du cycle — fait (recommandation ci-dessus traitée), résultat NON concluant, pas un "cycle neutre confirmé"
+
+Recommandé juste au-dessus comme prochaine étape logique, fait sans attendre qu'on le redemande (`code/ablation_test_cycle.py`, ne touche à aucun fichier de production — score ablaté = momentum+structure seuls, seuil ">= 2" devenant "les deux d'accord"). Comparaison score complet (momentum+cycle+structure) vs score ablaté (sans le cycle), gate MTF activé, 4 actifs × 4 profils :
+
+| Actif | Δ win rate (ablaté − complet), moy. 4 profils | Δ profit factor (ablaté − complet), moy. 4 profils | Lecture |
+|---|---|---|---|
+| ETH | **+0,7 pt** | **+0,76** | Retirer le cycle améliore nettement — cohérent avec l'hypothèse "dilue sans apporter" |
+| BTC | -5,5 pts | +0,37 | Mixte : moins précis en fréquence, plus précis en ampleur des gains |
+| BNB | -4,1 pts | -0,01 | Retirer le cycle dégrade légèrement le win rate, PF inchangé |
+| SOL | -2,6 pts | **-0,64** | Retirer le cycle dégrade nettement — **contredit** l'hypothèse "dilue sans apporter" |
+
+Détail complet (32 lignes) : `ablation_test_cycle_results.csv`.
+
+**Conclusion honnête, pas forcée dans un sens qui arrangerait une histoire propre** : les 4 actifs **ne s'accordent pas sur la direction**. Sur ETH, retirer le cycle améliore tout ; sur SOL, retirer le cycle dégrade tout ; BTC et BNB sont mixtes. Ça **infirme** l'hypothèse simple posée après le traitement du P0 ("le cycle dilue partout sans nuire") — la réalité est plus compliquée : le cycle isolé ne montre pas de corrélation causale significative avec le rendement futur (mesuré ci-dessus), mais son interaction avec momentum+structure dans le score composite n'est pas neutre non plus, et varie par actif. Aucune conclusion univoque ne peut en être tirée sans sur-interpréter un échantillon de 4 actifs. **Recommandation révisée** : ne pas retirer le cycle du score sur la seule base de ce test (échantillon trop petit, résultat non consensuel) ; le signal composite (score >= 2 sur 3) reste le réglage par défaut. Si une décision de retrait devait un jour être prise, elle demanderait un échantillon d'actifs plus large et une explication du mécanisme d'interaction, pas juste ce tableau.
+
 ## ❌ Jamais implémenté (liste exhaustive, pas de trou silencieux)
 
 | Élément | Source | Pourquoi ça manque |
@@ -82,7 +97,7 @@ Lecture honnête : **sur H4 — le timeframe le plus testé et celui du résulta
 | **Règle "UT+2" exacte (2 niveaux au-dessus, pas le niveau immédiat)** | #9, #10, #12, #14, #15, #16 (6 sources) | v7 ne valide qu'avec le niveau immédiatement supérieur (H4→D1), pas le vrai "2 niveaux au-dessus" (ex. H4→Hebdo) |
 | **Capital par palier (<10k€/10-100k€/>100k€)** | RULES_EXTRACTION §5 | Jamais pris en compte dans aucun backtest — le sizing ignore la taille absolue du capital |
 | Funding rate exact par timestamp (pas juste l'ordre de grandeur annuel) | Découverte de l'agent délégué | Recommandé explicitement par l'agent, pas encore fait |
-| **Test d'ablation du composant cycle** (score momentum+structure seul, sans cycle, sur v5/v6/v7) | Découverte de ce cycle de travail (traitement P0) | Recommandé pour trancher si le cycle dilue ou reste neutre une fois causal (cf. ⚠️→◐ ci-dessus) — pas fait, hors scope initial du chantier causal |
+| ~~Test d'ablation du composant cycle~~ | ~~Découverte de ce cycle de travail~~ | **Fait** — résultat non concluant (4 actifs en désaccord de direction), cf. section ⚠️→◐ ci-dessus, "Test d'ablation du cycle" |
 
 ## Mise à jour de PLAN.md
 `PLAN.md` datait d'avant le refactoring, le classificateur de régime, la validation croisée MTF et la découverte des funding rates — il a été remis à jour (même commit que ce document) pour pointer vers ce document et refléter l'état réel. Remis à jour de nouveau ce cycle de travail pour le traitement du P0 (cycle causal).

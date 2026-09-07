@@ -1,0 +1,33 @@
+symbol,profile,variant,n_trades,max_dd_%,total_return_%,win_rate_%,profit_factor
+BTCUSDT,FAIBLE,score_complet (momentum+cycle+structure>=2),504,-9.1,23.1,42.7,1.6
+BTCUSDT,FAIBLE,"score_ablate (momentum+structure, sans cycle)",260,-7.9,24.1,37.3,1.91
+BTCUSDT,MODERE,score_complet (momentum+cycle+structure>=2),504,-13.4,61.0,42.7,1.77
+BTCUSDT,MODERE,"score_ablate (momentum+structure, sans cycle)",260,-12.6,56.4,37.3,2.08
+BTCUSDT,AGRESSIF,score_complet (momentum+cycle+structure>=2),504,-14.7,115.8,42.7,2.01
+BTCUSDT,AGRESSIF,"score_ablate (momentum+structure, sans cycle)",260,-14.1,103.8,37.3,2.43
+BTCUSDT,TRES_AGRESSIF,score_complet (momentum+cycle+structure>=2),504,-22.4,157.1,42.3,2.09
+BTCUSDT,TRES_AGRESSIF,"score_ablate (momentum+structure, sans cycle)",260,-21.2,134.9,36.5,2.53
+ETHUSDT,FAIBLE,score_complet (momentum+cycle+structure>=2),417,-6.1,55.2,45.6,2.4
+ETHUSDT,FAIBLE,"score_ablate (momentum+structure, sans cycle)",202,-5.1,45.6,46.5,3.56
+ETHUSDT,MODERE,score_complet (momentum+cycle+structure>=2),417,-11.7,139.0,45.3,2.44
+ETHUSDT,MODERE,"score_ablate (momentum+structure, sans cycle)",202,-10.0,97.7,46.0,3.29
+ETHUSDT,AGRESSIF,score_complet (momentum+cycle+structure>=2),417,-16.6,249.4,45.3,2.5
+ETHUSDT,AGRESSIF,"score_ablate (momentum+structure, sans cycle)",202,-14.1,147.5,46.0,3.11
+ETHUSDT,TRES_AGRESSIF,score_complet (momentum+cycle+structure>=2),417,-33.6,355.4,43.6,2.47
+ETHUSDT,TRES_AGRESSIF,"score_ablate (momentum+structure, sans cycle)",202,-33.1,182.2,44.1,2.89
+BNBUSDT,FAIBLE,score_complet (momentum+cycle+structure>=2),544,-12.6,17.0,42.1,1.41
+BNBUSDT,FAIBLE,"score_ablate (momentum+structure, sans cycle)",268,-7.2,9.8,38.8,1.41
+BNBUSDT,MODERE,score_complet (momentum+cycle+structure>=2),544,-20.1,26.6,41.4,1.35
+BNBUSDT,MODERE,"score_ablate (momentum+structure, sans cycle)",268,-13.6,14.6,37.3,1.32
+BNBUSDT,AGRESSIF,score_complet (momentum+cycle+structure>=2),544,-23.5,32.6,41.4,1.32
+BNBUSDT,AGRESSIF,"score_ablate (momentum+structure, sans cycle)",268,-18.9,20.7,37.3,1.31
+BNBUSDT,TRES_AGRESSIF,score_complet (momentum+cycle+structure>=2),544,-31.9,57.3,40.4,1.42
+BNBUSDT,TRES_AGRESSIF,"score_ablate (momentum+structure, sans cycle)",268,-21.7,36.8,35.4,1.43
+SOLUSDT,FAIBLE,score_complet (momentum+cycle+structure>=2),361,-8.7,24.5,41.6,1.82
+SOLUSDT,FAIBLE,"score_ablate (momentum+structure, sans cycle)",167,-6.6,3.4,39.5,1.27
+SOLUSDT,MODERE,score_complet (momentum+cycle+structure>=2),361,-17.9,63.0,41.3,1.92
+SOLUSDT,MODERE,"score_ablate (momentum+structure, sans cycle)",167,-14.3,9.2,38.9,1.34
+SOLUSDT,AGRESSIF,score_complet (momentum+cycle+structure>=2),361,-24.2,120.2,41.3,2.03
+SOLUSDT,AGRESSIF,"score_ablate (momentum+structure, sans cycle)",167,-19.0,21.8,38.9,1.49
+SOLUSDT,TRES_AGRESSIF,score_complet (momentum+cycle+structure>=2),361,-42.7,228.2,40.4,2.15
+SOLUSDT,TRES_AGRESSIF,"score_ablate (momentum+structure, sans cycle)",167,-36.2,11.7,37.1,1.26
