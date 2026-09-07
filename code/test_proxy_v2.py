@@ -18,18 +18,59 @@ teste le SIGNE du niveau de `sinewave` (la grandeur diagnostiquée dans
 AUDIT_QUALITE_ET_CORRECTION_CYCLE.md), pas la condition composite
 `cycle_ascending` (dérivée du sinewave d'une barre à l'autre) réellement
 utilisée dans `add_proxy_v2_score`. En creusant ce point pendant l'audit
-de ce [dernier cycle de travail], `cycle_ascending` s'est révélée
+d'un cycle de travail antérieur, `cycle_ascending` s'était révélée
 anti-corrélée au rendement futur sur une sinusoïde synthétique pure et
 sans bruit — à l'inverse de ce que montre la validation hors-échantillon
 réelle sur XRP (`OOS_VALIDATION_CYCLE_SIGN.md`, test secondaire, positif
-et significatif sur données réelles). Le désaccord entre les deux
-suggère que la sinusoïde synthétique idéalisée (une seule fréquence, sans
-bruit) n'est pas un terrain de test représentatif pour cette condition
-dérivée-là, plutôt qu'une vraie régression de `cycle_ascending` — mais
-ça reste une divergence non résolue, documentée ici et dans
-COUVERTURE_ENSEIGNEMENTS.md plutôt que passée sous silence. Ce fichier ne
-teste donc que la propriété la mieux établie (le niveau), pas la
-condition composite complète.
+et significatif sur données réelles, MAIS attention : ce test porte sur
+`cycle_favorable`, pas sur `cycle_ascending` isolée — nuance qui n'avait
+pas été relevée à l'époque). Cette divergence (occurrence #3 du pattern
+récurrent, `PLAN.md`) est désormais TRANCHÉE (investigation dédiée,
+`code/cycle_ascending_investigation.py` + `code/cycle_ascending_
+robustness.py`) :
+
+  - **L'artefact synthétique persiste à l'identique avec le calcul
+    CAUSAL actuellement en production** (`compute_cycle_phase_causal`) :
+    r(cycle_ascending, rendement futur) ≈ -0,41, p≈1e-74 sur sinusoïde
+    pure, que le calcul soit batch ou causal, avec ou sans un léger bruit
+    (0,05). Le passage du cycle au calcul causal (traitement du P0) n'a
+    donc RIEN changé à CETTE divergence spécifique — elle ne concernait
+    pas une propriété du calcul batch, contrairement à ce qu'on aurait pu
+    supposer.
+  - **Mesuré directement sur données RÉELLES** (BTC/ETH/BNB/SOL, H4 ET D1,
+    tout l'historique disponible, `cycle_ascending_real_data.csv`) :
+    aucune corrélation significative et cohérente. `|r|` entre 0,003 et
+    0,045 sur les 8 séries testées, signe incohérent d'un actif à
+    l'autre (négatif BTC/ETH, positif/nul BNB/SOL), et seulement 2/8
+    tests sous p<0,05 — un taux compatible avec le hasard pur (8 tests
+    indépendants, ~0,4 faux positif attendu à α=0,05), pas avec un effet
+    réel et systématique.
+  - **Robustesse** (`cycle_ascending_robustness.csv`) : l'artefact
+    synthétique ne s'efface significativement qu'à un ratio bruit/
+    amplitude d'environ 3-4× (bien au-delà du bruit=0,05 utilisé par
+    défaut ci-dessous, qui ne change presque rien) ou par un mélange de
+    plusieurs fréquences combiné à un bruit important — un niveau de
+    désordre nettement supérieur à ce qu'un ajout de bruit gaussien
+    standard capture d'ordinaire.
+
+**Conclusion de l'occurrence #3 : hypothèse CONFIRMÉE, refermée comme
+"expliquée, pas un bug"** — la sinusoïde synthétique pure produit un
+artefact déterministe (dérivée d'un signal lisse à une seule fréquence),
+mathématiquement réel mais qui ne se reproduit pas sur des prix réels
+dominés par une variation non cyclique (tendance, sauts, non-
+stationnarité, changements de régime). Ce n'est donc PAS un terrain de
+test représentatif pour cette condition dérivée-là — sans que cela remette
+en cause `test_cycle_sign_matches_ground_truth_direction` ci-dessous, qui
+teste une propriété différente (le NIVEAU du sinewave, pas sa dérivée) et
+reste valide. Aucune modification de `proxy_v2.py` n'a été faite ni jugée
+nécessaire : `cycle_ascending` continue d'être utilisée telle quelle en
+production. Détail complet des mesures : `code/cycle_ascending_
+investigation.py`, `code/cycle_ascending_robustness.py`, `PLAN.md`
+occurrence #3, `COUVERTURE_ENSEIGNEMENTS.md`. Ce fichier ne teste donc
+toujours que la propriété la mieux établie (le niveau du signe), pas la
+condition composite dérivée — mais cette dernière n'a plus besoin d'un
+test de régression dédié puisqu'aucun bug n'a été confirmé, seulement un
+terrain de test synthétique non représentatif pour elle.
 
 Limite distincte, plus significative, découverte dans le même effort et
 désormais TRAITÉE (P0, cf. COUVERTURE_ENSEIGNEMENTS.md/PLAN.md) : l'ancienne
