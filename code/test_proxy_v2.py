@@ -32,23 +32,25 @@ teste donc que la propriété la mieux établie (le niveau), pas la
 condition composite complète.
 
 Limite distincte, plus significative, découverte dans le même effort et
-qui N'EST PAS testée ici (nécessiterait un vrai recalcul causal/rolling,
-hors scope de ce fichier) : `compute_cycle_phase` appelle
-`scipy.signal.hilbert` sur la série ENTIÈRE d'un coup (non causal) — déjà
-documenté comme limite connue dans `OOS_VALIDATION_CYCLE_SIGN.md` section
-5, mais jamais remonté jusqu'ici dans `COUVERTURE_ENSEIGNEMENTS.md`/
-`PLAN.md`. Sur une sinusoïde synthétique propre, la corrélation
-sinewave/rendement-futur mesurée en mode batch (0,93) est très supérieure
-à la même corrélation recalculée en fenêtre expansive causale (0,38) —
-l'ordre de grandeur de l'inflation n'est pas nul. Voir
-COUVERTURE_ENSEIGNEMENTS.md pour le suivi de ce point en tant que lacune
-prioritaire.
+désormais TRAITÉE (P0, cf. COUVERTURE_ENSEIGNEMENTS.md/PLAN.md) : l'ancienne
+`compute_cycle_phase` appelait `scipy.signal.hilbert` sur la série ENTIÈRE
+d'un coup (non causal) — déjà documenté comme limite connue dans
+`OOS_VALIDATION_CYCLE_SIGN.md` section 5, mais jamais remonté jusqu'ici
+avant ce cycle de travail. `compute_cycle_phase_causal` (fenêtre glissante)
+la remplace désormais dans `add_proxy_v2_score` ;
+`test_cycle_phase_causal_matches_truncated_series` ci-dessous teste la
+CAUSALITÉ elle-même (pas seulement le signe) pour garantir qu'on ne
+réintroduit jamais ce bug. Sur données réelles (BTC/ETH/BNB/SOL), la
+corrélation causale mesurée est proche de zéro et non significative, très
+inférieure à la corrélation batch (~0,29) — voir COUVERTURE_ENSEIGNEMENTS.md
+pour le détail chiffré et la conclusion honnête (edge causal non confirmé
+sur les actifs testés).
 """
 import numpy as np
 import pandas as pd
 import sys
 sys.path.insert(0, ".")
-from proxy_v2 import compute_cycle_phase, compute_tsi
+from proxy_v2 import compute_cycle_phase, compute_cycle_phase_causal, compute_tsi, CYCLE_CAUSAL_WINDOW
 
 
 def _synthetic_cyclical_series(n=2000, period=40, amplitude=5.0, noise=0.05, seed=0):
@@ -94,6 +96,54 @@ def test_cycle_phase_bounded():
     assert np.nanmax(np.abs(sinewave)) <= 1.0 + 1e-9
 
 
+def test_cycle_phase_causal_matches_truncated_series():
+    """Test de RÉGRESSION DE LA CAUSALITÉ elle-même (pas du signe) — le test
+    qui aurait empêché la découverte tardive du problème P0
+    (COUVERTURE_ENSEIGNEMENTS.md ⚠️) s'il avait existé plus tôt.
+
+    Propriété attendue d'un calcul causal : la valeur de
+    compute_cycle_phase_causal en un instant t donné ne doit PAS changer
+    selon que la série contient ou non des barres futures après t. On calcule
+    donc sinewave sur la série COMPLÈTE, puis sur la série TRONQUÉE à t
+    (aucune barre après t), et on exige que la valeur en t soit identique
+    (tolérance flottante) dans les deux cas — sinon des barres futures ont
+    influencé le calcul en t, ce qui est exactement le bug qu'on corrige ici.
+
+    Contre-exemple attendu : ce même test échouerait franchement (pas une
+    tolérance flottante, un écart massif) si on l'appliquait à l'ancienne
+    `compute_cycle_phase` (batch), ce qui est vérifié explicitement en
+    seconde moitié de ce test — pour s'assurer que le test sait bien
+    distinguer un calcul causal d'un calcul non causal, pas seulement
+    toujours passer."""
+    close = _synthetic_cyclical_series(n=500, seed=3)
+    window = 60  # plus petit que CYCLE_CAUSAL_WINDOW pour un test rapide, sans perte de généralité
+    full = compute_cycle_phase_causal(close, window=window)
+
+    # Teste plusieurs instants t, bien après le warmup (>= window)
+    checkpoints = [100, 200, 300, 400, 499]
+    for t in checkpoints:
+        truncated = close.iloc[: t + 1]  # aucune barre après t
+        sinewave_truncated = compute_cycle_phase_causal(truncated, window=window)
+        assert np.isclose(full[t], sinewave_truncated[-1], atol=1e-9), (
+            f"RÉGRESSION DE CAUSALITÉ à t={t} : compute_cycle_phase_causal donne une "
+            f"valeur différente selon que la série contient des barres futures "
+            f"(full={full[t]:.6f}) ou non (tronquée={sinewave_truncated[-1]:.6f}) — "
+            f"des barres futures influencent le calcul en t, ce qui est précisément "
+            f"le bug P0 (cf. COUVERTURE_ENSEIGNEMENTS.md)."
+        )
+
+    # Contrôle négatif : la version BATCH (non causale) ne doit PAS passer ce
+    # test — confirme que le test est capable de détecter le bug qu'il vise.
+    t = 300
+    full_batch = compute_cycle_phase(close)
+    truncated_batch = compute_cycle_phase(close.iloc[: t + 1])
+    assert not np.isclose(full_batch[t], truncated_batch[-1], atol=1e-9), (
+        "Le test de causalité devrait détecter que compute_cycle_phase (batch) "
+        "N'EST PAS causale (valeur différente sur série tronquée) — s'il ne le "
+        "détecte plus, le test lui-même a régressé et ne protège plus rien."
+    )
+
+
 def test_tsi_favorable_on_synthetic_uptrend():
     """Sur une tendance haussière synthétique nette (pas de composante
     cyclique), le TSI doit finir par indiquer 'momentum favorable'
@@ -111,5 +161,6 @@ def test_tsi_favorable_on_synthetic_uptrend():
 if __name__ == "__main__":
     test_cycle_sign_matches_ground_truth_direction()
     test_cycle_phase_bounded()
+    test_cycle_phase_causal_matches_truncated_series()
     test_tsi_favorable_on_synthetic_uptrend()
-    print("Tous les tests proxy_v2 passent (3/3).")
+    print("Tous les tests proxy_v2 passent (4/4).")
