@@ -86,7 +86,7 @@ Ce plan a beaucoup évolué depuis sa version initiale. **Documents de référen
 
 **Réserve non résolue depuis le début** : le signal reste un proxy (TSI+cycle+structure), jamais validé contre le vrai PRO Framework/Momentum (accès TradingView requis — hors de portée technique actuelle). C'est la limite fondamentale qui borne tout le reste. Le bug de signe du cycle a été revalidé hors-échantillon (XRP, `OOS_VALIDATION_CYCLE_SIGN.md`) pour réduire (pas éliminer) le risque de biais rétrospectif.
 
-**Ce qui n'est toujours pas fait, malgré tout ce travail** — voir `COUVERTURE_ENSEIGNEMENTS.md` pour la liste exhaustive. Points les plus significatifs : table "trade de tendance" à 5 étapes jamais testée (seule la table range l'a été) ; Fibonacci retracement jamais utilisé comme critère d'entrée ; règle "UT+2" exacte (2 niveaux au-dessus, pas le niveau immédiat) non implémentée ; le stop "Extreme Channel" reste calculé sur le même timeframe que celui tradé (incohérence avec le nom, même après la correction MTF du signal en v7) ; capital par palier jamais pris en compte ; plusieurs patterns/outils du manuel (Wall Street, Andrews Pitchfork, canal manuel Supports→Apex→Tangente, Cluster Technique, mécanisme +Reverse) jamais construits.
+**Ce qui n'est toujours pas fait, malgré tout ce travail** — voir `COUVERTURE_ENSEIGNEMENTS.md` pour la liste exhaustive. Points les plus significatifs : table "trade de tendance" à 5 étapes jamais testée (seule la table range l'a été) ; Fibonacci retracement jamais utilisé comme critère d'entrée ; règle "UT+2" exacte (2 niveaux au-dessus, pas le niveau immédiat) non implémentée ; capital par palier jamais pris en compte ; plusieurs patterns/outils du manuel (Wall Street, Andrews Pitchfork, canal manuel Supports→Apex→Tangente, Cluster Technique, mécanisme +Reverse) jamais construits. Le stop "Extreme Channel" bénéficie désormais du vrai `ctx_support` D1 (volet cross-timeframe traité, cf. item 4 ci-dessous) mais reste, comme avant, une bande EMA±ATR et non un vrai canal géométrique (volet distinct, toujours ouvert, cf. item 7).
 
 ---
 
@@ -110,7 +110,7 @@ Ce plan a beaucoup évolué depuis sa version initiale. **Documents de référen
 1. Table "trade de tendance" à 5 étapes jamais implémentée (seule la table range l'a été)
 2. Fibonacci retracement jamais utilisé comme critère d'entrée
 3. Règle "UT+2" exacte (2 niveaux au-dessus) non implémentée — v7 ne valide qu'avec le niveau immédiatement supérieur
-4. Stop "Extreme Channel" toujours calculé sur le même timeframe que celui tradé, malgré son nom — incohérence résiduelle même après la correction MTF du signal
+4. ~~Stop "Extreme Channel" toujours calculé sur le même timeframe que celui tradé~~ — **traité ce cycle** : volet cross-timeframe résolu et mesuré (`MTF_CROSS_VALIDATION_H4_D1.md`), dégrade le ratio retour/drawdown dans la majorité des cas testés donc gardé optionnel (`use_mtf_stop`, défaut `False`). Le volet "vraie construction de canal" (pas EMA±ATR) reste ouvert, cf. point 7 ci-dessous
 5. Capital par palier (<10k€/10-100k€/>100k€) jamais pris en compte dans le sizing
 6. Funding rate : ordre de grandeur quantifié, pas encore modélisé par timestamp exact
 7. Patterns/outils jamais construits : règle "Wall Street" (élargissement = abstention), Fourchette d'Andrews, canal manuel (Supports→Apex→Tangente), Cluster Technique (second pattern), diversification 1%+1%, mécanisme "+Reverse" (Très Agressif)
@@ -134,7 +134,7 @@ Un directeur d'ingénierie priorise par impact sur la validité de ce qui est d�
 |---|---|---|---|---|
 | 0 | **Calcul non causal de `compute_cycle_phase` (Hilbert sur série entière)** — cf. `COUVERTURE_ENSEIGNEMENTS.md` ⚠️ | Inflation non quantifiée de **toute** performance rapportée depuis v5 (v5/v6/v7, MTF, funding rate, OOS XRP) | Moyen (recalcul causal + rejouer tous les moteurs) | **P0 — bloquant avant Phase 3** |
 | 1 | Table "trade de tendance" à 5 étapes jamais testée | Élément IP documenté non implémenté ; on ne trade qu'en logique range même en régime Tendance | Élevé (nouveau barème complet) | P1 |
-| 2 | Stop "Extreme Channel" toujours same-timeframe malgré le nom | Incohérence documentation/code ; le stop ne bénéficie pas de la validation croisée déjà construite pour le signal | Faible-moyen (réutiliser `attach_higher_context` de v7 pour le stop aussi) | P1 |
+| 2 | ~~Stop "Extreme Channel" toujours same-timeframe malgré le nom~~ | **Traité ce cycle** — `attach_higher_context` transmet désormais aussi le `ctx_support` D1 au H4 (même jointure sans lookahead que le score), `run_v7(..., use_mtf_stop=True)`. Mesuré (4 actifs × 4 profils, `MTF_CROSS_VALIDATION_H4_D1.md`) : dégrade le ratio retour/drawdown dans 14/16 combinaisons (sizing à risque fixe + stop D1 réel ~2,7× plus loin en moyenne ⇒ position mécaniquement plus petite). Réglage par défaut des campagnes conservé à `use_mtf_stop=False` ; option disponible pour comparaison. Le volet "channel" (construction géométrique réelle, pas EMA±ATR) reste séparément ouvert (item 7 ci-dessous) | Fait | **Traité** |
 | 3 | Règle "UT+2" exacte (2 niveaux au-dessus, pas 1) | Le corpus (6 sources) décrit une règle plus stricte que celle testée | Moyen (nécessite une 3e timeframe, ex. Hebdo) | P2 |
 | 4 | Fibonacci retracement comme critère d'entrée | Entrée jamais filtrée par profondeur de retracement, critère répété dans 5 sources | Moyen | P2 |
 | 5 | Funding rate exact par timestamp | Coût actuellement à l'ordre de grandeur annuel seulement | Faible-moyen | P2 |
@@ -147,9 +147,9 @@ Un directeur d'ingénierie priorise par impact sur la validité de ce qui est d�
 
 Jusqu'ici "assez fidèle pour passer en paper trading" n'était jamais défini. Critères proposés, à valider avant de déclarer la Phase 2 terminée :
 1. P0 (calcul causal du cycle) traité et les moteurs v5/v6/v7 rejoués avec — edge toujours positif et statistiquement significatif après correction
-2. Au minimum P1 traité (table trade de tendance testée, stop réellement cross-timeframe)
+2. Au minimum P1 traité (table trade de tendance testée ; stop réellement cross-timeframe : **fait et mesuré**, cf. item 4 du backlog — dégrade le risque-ajusté donc gardé optionnel plutôt qu'adopté par défaut)
 3. Tests de régression (`code/test_*.py`) couvrant au moins : moteur de position (fait, 5/5), signal cycle (fait partiellement, 3/3 — cf. limites dans `code/test_proxy_v2.py`), classificateur de régime (pas encore fait)
 4. Un pipeline unique rejouable (actuellement chaque moteur se lance manuellement, script par script) pour éviter que "refaire avec le moteur actuel" reste un geste ad hoc à chaque fois
 
 ## Prochaine action immédiate
-Traiter P0 (recalcul causal de `compute_cycle_phase`) avant toute nouvelle campagne de résultats, en parallèle éventuellement de P1 (stop cross-timeframe, réutilisable depuis `attach_higher_context` de v7). Les trois lots précédemment délégués (A : qualité du code/tests + refonte cascade3 ; B : validation hors-échantillon du signe du cycle ; C : consolidation documentaire + funding rates) sont revenus et intégrés ci-dessus.
+P1 "stop cross-timeframe" est traité (ce cycle, cf. item 4 du backlog et `MTF_CROSS_VALIDATION_H4_D1.md`). Reste à traiter en priorité : P0 (recalcul causal de `compute_cycle_phase`, en cours en parallèle par un autre agent sur `code/proxy_v2.py`/`code/test_proxy_v2.py`) avant toute nouvelle campagne de résultats considérée comme fiable, puis P1 restant (table "trade de tendance" à 5 étapes, item 1 du backlog). Les trois lots précédemment délégués (A : qualité du code/tests + refonte cascade3 ; B : validation hors-échantillon du signe du cycle ; C : consolidation documentaire + funding rates) sont revenus et intégrés ci-dessus.

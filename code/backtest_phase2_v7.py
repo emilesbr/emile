@@ -58,26 +58,35 @@ def prepare(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def attach_higher_context(df_low: pd.DataFrame, df_high: pd.DataFrame, high_duration: pd.Timedelta) -> tuple:
-    """Jointure sans lookahead : pour chaque bougie H4, le score et le régime
-    de la DERNIÈRE bougie D1 entièrement close à cet instant."""
-    high = df_high[["date", "score", "regime"]].copy()
+    """Jointure sans lookahead : pour chaque bougie H4, le score, le régime ET
+    le `ctx_support` (niveau de prix absolu, "Extreme Channel") de la DERNIÈRE
+    bougie D1 entièrement close à cet instant. Même logique temporelle pour
+    les trois colonnes (aucune n'utilise une bougie D1 pas encore close)."""
+    high = df_high[["date", "score", "regime", "ctx_support"]].copy()
     high["available_at"] = high["date"] + high_duration
     high = high.sort_values("available_at")
     merged = pd.merge_asof(
         df_low[["date"]].sort_values("date"), high, left_on="date", right_on="available_at", direction="backward"
     )
-    return merged["score"].values, merged["regime"].values
+    return merged["score"].values, merged["regime"].values, merged["ctx_support"].values
 
 
-def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: bool = True) -> dict:
+def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: bool = True,
+           use_mtf_stop: bool = False) -> dict:
+    """`use_mtf_stop` (défaut False, préserve le comportement historique de
+    v7) : si True, le stop ("Extreme Channel") utilisé à l'entrée est celui
+    calculé sur le VRAI D1 (`ctx_support` D1, transmis sans lookahead par
+    `attach_higher_context`) plutôt que le `ctx_support` recalculé sur le H4
+    lui-même. Les deux sont des niveaux de prix absolus (pas des distances),
+    donc directement substituables dans le calcul de `stop_pct` ci-dessous."""
     p = PROFILES_V4[profile_name]
     h4 = prepare(h4)
     d1 = prepare(d1)
-    ctx_score, ctx_regime = attach_higher_context(h4, d1, pd.Timedelta(days=1))
+    ctx_score, ctx_regime, ctx_support_d1 = attach_higher_context(h4, d1, pd.Timedelta(days=1))
 
     score = h4["score"].values
     atr_v = h4["atr"].values
-    ctx_support_v = h4["ctx_support"].values
+    ctx_support_v = ctx_support_d1 if use_mtf_stop else h4["ctx_support"].values
     local_range_v = h4["local_range"].values
     context_range_v = h4["context_range"].values
     n_borders_v = h4["n_borders"].values
@@ -156,10 +165,12 @@ def main():
         h4 = resample(h1, "4h")
         d1 = resample(h1, "1D")
         for profile in PROFILES_V4:
-            res_mtf = run_v7(h4.copy(), d1.copy(), profile, use_mtf_gate=True)
-            res_solo = run_v7(h4.copy(), d1.copy(), profile, use_mtf_gate=False)
-            rows.append({"symbol": symbol, "gate": "H4_valide_par_D1", **res_mtf})
-            rows.append({"symbol": symbol, "gate": "H4_seul (=v6)", **res_solo})
+            res_mtf = run_v7(h4.copy(), d1.copy(), profile, use_mtf_gate=True, use_mtf_stop=False)
+            res_solo = run_v7(h4.copy(), d1.copy(), profile, use_mtf_gate=False, use_mtf_stop=False)
+            res_mtf_stopd1 = run_v7(h4.copy(), d1.copy(), profile, use_mtf_gate=True, use_mtf_stop=True)
+            rows.append({"symbol": symbol, "profile": profile, "gate": "H4_valide_par_D1", "stop": "H4_meme_UT", **res_mtf})
+            rows.append({"symbol": symbol, "profile": profile, "gate": "H4_seul (=v6)", "stop": "H4_meme_UT", **res_solo})
+            rows.append({"symbol": symbol, "profile": profile, "gate": "H4_valide_par_D1", "stop": "D1_reel", **res_mtf_stopd1})
     result = pd.DataFrame(rows)
     pd.set_option("display.width", 220)
     pd.set_option("display.max_columns", 20)
