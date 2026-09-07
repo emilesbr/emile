@@ -13,6 +13,50 @@
 
 **`COUVERTURE_ENSEIGNEMENTS.md` est désormais le document de référence unique pour savoir ce qui, du corpus (manuel PDF + 17 sources Trading Lessons), est implémenté ou non.** Avant de considérer une phase "faite", vérifier cette table plutôt que ce résumé narratif. Rappel du principe qui gouverne cette table depuis sa formulation explicite par l'utilisateur : **la performance du proxy ne sert jamais à décider si un élément du corpus doit être implémenté ou non** — le proxy n'est pas le vrai signal, donc une contre-performance en backtest n'est jamais un motif de rejet d'un élément documenté de la propriété intellectuelle de Philippe. Un élément documenté et non encore implémenté reste une lacune à combler, jamais une décision de conception.
 
+**Un seul tracker actif** (inspiré de la discipline documentaire du projet `ideeri-v2`, `docs/README.md` : *"pas de deuxième tracker"*) : `PLAN.md` (ce document) est la feuille de route/backlog vivant — mis à jour au fil de l'eau, jamais un deuxième endroit ne doit exister pour "ce qui reste à faire". `STATUS.md` est le classement documentaire (quel fichier lire pour quel sujet), pas une deuxième liste d'items ouverts. `COUVERTURE_ENSEIGNEMENTS.md` est la table de croisement détaillée corpus↔code (l'équivalent d'un "tableau maître" chez ideeri-v2) — elle alimente ce plan, elle ne le duplique pas. En cas de divergence entre ces documents, **ce fichier fait foi sur ce qui reste à faire**.
+
+---
+
+## Méthode de travail (inspirée de la discipline `ideeri-v2`)
+
+Adopté après une observation directe de l'utilisateur : à chaque fois qu'il demande "un directeur ingénieur senior serait-il satisfait ?", une découverte réelle survient (bug de signe trouvé par contrôle aléatoire ; réserve batch/non-causale déjà documentée une fois mais jamais remontée jusqu'ici). Le projet `ideeri-v2` (même utilisateur) documente **exactement le même phénomène** dans son `CLAUDE.md` §16.2 point 7 — deux bugs de production trouvés uniquement parce que l'utilisateur a redemandé "que répondrait un ingénieur senior ?" une 2e fois. Plutôt que de laisser ce pattern se répéter en silence, on l'écrit une fois pour toutes et on en tire une méthode, comme `ideeri-v2` l'a fait.
+
+### Prioriser par risque, pas par ordre de découverte
+
+```
+risque = probabilité que ça cache un problème × impact si silencieux × coût de la découverte tardive
+```
+
+C'est la formule utilisée dans `ideeri-v2/docs/archive/audit-senior-code-complet.md` §0. Appliquée ici : la composante "cycle" de `proxy_v2.py` obtient le score le plus élevé sur les 3 axes (probabilité : déjà 2 anomalies distinctes trouvées sur cette seule fonction ; impact : elle contribue à l'entrée de tous les moteurs v5/v6/v7 ; coût de découverte tardive : le pire moment pour la découvrir serait en paper trading ou pire, en capital réel) — d'où son classement P0 dans le backlog ci-dessous, avant tout nouvel élément du corpus non encore implémenté.
+
+### Pattern récurrent — risque concentré, pas dispersé (3 occurrences, même fonction)
+
+Comme `ideeri-v2` le documente pour son propre pattern récurrent ("contexte de validité jamais revérifié", 7 occurrences trouvées) : quand la même fonction produit plusieurs anomalies distinctes, ce n'est plus 3 hasards indépendants, c'est un signal que le risque s'y concentre.
+
+| # | Occurrence | Root cause commune | Statut |
+|---|---|---|---|
+| 1 | `sin(phase)` anti-corrélé au rendement du lendemain (BTC/ETH/SOL), trouvé par contrôle aléatoire | Convention de signe d'une sortie de transformée de Hilbert jamais vérifiée empiriquement avant usage | Corrigé (`-sin(phase)`), revalidé hors-échantillon (XRP, `OOS_VALIDATION_CYCLE_SIGN.md`) |
+| 2 | `hilbert()` appelé sur la série entière d'un coup (non causal) — jamais quantifié sur données réelles | Fonction batch/FFT utilisée telle quelle sans vérifier l'hypothèse de causalité requise pour un usage en backtest | **Ouvert — P0**, cf. `COUVERTURE_ENSEIGNEMENTS.md` |
+| 3 | `cycle_ascending` (dérivée du sinewave) anti-corrélée au rendement futur sur sinusoïde synthétique pure — contredit la validation OOS réelle (positive) | Interprétation d'une grandeur dérivée non vérifiée sur cas synthétique contrôlé avant usage en production | Ouvert, non tranché — `code/test_proxy_v2.py` (docstring) |
+
+**Conséquence pratique** : toute future modification de `proxy_v2.py::compute_cycle_phase`/`add_proxy_v2_score` mérite le "mode ingénieur senior" ci-dessous par défaut, pas seulement quand on y pense.
+
+### Mode ingénieur senior — quand ralentir sans qu'on ait à le redemander
+
+Adapté de `ideeri-v2/CLAUDE.md` §16. Déclencheurs, sur ce projet :
+- Toute modification de la composante cycle de `proxy_v2.py` (risque concentré, tableau ci-dessus).
+- Tout passage de phase (2→3, 3→4, 4→5) — en pratique irréversible une fois du capital réel engagé.
+- Toute décision qui fige un chiffre de performance comme "validé" avant la fin de la Phase 3.
+
+Pratiques concrètes :
+1. **Vérifier empiriquement, pas seulement relire le code** — test synthétique à vérité terrain connue plutôt qu'une déduction depuis la formule.
+2. **Chercher les implications ailleurs avant de clore** — un fix/une réserve sur `proxy_v2.py` affecte tous les moteurs qui l'utilisent (v5/v6/v7) et tous les documents qui en rapportent la performance (MTF, funding rate, OOS) ; vérifier la liste complète, pas seulement le fichier qu'on vient de modifier.
+3. **Documenter en continu**, pas en résumé final une fois le chantier déclaré clos.
+4. **Distinguer "mitigé" de "résolu"** — le sens de la correction du cycle est confirmé (mitigé), l'ampleur du biais non-causal ne l'est pas encore (pas résolu) ; ne pas présenter l'un comme l'autre, erreur commise par omission jusqu'à la relecture qui a produit ce tableau.
+5. **"Tests unitaires verts" ne prouve ni que l'edge survivra à un calcul causal, ni qu'il survivra en paper trading** — un chiffre n'est définitif qu'après Phase 3, jamais avant.
+
+**Garde-fou mécanique — angle mort assumé, pas encore traité.** `ideeri-v2` (`CLAUDE.md` §16.4) constate qu'un texte seul ("pas d'automatisation de l'exécution en phase initiale", acté en tête de ce document) ne suffit pas à garantir qu'il soit respecté au bon moment, et a construit un hook mécanique bloquant pour ses actions à fort impact. Ce projet n'a **aucun** équivalent aujourd'hui — l'engagement "pas d'automatisation" repose uniquement sur l'accord verbal/textuel. À réexaminer explicitement avant la Phase 4/5, pas à découvrir a posteriori que le texte seul n'a pas suffi.
+
 ---
 
 ## État réel au dernier cycle de travail — résumé exécutif

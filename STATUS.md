@@ -4,13 +4,13 @@
 
 ## Résumé exécutif
 
-Le projet formalise, à partir du manuel officiel PRO Indicators (Philippe Roux) et de 17 sources vidéo « Trading Lessons », une stratégie de trading crypto multi-timeframe testée par backtest (BTC/ETH/BNB/SOL, données Binance Futures réelles 2020-2026), avant tout engagement de capital réel. La Phase 0 (extraction des règles) et la Phase 1 (backtest multi-timeframe sur un proxy de signal générique) sont substantiellement achevées : **H4 et D1 sont viables (GO), H1 et M15 ne le sont pas (NO-GO, détruits par les frais de transaction)**. La Phase 2 (moteur de risque complet + reconstruction du signal à partir du corpus Trading Lessons) a traversé plusieurs itérations de correction (breakeven différé, validation sur clôtures, amplitude réelle calibrée en durée, Règle de Trois, Extreme Channel, pyramidalisation) et a produit un signal proxy v2 (TSI + cycle + structure) qui bat nettement un contrôle aléatoire sur H4, stable sur 7 ans de walk-forward.
+Le projet formalise, à partir du manuel officiel PRO Indicators (Philippe Roux) et de 17 sources vidéo « Trading Lessons », une stratégie de trading crypto multi-timeframe testée par backtest (BTC/ETH/BNB/SOL, données Binance Futures réelles 2020-2026), avant tout engagement de capital réel. La Phase 0 (extraction des règles) et la Phase 1 (backtest multi-timeframe sur un proxy de signal générique) sont substantiellement achevées : **H4 et D1 sont viables (GO), H1 et M15 ne le sont pas (NO-GO, détruits par les frais de transaction)**. La Phase 2 a traversé plusieurs itérations (v4 : money management complet ; v5 : signal reconstruit du corpus (TSI+cycle+structure) ; v6 : classification de régime + interdiction de trader en Excès ; v7 : validation croisée multi-timeframe réelle H4/D1) — voir `MTF_CROSS_VALIDATION_H4_D1.md` pour le résultat le plus solide et le plus uniformément cohérent à ce jour.
 
 **Limite fondamentale, vraie depuis le début** : tout le travail repose sur un **signal proxy**, jamais validé contre le vrai indicateur PRO Framework/Momentum (dont la formule n'est pas divulguée par l'éditeur). Aucun résultat chiffré ci-dessus ne doit être lu comme une validation de la méthode réelle de Philippe Roux — seulement de ce proxy.
 
-**Réserve non résolue sur le résultat le plus solide** : le sens de la correction du bug de signe du signal « cycle » a été validé sur le même échantillon que celui utilisé pour rapporter la performance — biais rétrospectif possible, revalidation sur donnée indépendante nécessaire avant de faire confiance pleinement aux chiffres du proxy v2.
+**Réserve P0 non résolue, plus prioritaire que tout le reste** : la composante « cycle » (`code/proxy_v2.py::compute_cycle_phase`) appelle `scipy.signal.hilbert()` sur la série de prix entière d'un coup — calcul non causal, jamais quantifié sur données réelles. Le **sens** de la correction du bug de signe original tient (revalidé hors-échantillon sur XRP, `OOS_VALIDATION_CYCLE_SIGN.md`), mais l'**ampleur** de toute performance rapportée depuis v5 (v5/v6/v7, MTF, funding rate, OOS XRP) porte une inflation non quantifiée. Détail complet, mesure et plan de correction : `COUVERTURE_ENSEIGNEMENTS.md` section ⚠️, et `PLAN.md` (backlog priorisé, item P0).
 
-**Lacunes ouvertes à ce jour** (déléguées à des agents spécialisés en parallèle de ce document) : absence de tests unitaires et logique de position dupliquée dans le code ; refonte du test de cascade à 3 niveaux (`CASCADE3_H1_EXECUTION_TEST.md`) avec le moteur de risque actuel ; funding rates jamais intégrées au coût de la stratégie (voir `FUNDING_RATE_ANALYSIS.md`, produit en même temps que ce document) ; diversification 1%+1% jamais testée. Voir `PLAN.md` pour le détail phase par phase et la feuille de route.
+**Pour la liste exhaustive et à jour des lacunes ouvertes (corpus↔code) et leur priorisation : ne pas se fier au paragraphe ci-dessus au-delà du P0, consulter `COUVERTURE_ENSEIGNEMENTS.md` et le backlog priorisé de `PLAN.md`** — ce résumé exécutif n'est pas remis à jour à chaque changement, ces deux documents le sont.
 
 ## Classement des documents
 
@@ -31,7 +31,13 @@ Le projet formalise, à partir du manuel officiel PRO Indicators (Philippe Roux)
 | `AUDIT_QUALITE_ET_CORRECTION_CYCLE.md` | Audit qualité, contrôle aléatoire, bug de signe trouvé et corrigé, liste des lacunes encore ouvertes |
 | `FUNDING_RATE_ANALYSIS.md` | Analyse du coût de funding Binance Futures, jamais modélisé jusqu'ici (nouveau) |
 | `CASCADE3_H1_EXECUTION_TEST.md` | Test cascade Daily→H4→H1, refait le 2026-09-07 avec le moteur de risque actuel (`code/position_engine.py`) ; conclusion NO-GO reconduite |
-| `code/position_engine.py`, `code/test_position_engine.py` | Moteur de gestion de position factorisé (fin de la duplication `backtest_phase2.py`/`_v4.py`/`_v5.py`) + tests unitaires sur cas synthétiques (nouveau) |
+| `REGIME_CLASSIFIER_RANGE_VS_TENDANCE.md` | Classification de régime (Range/Tendance/Excès), interdiction de trader en Excès (v6) |
+| `MTF_CROSS_VALIDATION_H4_D1.md` | Validation croisée multi-timeframe réelle H4/D1 (v7) — résultat le plus solide et uniforme à ce jour |
+| `OOS_VALIDATION_CYCLE_SIGN.md` | Validation hors-échantillon indépendante (XRP) du signe de la composante cycle — sens confirmé, ampleur non résolue (cf. réserve P0 ci-dessus) |
+| `COUVERTURE_ENSEIGNEMENTS.md` | Table de croisement exhaustive corpus↔code (✅ implémenté / ❌ manquant), y compris la réserve P0 — référence pour "tout est-il pris en compte ?" |
+| `code/position_engine.py`, `code/test_position_engine.py` | Moteur de gestion de position factorisé (fin de la duplication `backtest_phase2.py`/`_v4.py`/`_v5.py`) + tests unitaires sur cas synthétiques |
+| `code/proxy_v2.py`, `code/test_proxy_v2.py` | Signal proxy (TSI+cycle+structure) + premiers tests de régression (nouveau) — a mis en évidence la réserve P0 en les écrivant |
+| `code/regime_classifier.py`, `code/backtest_phase2_v6.py`, `code/backtest_phase2_v7.py` | Moteurs v6 (régime) et v7 (validation croisée MTF) |
 
 ### Historique / supersédé (pour archive — ne pas utiliser comme source de vérité)
 
