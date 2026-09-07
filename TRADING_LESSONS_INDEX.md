@@ -5,6 +5,7 @@ Suivi de toutes les transcriptions/résumés fournis par l'utilisateur, pour ne 
 | # | Fichier | Sujet | Statut "trimestre→journalier" | Statut vs RULES_EXTRACTION.md |
 |---|---|---|---|---|
 | 1 | `TRADING_LESSONS_PSYCHOLOGY.md` | Psychologie, écart démo/réel (95%→30%), progression 2-3 ans, "3ème borne de range" | Non abordé — toujours en attente | Précise (3ème borne = setup prioritaire) |
+| 2 | `TRADING_LESSONS_STRUCTURE_APPRENTISSAGE.md` | Parcours pédagogique (niveaux Blanc/Vert/Jaune/Orange), écosystème Discord, conseil pratique (ne pas démarrer le trial avant maîtrise du PDF) | Non abordé — toujours en attente | Confirme séquence range→tendance |
 
 ## Items ouverts toujours en suspens (rappel, voir PLAN.md)
 1. XRP absent du backtest multi-timeframe (données non trouvées)
