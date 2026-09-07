@@ -1,79 +1,63 @@
 # Plan directeur — Système de trading formalisé à partir des outils PRO Indicators
 
-**Cadre du projet** : usage strictement personnel des indicateurs de Philippe Roux (PRO Indicators), sur la base d'un abonnement souscrit et d'un accord verifié avec l'éditeur sur les CGU. Objectif : formaliser une stratégie de trading multi-timeframe testable, avec une gestion du risque explicite, avant toute mise en œuvre avec du capital réel.
+**Cadre du projet** : usage strictement personnel des indicateurs de Philippe Roux (PRO Indicators), sur la base d'un abonnement souscrit et d'un accord vérifié avec l'éditeur sur les CGU. Objectif : formaliser une stratégie de trading multi-timeframe testable, avec une gestion du risque explicite, avant toute mise en œuvre avec du capital réel.
 
 **Statut du cadrage**
 - Accord obtenu avec Philippe Roux + CGU vérifiées (usage personnel) : ✅ fait
 - Pas d'automatisation de l'exécution des trades en phase initiale : ✅ acté
-- Architecture cible : signal généré par le système + validation humaine avant toute transaction. L'automatisation de l'exécution n'est pas engagée aujourd'hui — elle sera réévaluée uniquement après validation complète de la Phase 4, avec des garde-fous à définir à ce moment.
-- Objectif "revenu journalier" reformulé : aucune stratégie ne garantit un gain positif chaque jour (variance quotidienne irréductible). L'objectif retenu est une **espérance de gain positive sur une fenêtre plus longue (semaine/mois), avec un risque borné et mesuré**, validée statistiquement avant tout engagement de capital réel.
+- Objectif "revenu journalier" reformulé : espérance de gain positive sur une fenêtre plus longue, risque borné et mesuré, validée statistiquement avant tout engagement de capital réel.
+
+---
+
+## État réel au [dernier cycle de travail] — résumé exécutif
+
+Ce plan a beaucoup évolué depuis sa version initiale. **Documents de référence à jour** (ne pas se fier aux anciens documents `PHASE2_MONEYMANAGEMENT.md`/`PHASE2_FULL_MATRIX.md`/`PHASE2_V3_ATTEMPT_REGRESSION.md`, tous supersédés) :
+
+| Sujet | Document de référence actuel |
+|---|---|
+| Règles extraites du manuel PDF officiel | `RULES_EXTRACTION.md` |
+| Corpus Trading Lessons (17 sources vidéo) | `TRADING_LESSONS_INDEX.md` (index + statut de la question multi-timeframe, résolue) |
+| Backtest Phase 1 (multi-timeframe, proxy générique) | `PHASE1_CLOSEOUT.md` |
+| Moteur de risque Phase 2 — implémentation actuelle | `PHASE2_V4_IMPLEMENTATION_COMPLETE.md` |
+| Signal Phase 2 — proxy reconstruit (TSI + cycle + structure) | `PROXY_V2_TSI_CYCLE_STRUCTURE.md` + `AUDIT_QUALITE_ET_CORRECTION_CYCLE.md` (bug de signe trouvé et corrigé via contrôle aléatoire) |
+| Lacunes de qualité identifiées et statut | `AUDIT_QUALITE_ET_CORRECTION_CYCLE.md` |
+
+**Résultat le plus solide à ce jour** : signal proxy v2 (TSI+cycle+structure, après correction du bug de signe) sur H4, bat nettement un contrôle aléatoire à fréquence égale, stable sur 7 années de walk-forward (aucune année catastrophique). **Réserve non résolue** : le sens de la correction du signe a été validé sur le même échantillon que celui utilisé pour le résultat rapporté — biais rétrospectif possible, à revalider sur donnée indépendante.
+
+**Toujours vrai depuis le début** : le signal reste un proxy, jamais validé contre le vrai PRO Framework/Momentum (accès TradingView requis). C'est la limite fondamentale qui borne tout le reste.
 
 ---
 
 ## Phase 0 — Extraction des règles déterministes
-**Objectif** : transformer les indicateurs visuels (PRO Framework, PRO Momentum, PRO Sinewave, PRO Alerts) en règles booléennes testables (entrée / sortie / stop / sizing), sans avoir accès au code source protégé.
+**Statut : faite.** Manuel PDF lu intégralement + 17 sources Trading Lessons traitées. Voir `RULES_EXTRACTION.md` et `TRADING_LESSONS_INDEX.md`. Élément non résolu : le signal réel des indicateurs (PRO Framework/Momentum) n'a jamais été exporté/observé directement — tout ce qui suit reste un proxy.
 
-| Étape | Méthode | Statut |
-|---|---|---|
-| Lecture manuel PDF | Extraire la logique documentée pour chaque indicateur | ⏳ en attente du fichier |
-| Alertes natives TradingView | Lister les `alertcondition()` exposées (boîte "Ajouter une alerte") | ⏳ en attente |
-| Data Window / export CSV | Extraire les valeurs numériques réelles à chaque bougie | ⏳ en attente |
-| Étiquetage manuel + test de fidélité | Vérifier que la règle reconstruite reproduit fidèlement les signaux historiques | ⏳ en attente |
-| Confirmation Phil (sizing/stop recommandés) | Obtenue et documentée par l'utilisateur | ✅ fait |
+## Phase 1 — Backtest multi-timeframe
+**Statut : substantiellement faite.** Voir `PHASE1_CLOSEOUT.md`, `WALKFORWARD_ANALYSIS.md`. Conclusion : H4/D1 = GO, H1/M15 = NO-GO (avec le proxy générique d'origine). Items ouverts : XRP absent (pas de données), cascade 3-niveaux testée pour sauver le H1 → échec documenté (`CASCADE3_H1_EXECUTION_TEST.md`, **mais calculé avec un moteur de risque périmé — à refaire avec le moteur actuel avant de considérer cette conclusion comme définitive**).
 
-**Critère GO/NO-GO** : la règle formalisée doit reproduire fidèlement (idéalement 100 %) les signaux réels de l'indicateur sur un échantillon historique — sinon itérer avant de passer en Phase 1.
+## Phase 2 — Gestion du risque + reconstruction du signal
+**Statut : cycle de corrections et de reconstruction achevé, avec réserves documentées.**
+- Money management dérivé du corpus (breakeven différé, clôtures vs mèches, amplitude réelle calibrée en durée, Règle de Trois, Extreme Channel, maturité par bornes swing, pyramidalisation multi-tranches) : `PHASE2_V4_IMPLEMENTATION_COMPLETE.md`
+- Signal reconstruit à partir du corpus (TSI+cycle+structure, remplaçant l'EMA générique) : `PROXY_V2_TSI_CYCLE_STRUCTURE.md`
+- Audit qualité + contrôle aléatoire + bug de signe trouvé et corrigé : `AUDIT_QUALITE_ET_CORRECTION_CYCLE.md`
 
-**Bloquant actuel** : fourniture du manuel PDF + captures/valeurs d'alertes par l'utilisateur.
+**Lacunes ouvertes, déléguées à des agents spécialisés (voir ci-dessous) :**
+1. Aucun test unitaire ; logique de position dupliquée dans 3 fichiers (`backtest_phase2.py`/`_v4.py`/`_v5.py`)
+2. Revalidation du signe du cycle sur donnée indépendante (pas encore faite)
+3. `CASCADE3_H1_EXECUTION_TEST.md` à refaire avec le moteur actuel
+4. Funding rates (Binance Futures) disponibles mais jamais intégrées au coût de la stratégie
+5. Documentation éclatée (~25 fichiers) sans état unique consolidé
+6. Diversification 1%+1% (deux patterns indépendants) : jamais testée
 
----
+## Phase 3 — Paper trading (inchangée)
+Durée minimale 4-8 semaines, signaux temps réel sur démo. Critère GO/NO-GO : performance paper dans l'intervalle de confiance du backtest.
 
-## Phase 1 — Backtest multi-timeframe (sous-agents en parallèle)
+## Phase 4 — Pilote capital réel, exécution 100 % manuelle (inchangée)
+Capital 10-15 % de la cible, wallet connecté sans transaction automatique, garde-fous structurels ajoutés suite au corpus (checklist pré-trade, latence de 10s, session max 60-90 min — cf. `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` et `TRADING_LESSONS_NEUROBIOLOGIE.md`).
 
-| Agent | Timeframe(s) | Tâche | Échantillon minimum |
-|---|---|---|---|
-| Agent BT-1 | M15 | Walk-forward, sensibilité paramétrique | ≥300 trades/actif |
-| Agent BT-2 | H1 | Idem | ≥200 trades/actif |
-| Agent BT-3 | H4 | Idem | ≥100 trades/actif |
-| Agent BT-4 | D1 | Idem, sert de filtre de tendance croisé | ≥50 trades/actif |
-
-Chaque agent réutilise/étend le moteur de backtest déjà construit (données Binance réelles OHLCV, métriques Sharpe/Sortino/max drawdown/win rate/profit factor, frais de transaction inclus) sur BTC, ETH, BNB, SOL, XRP.
-
-**Critère GO/NO-GO** : Sharpe out-of-sample > 0 de façon stable sur au moins 3 fenêtres consécutives, ET cohérence de signe des résultats entre timeframes voisins (pas de contradiction type H1 profitable / H4 catastrophique sur le même actif).
-
-**Statut réel (voir `PHASE1_CLOSEOUT.md`) : substantiellement complète pour H4/D1 (GO), H1/M15 en NO-GO. PAS entièrement close — 4 items restent ouverts : absence de données XRP, signal encore un proxy générique jamais validé contre le vrai PRO Framework, règle de sélection de timeframe "trimestre→journalier" non vérifiée (en attente des transcriptions Trading Lessons). Décision explicite : ces items n'empêchent pas d'avancer sur la Phase 2 en parallèle, mais restent à traiter.**
-
----
-
-## Phase 2 — Gestion du risque (dérivée des règles extraites, pas inventée)
-
-À dériver en priorité des règles obtenues en Phase 0 ; à défaut, cadre conservateur par défaut appliqué :
-- Risque par trade : 0,5–1 % du capital
-- Stop-loss systématique sur chaque position (méthode issue de Phase 0 : ATR / niveau structurel / % fixe)
-- Limite de perte journalière → coupe-circuit (arrêt du système pour la journée)
-- Kill-switch global à -15 % de drawdown depuis le pic de capital
-- Plafond d'exposition corrélée (les cryptos étant fortement corrélées entre elles, éviter que plusieurs positions simultanées ne soient en réalité un seul pari directionnel déguisé)
-
----
-
-## Phase 3 — Paper trading (validation temps réel, sans argent réel)
-- Durée minimale : 4 à 8 semaines, signaux générés en temps réel sur compte démo
-- Mesure de l'écart entre hypothèses du backtest (slippage, latence, spread) et exécution réelle simulée
-
-**Critère GO/NO-GO** : la performance en paper trading doit rester dans l'intervalle de confiance du backtest. Un écart majeur (ex. Sharpe backtest ~0,8 vs paper trading négatif) impose une investigation avant de poursuivre.
-
----
-
-## Phase 4 — Pilote capital réel, exécution 100 % manuelle
-- Capital engagé : 10–15 % du capital cible
-- Wallet connecté, mais **aucune transaction automatique** : le système génère le signal + la taille de position calculée selon les règles de risque (Phase 2) ; l'utilisateur valide et exécute chaque transaction manuellement
-- Minimum 30 à 50 trades réels documentés (raison d'entrée, raison de sortie, respect ou non des règles) avant toute discussion sur une éventuelle automatisation de l'exécution
-
----
-
-## Phase 5 — Décision sur l'automatisation de l'exécution *(non engagée à ce stade)*
-Discussion à ouvrir uniquement après validation complète de la Phase 4. Garde-fous à définir à ce moment (plafonds stricts, confirmation par trade ou par session, kill-switch actif en permanence). Aucun calendrier fixé — dépend entièrement des résultats du pilote manuel.
+## Phase 5 — Automatisation de l'exécution (non engagée)
+Inchangée — discussion différée après Phase 4.
 
 ---
 
 ## Prochaine action immédiate
-Fourniture par l'utilisateur du manuel PDF PRO Indicators (et toute capture/valeur d'alerte déjà extraite) pour démarrer concrètement la Phase 0.
+Trois lots délégués en parallèle (voir rapports d'agents) : (A) qualité du code/tests + refonte cascade3, (B) validation hors-échantillon du signe du cycle, (C) consolidation documentaire + funding rates. Une fois ces lots revenus, décision sur la suite (Phase 3 ou poursuite Phase 2).
