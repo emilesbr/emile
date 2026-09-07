@@ -1,5 +1,7 @@
 # Phase 2 — Correction du breakeven prématuré (suite au corpus Trading Lessons)
 
+> ⚠️ **Document historique/supersédé** — voir `STATUS.md` et `PHASE2_V4_IMPLEMENTATION_COMPLETE.md` pour l'état actuel.
+
 **Décision de directeur opérationnel** : après 17 sources traitées, dont 7 confirmant indépendamment la même règle ("le passage au Break-even est interdit avant la Confirmation, pas seulement à la Validation" — sources #12, #13, #15, #16 notamment, formulation quasi identique à chaque fois), la collecte de nouvelles sources atteignait un rendement marginal décroissant (les 2 dernières sources #16/#17 reconfirmaient surtout l'acquis). Plutôt que de continuer à accumuler indéfiniment, on corrige maintenant ce que le corpus a mis en évidence.
 
 ## Le bug corrigé

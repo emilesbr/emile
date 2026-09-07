@@ -1,0 +1,5 @@
+asset,start,end,years_covered,n_funding_events,coverage_vs_expected_pct,pct_events_long_pays,pct_events_long_receives,cumulative_funding_pct_of_capital,annualized_pct_of_capital_per_year
+BTC,2020-01-01,2026-07-01,6.5,7120,100.0,85.5,14.5,77.53,11.93
+ETH,2020-01-01,2026-07-01,6.5,7120,100.0,86.0,14.0,92.22,14.19
+BNB,2020-02-10,2026-07-01,6.38,6999,100.0,24.7,24.8,-1.54,-0.24
+SOL,2020-09-14,2026-07-01,5.79,6424,101.2,71.4,28.6,0.45,0.08

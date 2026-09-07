@@ -1,5 +1,7 @@
 # Phase 2 — Money management réel (tables extraites du manuel)
 
+> ⚠️ **Document historique/supersédé** — voir `STATUS.md` et `PHASE2_V4_IMPLEMENTATION_COMPLETE.md` pour l'état actuel.
+
 **Statut : première itération faite sur H4/D1 (timeframes GO), table "trade spéculatif" (range) uniquement, 4 profils de risque. Voir gaps en fin de document — cette Phase n'est pas plus "close" que la Phase 1.**
 
 ## Méthodologie

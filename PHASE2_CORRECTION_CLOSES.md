@@ -1,5 +1,7 @@
 # Phase 2 — Correction "clôtures, pas mèches" (résultat mixte, documenté honnêtement)
 
+> ⚠️ **Document historique/supersédé** — voir `STATUS.md` et `PHASE2_V4_IMPLEMENTATION_COMPLETE.md` pour l'état actuel.
+
 Suite à la question "y a-t-il d'autres enseignements du corpus qui pourraient servir aux Phases 1/2 ?", inventaire fait (voir liste dans la réponse associée). Le point le plus clair et le moins coûteux à corriger : **3 sources indépendantes (#9, #11, #14) insistent pour que la validation de structure (Validation/Confirmation/Limite) se fasse sur les CLÔTURES de bougies, pas sur les mèches** ("considérées comme du bruit").
 
 ## Correction appliquée

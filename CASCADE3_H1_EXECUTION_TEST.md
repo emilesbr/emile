@@ -1,5 +1,7 @@
 # Test : cascade à 3 niveaux (Daily référence → H4 contexte → H1 exécution)
 
+> ⚠️ **Document historique/supersédé** — voir `STATUS.md` et `PLAN.md` (conclusion calculée avec un moteur de risque périmé, à refaire) pour l'état actuel.
+
 **Résultat négatif/inconclusif — documenté pour ne pas relancer cette piste inutilement.**
 
 ## Hypothèse testée

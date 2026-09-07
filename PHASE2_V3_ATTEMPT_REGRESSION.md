@@ -1,5 +1,7 @@
 # Tentative v3 — Règle de Trois + amplitude réelle + Extreme Channel (REJETÉE, régression sur H4)
 
+> ⚠️ **Document historique/supersédé** — voir `STATUS.md` et `PHASE2_V4_IMPLEMENTATION_COMPLETE.md` pour l'état actuel.
+
 **Ne PAS utiliser comme référence.** `PHASE2_CORRECTION_CLOSES.md` reste la version de référence actuelle.
 
 ## Ce qui a été tenté

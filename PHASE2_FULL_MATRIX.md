@@ -1,5 +1,7 @@
 # Phase 2 — Matrice complète (tous timeframes x tous actifs disponibles)
 
+> ⚠️ **Document historique/supersédé** — voir `STATUS.md` et `PHASE2_V4_IMPLEMENTATION_COMPLETE.md` pour l'état actuel.
+
 Complète `PHASE2_MONEYMANAGEMENT.md` (qui ne couvrait que H4/D1) en ajoutant M15, H1, et XRP (D1 seul, données limitées). Détail complet : `phase2_full_matrix_results.csv`. Couverture réelle des données en fin de document.
 
 ## Résultat 1 — M15 (BTC uniquement) : catastrophique sur les 4 profils, sans exception
