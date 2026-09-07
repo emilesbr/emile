@@ -19,12 +19,12 @@ Corrections/ajouts par rapport à la v3 :
 """
 import pandas as pd
 import numpy as np
-from scipy.signal import argrelextrema
 from pathlib import Path
 import sys
 sys.path.insert(0, ".")
 from backtest_phase2 import FEE, load_h1, resample, atr, EMA_FAST, EMA_MID, EMA_SLOW, ATR_LEN
 from position_engine import run_position_engine
+from proxy_v2 import compute_swing_low_confirmed
 
 LOCAL_DURATION = "5D"      # amplitude "range local" : fenêtre en JOURS réels (pas en bougies)
 CONTEXT_DURATION = "15D"   # amplitude "contexte"
@@ -58,14 +58,16 @@ def prepare(df: pd.DataFrame) -> pd.DataFrame:
     df["context_range"] = (ts["high"].rolling(CONTEXT_DURATION).max() - ts["low"].rolling(CONTEXT_DURATION).min()).values
 
     # Maturité : détection de swing points (creux locaux) et comptage des
-    # bornes testées dans la fenêtre "contexte"
+    # bornes testées dans la fenêtre "contexte". CAUSAL depuis le traitement
+    # de la réserve P0-bis (COUVERTURE_ENSEIGNEMENTS.md/PLAN.md occurrence
+    # #4) : un swing low n'entre dans le compte de bornes qu'une fois
+    # confirmé (compute_swing_low_confirmed), pas au moment du creux
+    # lui-même (qui dépendrait de SWING_ORDER barres futures).
     low_v = df["low"].values
-    swing_low_idx = argrelextrema(low_v, np.less_equal, order=SWING_ORDER)[0]
-    is_swing_low = np.zeros(len(df), dtype=bool)
-    is_swing_low[swing_low_idx] = True
-    df["is_swing_low"] = is_swing_low
+    is_swing_low_confirmed = compute_swing_low_confirmed(low_v, order=SWING_ORDER)
+    df["is_swing_low"] = is_swing_low_confirmed
     # nombre de creux (bornes) swing dans la fenêtre contexte précédente
-    df["n_borders"] = pd.Series(is_swing_low, index=ts.index).rolling(CONTEXT_DURATION).sum().values
+    df["n_borders"] = pd.Series(is_swing_low_confirmed, index=ts.index).rolling(CONTEXT_DURATION).sum().values
     return df
 
 

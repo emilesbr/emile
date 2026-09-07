@@ -45,12 +45,28 @@ corrélation causale mesurée est proche de zéro et non significative, très
 inférieure à la corrélation batch (~0,29) — voir COUVERTURE_ENSEIGNEMENTS.md
 pour le détail chiffré et la conclusion honnête (edge causal non confirmé
 sur les actifs testés).
+
+Même lacune de process, trouvée une 2e fois (P0-bis, même
+COUVERTURE_ENSEIGNEMENTS.md/PLAN.md, occurrence #4 du tableau) : la
+détection de swing lows de `compute_ascending_lows` appelait elle aussi
+`scipy.signal.argrelextrema` en batch, avec une classification en t qui
+dépend des SWING_ORDER barres suivantes. Traité ce cycle-ci :
+`compute_ascending_lows` ne consomme plus un swing qu'une fois confirmé
+(`compute_swing_low_confirmed`) ; `test_ascending_lows_causal_matches_truncated_series`
+ci-dessous en est le test de régression, sur le même modèle que
+`test_cycle_phase_causal_matches_truncated_series`. Ampleur mesurée
+nettement plus petite que le P0 du cycle (fenêtre fixe de 3 barres, pas la
+série entière) — voir COUVERTURE_ENSEIGNEMENTS.md pour les chiffres.
 """
 import numpy as np
 import pandas as pd
 import sys
 sys.path.insert(0, ".")
-from proxy_v2 import compute_cycle_phase, compute_cycle_phase_causal, compute_tsi, CYCLE_CAUSAL_WINDOW
+from scipy.signal import argrelextrema
+from proxy_v2 import (
+    compute_cycle_phase, compute_cycle_phase_causal, compute_tsi, CYCLE_CAUSAL_WINDOW,
+    compute_ascending_lows, SWING_ORDER,
+)
 
 
 def _synthetic_cyclical_series(n=2000, period=40, amplitude=5.0, noise=0.05, seed=0):
@@ -144,6 +160,82 @@ def test_cycle_phase_causal_matches_truncated_series():
     )
 
 
+def _synthetic_swing_df(n=300, seed=2):
+    """Série OHLC synthétique bruitée (marche aléatoire), pour tester la
+    causalité de la détection de swing indépendamment de toute propriété
+    statistique du signal (contrairement à `_synthetic_cyclical_series`,
+    utile ici seulement pour avoir des creux/sommets locaux variés)."""
+    rng = np.random.default_rng(seed)
+    low = 100 + np.cumsum(rng.normal(0, 1, n))
+    high = low + rng.uniform(0.1, 2.0, n)
+    close = (low + high) / 2
+    return pd.DataFrame({"low": low, "high": high, "close": close})
+
+
+def test_ascending_lows_causal_matches_truncated_series():
+    """Test de RÉGRESSION DE LA CAUSALITÉ de `compute_ascending_lows` — le
+    même test que `test_cycle_phase_causal_matches_truncated_series`
+    ci-dessus, appliqué à la réserve P0-bis (COUVERTURE_ENSEIGNEMENTS.md ⚠️,
+    PLAN.md occurrence #4) plutôt qu'au cycle.
+
+    `compute_ascending_lows` appelle `scipy.signal.argrelextrema(...,
+    order=SWING_ORDER)` : la classification "swing low" à l'instant t ne
+    dépend, par construction, que des `SWING_ORDER` barres avant/après t —
+    jamais de la série entière (vérifié empiriquement sur BTC H4 réel et sur
+    séries synthétiques, cf. `code/structure_causal_vs_batch_comparison.py`)
+    — mais la VALEUR "creux ascendants" utilisée par la stratégie ne doit
+    être exploitable qu'une fois ce swing réellement CONFIRMÉ (à t +
+    SWING_ORDER), pas au moment du creux lui-même. Ce test vérifie
+    exactement cette propriété : la valeur en t ne doit PAS changer selon
+    que la série contient ou non des barres après t."""
+    df = _synthetic_swing_df()
+    full = compute_ascending_lows(df)
+
+    checkpoints = [50, 100, 150, 200, 250, 299]
+    for t in checkpoints:
+        truncated = df.iloc[: t + 1]  # aucune barre après t
+        ascending_truncated = compute_ascending_lows(truncated)
+        assert full[t] == ascending_truncated[-1], (
+            f"RÉGRESSION DE CAUSALITÉ (P0-bis) à t={t} : compute_ascending_lows "
+            f"donne une valeur différente selon que la série contient des barres "
+            f"futures (full={full[t]}) ou non (tronquée={ascending_truncated[-1]}) — "
+            f"des barres futures influencent le calcul en t, cf. "
+            f"COUVERTURE_ENSEIGNEMENTS.md ⚠️ P0-bis."
+        )
+
+    # Contrôle négatif : la classification BATCH brute (is_swing[t], SANS le
+    # décalage de confirmation à t+SWING_ORDER) ne doit PAS passer ce test —
+    # confirme que le test détecte bien le bug qu'il vise, pas seulement
+    # qu'il passe toujours.
+    def _raw_batch_ascending(df):
+        low_v = df["low"].values
+        idx = argrelextrema(low_v, np.less_equal, order=SWING_ORDER)[0]
+        is_swing = np.zeros(len(df), dtype=bool)
+        is_swing[idx] = True
+        ascending = np.zeros(len(df), dtype=bool)
+        last_lows = []
+        for i in range(len(df)):
+            if is_swing[i]:
+                last_lows.append(low_v[i])
+                if len(last_lows) > 2:
+                    last_lows.pop(0)
+            if len(last_lows) == 2:
+                ascending[i] = last_lows[1] > last_lows[0]
+        return ascending
+
+    full_batch = _raw_batch_ascending(df)
+    negative_control_checkpoints = range(10, len(df) - 1)  # balayage large, pas quelques points choisis à la main
+    mismatch_found = any(
+        full_batch[tt] != _raw_batch_ascending(df.iloc[: tt + 1])[-1] for tt in negative_control_checkpoints
+    )
+    assert mismatch_found, (
+        "Le test de causalité devrait détecter que la classification BATCH brute "
+        "(sans décalage de confirmation) N'EST PAS causale sur au moins un des "
+        "checkpoints testés — s'il ne le détecte plus, le test lui-même a régressé "
+        "et ne protège plus rien."
+    )
+
+
 def test_tsi_favorable_on_synthetic_uptrend():
     """Sur une tendance haussière synthétique nette (pas de composante
     cyclique), le TSI doit finir par indiquer 'momentum favorable'
@@ -162,5 +254,6 @@ if __name__ == "__main__":
     test_cycle_sign_matches_ground_truth_direction()
     test_cycle_phase_bounded()
     test_cycle_phase_causal_matches_truncated_series()
+    test_ascending_lows_causal_matches_truncated_series()
     test_tsi_favorable_on_synthetic_uptrend()
-    print("Tous les tests proxy_v2 passent (4/4).")
+    print("Tous les tests proxy_v2 passent (5/5).")

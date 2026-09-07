@@ -21,6 +21,18 @@ Cycle x Structure) :
      de l'EMA lente (filtre de tendance de fond).
 
 Score = somme des 3 composantes (0-3). Signal long si score >= 2.
+
+Réserve P0-bis (COUVERTURE_ENSEIGNEMENTS.md / PLAN.md occurrence #4) —
+TRAITÉE ce cycle de travail, même catégorie que la réserve P0 ci-dessus
+mais sur `compute_ascending_lows` (structure) plutôt que sur le cycle :
+`argrelextrema(..., order=SWING_ORDER)` classe un point i en ne comparant
+QUE les `SWING_ORDER` barres avant/après i — jamais la série entière — donc
+la classification batch reste valable, seul le *moment* où elle a le droit
+d'être consommée doit être décalé à i+SWING_ORDER (une fois ces barres
+réellement observées). `compute_swing_low_confirmed`/`compute_swing_high_
+confirmed` ci-dessous implémentent exactement ce décalage (option "a" de la
+tâche, pas un recalcul incrémental — vérifié bit-à-bit identique à un
+recalcul tronqué, cf. `code/structure_causal_vs_batch_comparison.py`).
 """
 import pandas as pd
 import numpy as np
@@ -125,18 +137,63 @@ def compute_cycle_phase_causal(close: pd.Series, window: int = CYCLE_CAUSAL_WIND
     return out
 
 
-def compute_ascending_lows(df: pd.DataFrame) -> np.ndarray:
-    low_v = df["low"].values
-    idx = argrelextrema(low_v, np.less_equal, order=SWING_ORDER)[0]
-    is_swing = np.zeros(len(df), dtype=bool)
+def _swing_confirmed(values: np.ndarray, comparator, order: int) -> np.ndarray:
+    """Primitive CAUSALE partagée par `compute_swing_low_confirmed`/
+    `compute_swing_high_confirmed`. `argrelextrema(values, comparator,
+    order=order)` classe le point k en ne comparant QUE les `order` valeurs
+    avant et après k (jamais la série entière, y compris quand l'appel est
+    fait en un seul batch sur tout l'historique) : la classification de k ne
+    dépend donc jamais de données au-delà de k+order — vérifié empiriquement
+    bit-à-bit (0 différence sur 14233 points BTC H4 réels et 494 points
+    synthétiques entre le calcul batch et un recalcul sur une série tronquée
+    juste après k+order, cf. `code/structure_causal_vs_batch_comparison.py`).
+
+    Conséquence : PAS besoin de recalculer quoi que ce soit barre par barre
+    (option "b" de la tâche, plus lente, évitée) — on réutilise le résultat
+    batch tel quel (option "a") et on décale seulement le moment où il a le
+    droit d'être consommé, à k+order plutôt qu'à k. Retourne `confirmed`
+    (bool) où `confirmed[t]` est vrai ssi la barre `t - order` est un swing
+    ET que ses `order` barres suivantes ont réellement été observées (donc
+    jamais avant t = order) — l'appelant récupère la valeur/l'indice réel du
+    swing via `t - order`, pas via `t`."""
+    n = len(values)
+    idx = argrelextrema(values, comparator, order=order)[0]
+    is_swing = np.zeros(n, dtype=bool)
     is_swing[idx] = True
-    # Pour chaque bougie, "creux ascendants" = le dernier swing low détecté
+    confirmed = np.zeros(n, dtype=bool)
+    if order < n:
+        confirmed[order:] = is_swing[: n - order]
+    return confirmed
+
+
+def compute_swing_low_confirmed(low: np.ndarray, order: int = SWING_ORDER) -> np.ndarray:
+    """Version CAUSALE de la détection de swing low (cf. réserve P0-bis en
+    tête de fichier). `confirmed[t]` vrai ssi `low[t - order]` est un swing
+    low confirmé à l'instant t."""
+    return _swing_confirmed(low, np.less_equal, order)
+
+
+def compute_swing_high_confirmed(high: np.ndarray, order: int = SWING_ORDER) -> np.ndarray:
+    """Symétrique de `compute_swing_low_confirmed` pour les swing highs
+    (réutilisée par `code/fibonacci.py`, cf. réserve P0-bis)."""
+    return _swing_confirmed(high, np.greater_equal, order)
+
+
+def compute_ascending_lows(df: pd.DataFrame) -> np.ndarray:
+    """Creux ascendants — CAUSALE depuis le traitement de la réserve P0-bis
+    (COUVERTURE_ENSEIGNEMENTS.md/PLAN.md occurrence #4) : un swing low n'est
+    pris en compte qu'à l'instant où il est réellement confirmé
+    (`compute_swing_low_confirmed`), pas à l'instant du creux lui-même."""
+    low_v = df["low"].values
+    n = len(df)
+    confirmed = compute_swing_low_confirmed(low_v, order=SWING_ORDER)
+    # Pour chaque bougie, "creux ascendants" = le dernier swing low CONFIRMÉ
     # est plus haut que l'avant-dernier
-    ascending = np.zeros(len(df), dtype=bool)
+    ascending = np.zeros(n, dtype=bool)
     last_lows = []
-    for i in range(len(df)):
-        if is_swing[i]:
-            last_lows.append(low_v[i])
+    for i in range(n):
+        if confirmed[i]:
+            last_lows.append(low_v[i - SWING_ORDER])
             if len(last_lows) > 2:
                 last_lows.pop(0)
         if len(last_lows) == 2:

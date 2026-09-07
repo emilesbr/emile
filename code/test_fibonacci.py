@@ -16,7 +16,18 @@ paliers de retracement connus :
   190 -> 140  (50 % de retracement,   190-0.50*100=140)
   190 -> 128.2 (61,8 % de retracement, 190-0.618*100=128.2)
   190 -> 120  (70 % de retracement,   190-0.70*100=120)
-"""
+
+MISE À JOUR (réserve P0-bis traitée, COUVERTURE_ENSEIGNEMENTS.md/PLAN.md
+occurrence #4) : `compute_swing_highs_lows` est désormais CAUSALE — un
+swing construit à la main à l'indice j (ex. le swing low à idx 7) n'est
+signalé "vrai" dans le tableau retourné qu'à l'indice j + SWING_ORDER (3),
+une fois le swing réellement confirmé, pas à l'indice j lui-même. Les
+indices attendus ci-dessous ont été décalés en conséquence par rapport à
+la version batch précédente (swing low : idx 7 -> idx 10 ; swing high :
+idx 13 -> idx 16), et les paliers de retracement qui tombaient avant la
+confirmation du swing high (idx 13-15, soit 0 %/10 %/23 % de retracement
+dans l'ancienne version batch) sont désormais NaN — le swing high n'est
+confirmé, et donc utilisable, qu'à partir de idx 16."""
 import numpy as np
 import pandas as pd
 import sys
@@ -43,29 +54,34 @@ def _synthetic_swing_df():
 def test_swing_detection_finds_hand_placed_low_and_high():
     """Le swing low construit à la main (90, idx 7) et le swing high construit
     à la main (190, idx 13) doivent être détectés par argrelextrema — même
-    détection que proxy_v2.py::compute_ascending_lows (order=3)."""
+    détection que proxy_v2.py::compute_ascending_lows (order=3). CAUSAL
+    (P0-bis traité) : le tableau retourné les signale confirmés à idx+3
+    (idx 10 et idx 16 respectivement), pas à l'idx du swing lui-même."""
     df = _synthetic_swing_df()
     is_high, is_low = compute_swing_highs_lows(df)
-    assert is_low[7], "le swing low construit à la main (90, idx 7) devrait être détecté"
-    assert is_high[13], "le swing high construit à la main (190, idx 13) devrait être détecté"
-    # Le creux à l'intérieur de la montée (idx 8-12) ne doit PAS être un swing low
-    # (la série y est strictement croissante, pas d'extremum local)
-    assert not any(is_low[8:13]), "aucun swing low ne devrait apparaître pendant la hausse monotone"
+    assert is_low[10], "le swing low construit à la main (90, idx 7) devrait être confirmé à idx 10 (7+SWING_ORDER)"
+    assert is_high[16], "le swing high construit à la main (190, idx 13) devrait être confirmé à idx 16 (13+SWING_ORDER)"
+    # Le creux à l'intérieur de la montée (idx 8-12, décalé en idx 11-15) ne
+    # doit PAS être un swing low (la série y est strictement croissante, pas
+    # d'extremum local)
+    assert not any(is_low[11:16]), "aucun swing low ne devrait apparaître pendant la hausse monotone"
 
 
 def test_retracement_matches_hand_calculated_percentages():
     """Vérifie, palier par palier, que compute_retracement retrouve le %
-    calculé à la main : retracement = (high - close) / (high - low)."""
+    calculé à la main : retracement = (high - close) / (high - low).
+
+    CAUSAL (P0-bis traité) : le swing high (idx 13) n'est confirmé qu'à
+    idx 16 (13 + SWING_ORDER) — les paliers 0 %/10 %/23 % (idx 13/14/15
+    dans la série, calculés AVANT que le swing high ne soit confirmable
+    sans barre future) sont donc désormais NaN plutôt que des valeurs
+    exploitables ; seuls les paliers à partir de idx 16 (38 %) le sont,
+    cf. test_no_retracement_before_first_confirmed_up_move ci-dessous."""
     df = _synthetic_swing_df()
     ret = compute_retracement(df)
 
-    # idx 13 = le swing high lui-même -> 0 % de retracement
-    assert np.isclose(ret[13], 0.0, atol=1e-9)
-    # idx 14 = 180 -> (190-180)/100 = 10 %
-    assert np.isclose(ret[14], 0.10, atol=1e-9)
-    # idx 15 = 167 -> 23 % (seuil minimal de validation, source #13)
-    assert np.isclose(ret[15], 0.23, atol=1e-9)
-    # idx 16 = 152 -> 38 % (niveau "standard et optimal", source #13)
+    # idx 16 = 152 -> 38 % (niveau "standard et optimal", source #13) —
+    # premier palier exploitable une fois le swing high réellement confirmé
     assert np.isclose(ret[16], 0.38, atol=1e-9)
     # idx 17 = 140 -> 50 % ("exceptionnel", source #13 ; borne haute du cluster, source #10)
     assert np.isclose(ret[17], 0.50, atol=1e-9)
@@ -78,15 +94,16 @@ def test_retracement_matches_hand_calculated_percentages():
 
 def test_no_retracement_before_first_confirmed_up_move():
     """Avant que le premier mouvement complet (swing low PUIS swing high
-    postérieur) ne soit confirmé, le retracement doit rester NaN — ni
-    pendant la baisse initiale (avant même le swing low), ni pendant la
-    remontée qui suit le swing low mais n'a pas encore formé de swing high."""
+    postérieur) ne soit CONFIRMÉ (P0-bis traité : la confirmation elle-même
+    n'arrive qu'à idx+SWING_ORDER, pas à l'idx du swing), le retracement
+    doit rester NaN — pendant la baisse initiale, pendant la remontée qui
+    suit le swing low mais n'a pas encore vu son swing high confirmé, et
+    pendant le délai de confirmation du swing high lui-même (idx 13-15)."""
     df = _synthetic_swing_df()
     ret = compute_retracement(df)
-    # Baisse initiale (idx 0-7) : aucun mouvement complet encore identifiable
-    assert np.all(np.isnan(ret[0:8]))
-    # Remontée en cours (idx 8-12) : swing low connu mais pas encore de swing high après lui
-    assert np.all(np.isnan(ret[8:13]))
+    # idx 0-15 : aucun mouvement complet encore CONFIRMÉ (le swing high à
+    # idx 13 n'est confirmé qu'à idx 16)
+    assert np.all(np.isnan(ret[0:16]))
 
 
 def test_classify_retracement_boundaries_hand_calculated():

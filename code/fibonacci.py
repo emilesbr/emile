@@ -79,10 +79,23 @@ même `order` (3 bougies de chaque côté). Ce n'est pas une nouvelle
 détection ad hoc, c'est la même déjà en production ailleurs dans ce
 projet (également utilisée pour `n_borders` dans
 `backtest_phase2_v6.py`/`_v7.py`).
+
+MISE À JOUR (réserve P0-bis, COUVERTURE_ENSEIGNEMENTS.md/PLAN.md occurrence
+#4, traitée dans le même cycle de travail qui a construit ce fichier) : la
+version initiale de `compute_swing_highs_lows` ci-dessous consommait
+`is_swing_high`/`is_swing_low` batch au moment même du creux/sommet — déjà
+signalé honnêtement dans sa propre docstring comme "même compromis déjà
+présent ailleurs dans le projet". Ce fichier réutilise désormais
+`proxy_v2.compute_swing_low_confirmed`/`compute_swing_high_confirmed`
+(mêmes primitives causales que `compute_ascending_lows`) : un swing n'est
+exploité par `compute_retracement` qu'une fois réellement confirmé (à
+l'instant + SWING_ORDER), pas au moment du swing lui-même.
 """
 import numpy as np
 import pandas as pd
-from scipy.signal import argrelextrema
+import sys
+sys.path.insert(0, ".")
+from proxy_v2 import compute_swing_low_confirmed, compute_swing_high_confirmed
 
 # Cohérent avec proxy_v2.SWING_ORDER (même détection de swing réutilisée).
 SWING_ORDER = 3
@@ -94,27 +107,24 @@ FAVORABLE_MAX = 0.618
 
 
 def compute_swing_highs_lows(df: pd.DataFrame, order: int = SWING_ORDER) -> tuple:
-    """Détecte les swing highs/lows par `scipy.signal.argrelextrema`, même
-    convention que `proxy_v2.py::compute_ascending_lows` (comparateurs
-    np.greater_equal / np.less_equal, même `order`). Retourne deux arrays
-    booléens (is_swing_high, is_swing_low), alignés sur l'index de `df`.
+    """Détecte les swing highs/lows, CAUSAL (réserve P0-bis traitée) via
+    `proxy_v2.compute_swing_high_confirmed`/`compute_swing_low_confirmed` —
+    mêmes primitives que `proxy_v2.py::compute_ascending_lows`. Retourne
+    deux arrays booléens (is_swing_high, is_swing_low) où l'indice t est
+    vrai ssi un swing est CONFIRMÉ à l'instant t (la barre swing réelle est
+    alors à `t - order`, pas à `t` — cf. docstring de
+    `compute_swing_low_confirmed`), alignés sur l'index de `df`.
 
-    NB (même compromis déjà présent ailleurs dans le projet, pas une
-    faiblesse nouvelle introduite ici) : un swing à l'indice j n'est
-    confirmé par argrelextrema qu'une fois `order` bougies après j connues
-    — c'est le même comportement que `n_borders` dans
-    `backtest_phase2_v6.py`/`_v7.py`, qui utilise déjà exactement cette
-    fonction sur toute la série avant que les moteurs n'utilisent
-    `score[i-1]`/`n_borders_v[i-1]` (donc une bougie de retard) pour leurs
-    décisions."""
+    Avant ce traitement, cette fonction consommait la classification batch
+    au moment même du creux/sommet (déjà signalé honnêtement ici comme
+    lookahead de `order` bougies — même compromis que `n_borders`,
+    `backtest_phase2_v5/v6/v7.py`, avant qu'il n'y soit également corrigé).
+    `compute_retracement` ci-dessous a été ajusté en conséquence pour
+    récupérer la valeur/l'indice réels du swing (`t - order`), pas `t`."""
     high_v = df["high"].values
     low_v = df["low"].values
-    swing_high_idx = argrelextrema(high_v, np.greater_equal, order=order)[0]
-    swing_low_idx = argrelextrema(low_v, np.less_equal, order=order)[0]
-    is_swing_high = np.zeros(len(df), dtype=bool)
-    is_swing_high[swing_high_idx] = True
-    is_swing_low = np.zeros(len(df), dtype=bool)
-    is_swing_low[swing_low_idx] = True
+    is_swing_high = compute_swing_high_confirmed(high_v, order=order)
+    is_swing_low = compute_swing_low_confirmed(low_v, order=order)
     return is_swing_high, is_swing_low
 
 
@@ -145,10 +155,12 @@ def compute_retracement(df: pd.DataFrame, order: int = SWING_ORDER) -> np.ndarra
     last_low_px, last_low_i = np.nan, -1
 
     for i in range(n):
+        # is_swing_{high,low}[i] signifie "confirmé à l'instant i" — la barre
+        # swing réelle est à i - order (cf. compute_swing_highs_lows).
         if is_swing_low[i]:
-            last_low_px, last_low_i = low_v[i], i
+            last_low_px, last_low_i = low_v[i - order], i - order
         if is_swing_high[i]:
-            last_high_px, last_high_i = high_v[i], i
+            last_high_px, last_high_i = high_v[i - order], i - order
 
         if last_high_i > last_low_i >= 0 and last_high_px > last_low_px:
             amplitude = last_high_px - last_low_px
@@ -172,10 +184,10 @@ def add_fibonacci_columns(df: pd.DataFrame, order: int = SWING_ORDER) -> pd.Data
     """Ajoute `fib_retracement_pct` (fraction, NaN si pas de mouvement
     confirmé), `fib_favorable` (bool, zone [23%, 61,8%]) et `fib_optimal`
     (bool, sous-zone [23%, 50%]) à `df`. N'utilise QUE des données connues
-    à l'instant de chaque bougie (le calcul est causal dans son usage,
-    modulo le même compromis de confirmation de swing différée par
-    `order` bougies déjà documenté dans `compute_swing_highs_lows` — comme
-    partout ailleurs dans ce projet où ce détecteur est déjà utilisé)."""
+    à l'instant de chaque bougie — causal (réserve P0-bis traitée, cf.
+    `compute_swing_highs_lows`) : un swing low/high n'entre dans le calcul
+    de retracement qu'une fois réellement confirmé (`order` bougies après
+    le creux/sommet lui-même), jamais avant."""
     df = df.copy()
     retracement = compute_retracement(df, order=order)
     favorable, optimal = classify_retracement(retracement)

@@ -9,11 +9,10 @@ seul le vrai signal PRO Framework/Momentum permettra une validation réelle.
 """
 import pandas as pd
 import numpy as np
-from scipy.signal import argrelextrema
 import sys
 sys.path.insert(0, ".")
 from backtest_phase2 import FEE, load_h1, resample, atr, EMA_SLOW, ATR_LEN
-from proxy_v2 import add_proxy_v2_score
+from proxy_v2 import add_proxy_v2_score, compute_swing_low_confirmed
 from position_engine import run_position_engine
 
 LOCAL_DURATION = "5D"
@@ -42,11 +41,13 @@ def prepare(df: pd.DataFrame) -> pd.DataFrame:
     df["local_range"] = (ts["high"].rolling(LOCAL_DURATION).max() - ts["low"].rolling(LOCAL_DURATION).min()).values
     df["context_range"] = (ts["high"].rolling(CONTEXT_DURATION).max() - ts["low"].rolling(CONTEXT_DURATION).min()).values
 
+    # CAUSAL depuis le traitement de la réserve P0-bis (COUVERTURE_ENSEIGNEMENTS.md
+    # / PLAN.md occurrence #4) : un swing low n'entre dans le compte de bornes
+    # qu'une fois confirmé (compute_swing_low_confirmed), pas au moment du creux
+    # lui-même (qui dépendrait de SWING_ORDER barres futures).
     low_v = df["low"].values
-    swing_low_idx = argrelextrema(low_v, np.less_equal, order=SWING_ORDER)[0]
-    is_swing_low = np.zeros(len(df), dtype=bool)
-    is_swing_low[swing_low_idx] = True
-    df["n_borders"] = pd.Series(is_swing_low, index=ts.index).rolling(CONTEXT_DURATION).sum().values
+    is_swing_low_confirmed = compute_swing_low_confirmed(low_v, order=SWING_ORDER)
+    df["n_borders"] = pd.Series(is_swing_low_confirmed, index=ts.index).rolling(CONTEXT_DURATION).sum().values
     return df
 
 

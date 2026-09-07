@@ -11,11 +11,11 @@ Réponse à "est-ce que tous les enseignements sont pris en compte dans le plan 
 | Validation sur clôtures, pas mèches (3 sources) | Tous moteurs depuis la correction |
 | Règle de Trois (risque /2 après 3 zones gagnantes) | v4, v5, v6, v7 |
 | Amplitude réelle calibrée en durée (pas en bougies) | v4, v5, v6, v7 |
-| Maturité par détection de swing points (≥3 bornes) | v4, v5, v6, v7 |
+| Maturité par détection de swing points (≥3 bornes), **calcul rendu causal** (confirmation à t+SWING_ORDER, pas à l'instant du swing) **— cf. ⚠️→◐ P0-bis ci-dessous** | v4, v5, v6, v7, `code/backtest_phase2_capital_tiers.py` |
 | Pyramidalisation multi-tranches | v4, v5, v6, v7 |
 | TSI(14,7,9), momentum | `code/proxy_v2.py` |
 | Cycle (approximation Hilbert du Sine Wave), signe corrigé et validé hors-échantillon, **calcul rendu causal** (fenêtre glissante) **— edge global mitigé, edge isolé du cycle non confirmé sur données réelles, cf. ⚠️→◐ ci-dessous** | `code/proxy_v2.py::compute_cycle_phase_causal` |
-| Creux ascendants (structure) | `code/proxy_v2.py` |
+| Creux ascendants (structure), **calcul rendu causal** (confirmation à t+SWING_ORDER) **— cf. ⚠️→◐ P0-bis ci-dessous** | `code/proxy_v2.py::compute_ascending_lows`/`compute_swing_low_confirmed` |
 | Classification de régime (Range/Tendance/Excès), interdiction de trader en Excès | `code/regime_classifier.py`, v6, v7 |
 | Pyramidalisation réservée au régime Tendance | v6, v7 |
 | Validation croisée multi-timeframe (H4 exécution / D1 référence) | v7 |
@@ -134,13 +134,48 @@ Détail complet (32 lignes) : `ablation_test_cycle_results.csv`.
 
 **Conclusion honnête, pas forcée dans un sens qui arrangerait une histoire propre** : les 4 actifs **ne s'accordent pas sur la direction**. Sur ETH, retirer le cycle améliore tout ; sur SOL, retirer le cycle dégrade tout ; BTC et BNB sont mixtes. Ça **infirme** l'hypothèse simple posée après le traitement du P0 ("le cycle dilue partout sans nuire") — la réalité est plus compliquée : le cycle isolé ne montre pas de corrélation causale significative avec le rendement futur (mesuré ci-dessus), mais son interaction avec momentum+structure dans le score composite n'est pas neutre non plus, et varie par actif. Aucune conclusion univoque ne peut en être tirée sans sur-interpréter un échantillon de 4 actifs. **Recommandation révisée** : ne pas retirer le cycle du score sur la seule base de ce test (échantillon trop petit, résultat non consensuel) ; le signal composite (score >= 2 sur 3) reste le réglage par défaut. Si une décision de retrait devait un jour être prise, elle demanderait un échantillon d'actifs plus large et une explication du mécanisme d'interaction, pas juste ce tableau.
 
-## ⚠️ P0-bis — trouvé en vérifiant le travail Fibonacci, PAS encore traité
+## ⚠️→◐ P0-bis — TRAITÉE ce cycle de travail (mitigée, ampleur small confirmée — pas un "résolu" au sens plein pour Fibonacci/v4, cf. propagation restante)
 
-**Découverte** : en vérifiant indépendamment le résultat de l'agent Fibonacci (qui indiquait réutiliser "la même détection de swing que `compute_ascending_lows`"), vérification de cette détection elle-même. `code/proxy_v2.py::compute_ascending_lows` appelle `scipy.signal.argrelextrema(low_v, ..., order=SWING_ORDER)` **en un seul appel batch sur toute la série historique** — par construction, la classification "swing low" à l'instant *t* dépend des `SWING_ORDER=3` barres qui SUIVENT *t*. Ce n'est pas une hypothèse : **vérifié empiriquement sur BTC H4 réel** (200 barres échantillonnées, comparaison classification batch vs classification recalculée sans aucune barre future) : **23/200 (11,5%) changent de classification**.
+**Découverte** (cycle de travail précédent) : en vérifiant indépendamment le résultat de l'agent Fibonacci (qui indiquait réutiliser "la même détection de swing que `compute_ascending_lows`"), vérification de cette détection elle-même. `code/proxy_v2.py::compute_ascending_lows` appelait `scipy.signal.argrelextrema(low_v, ..., order=SWING_ORDER)` **en un seul appel batch sur toute la série historique** — par construction, la classification "swing low" à l'instant *t* dépend des `SWING_ORDER=3` barres qui SUIVENT *t*. Vérifié empiriquement sur BTC H4 réel (200 barres échantillonnées) : 23/200 (11,5%) changeaient de classification entre le calcul batch et un calcul recalculé sans aucune barre future.
 
-**Portée** : la même fonction batch alimente aussi `n_borders` (critère de maturité "≥3 bornes", utilisé depuis v4 dans tous les moteurs de la lignée range) et vient d'être réutilisée par `code/fibonacci.py` (détection des pivots pour le calcul de retracement). C'est la même **catégorie** de risque que le P0 (occurrence #2 du tableau `PLAN.md`) — une fonction batch appelée une fois sur tout l'historique, dont la sortie à l'instant t dépend silencieusement de barres futures — trouvée sur une fonction différente (structure, pas cycle), avec une ampleur beaucoup plus petite (fenêtre fixe de 3 barres, pas la série entière) mais jamais quantifiée avant ce jour.
+### Ce qui a été fait
 
-**Statut honnête** : trouvé, mesuré une fois (200 échantillons BTC H4), **pas encore traité** — pas de version causale construite, pas de rejeu des moteurs concernés. Contrairement au P0, ceci n'a pas encore reçu son propre cycle de correction dédié. Priorité : `PLAN.md` backlog, item 8 ("P0-bis").
+1. **Méthode retenue — vérifiée empiriquement avant d'être appliquée** (mode ingénieur senior, point 1) : `argrelextrema(..., order=N)` ne compare un point k qu'aux `N` barres AVANT/APRÈS lui, jamais à la série entière — donc, pour un point intérieur, la classification batch sur toute la série est **bit-à-bit identique** à un recalcul sur une série tronquée juste après k+N (vérifié sur 494 points synthétiques ET 14 233 points BTC H4 réels, **0 différence** dans les deux cas — `code/structure_causal_vs_batch_comparison.py`). Conséquence directe : **l'option "a" de la tâche a été retenue** (décaler le *moment* où la classification batch a le droit d'être consommée, à t+SWING_ORDER, une fois ces barres réellement observées) plutôt que l'option "b" (recalcul incrémental barre par barre, plus lent) — les deux sont mathématiquement équivalentes ici, "a" est donc strictement suffisante et moins coûteuse.
+2. **`compute_swing_low_confirmed`/`compute_swing_high_confirmed`** (`code/proxy_v2.py`) : primitives causales partagées, réutilisées par `compute_ascending_lows` (structure du score proxy_v2) ET importées dans `backtest_phase2_v4/v5/v6/v7.py` et `backtest_phase2_capital_tiers.py` pour `n_borders` (maturité).
+3. **Test de régression de la causalité elle-même** (`code/test_proxy_v2.py::test_ascending_lows_causal_matches_truncated_series`), sur le même modèle que `test_cycle_phase_causal_matches_truncated_series` (P0) : la valeur "creux ascendants" en t ne change pas selon que la série contient des barres après t ou non, avec contrôle négatif (la classification batch brute, sans décalage, échoue bien à cette propriété).
+4. **`code/fibonacci.py` mis à jour** : `compute_swing_highs_lows` réutilise désormais les mêmes primitives causales (au lieu de sa propre classification batch, déjà honnêtement documentée comme lookahead dans sa docstring d'origine). Tests (`code/test_fibonacci.py`) ajustés en conséquence — les indices attendus sont décalés de `SWING_ORDER` (confirmation, pas détection instantanée) : 5/5 tests passent toujours.
+5. **`code/trend_table.py`** n'a nécessité AUCUNE modification directe : son propre "swing_high" est un simple maximum courant (pas `argrelextrema`), et il n'hérite de la détection de swing que via `prepare()` de `backtest_phase2_v7.py`, désormais causale — propagation automatique, vérifiée (6/6 tests `test_trend_table.py` toujours au vert).
+6. **Rejeu complet v5/v6/v7** (BTC/ETH/BNB/SOL, H4+D1, 4 profils), comparé à l'état juste avant ce fix (`phase2_v{5,6,7}_*causal_results.csv`, qui a déjà le cycle causal mais la structure encore batch) : nouveaux fichiers `phase2_v5_structure_causal_results.csv`, `phase2_v6_regime_structure_causal_results.csv`, `phase2_v7_mtf_structure_causal_results.csv`, et les comparaisons `v{5,6,7}_structure_causal_vs_batch_comparison.csv` (`code/replay_structure_causal_v5_v6_v7.py`).
+
+### Résultat chiffré
+
+**Niveau classification** (impact du fix sur `compute_ascending_lows` lui-même, indépendamment du reste du score, `code/structure_causal_vs_batch_comparison.py`) :
+
+| Actif | "creux ascendants" change | `structure_favorable` change | `long_signal` (score≥2) batch | `long_signal` causal |
+|---|---|---|---|---|
+| BTC H4 | 16,7 % des barres | 6,5 % des barres | 25,9 % | 24,9 % |
+| ETH H4 | 16,4 % | 6,2 % | 25,1 % | 24,1 % |
+| BNB H4 | 16,3 % | 6,5 % | 26,1 % | 25,4 % |
+| SOL H4 | 16,0 % | 6,1 % | 24,3 % | 23,5 % |
+
+Le taux de reclassification de `compute_ascending_lows` seul (~16 %, plus élevé que les 11,5 % mesurés sur 200 échantillons — attendu, la mesure ci-dessus porte sur la série H4 complète, ~14 200 barres, pas un échantillon) se propage à un effet plus modeste une fois combiné avec le filtre EMA (`structure_favorable`, ~6 %) et encore plus modeste sur la fréquence du signal final (`long_signal`, environ -1 point de pourcentage).
+
+**Niveau performance des moteurs** (H4, le timeframe solide — D1 reste un échantillon trop mince pour être lu comme fiable, avant comme après ce fix, comme déjà noté pour le P0) :
+
+| Moteur | Retour moyen (structure batch, référence P0) | Retour moyen (structure causale, ce fix) | Win rate moyen batch | Win rate moyen causal | Bascule de signe |
+|---|---|---|---|---|---|
+| v5 (16 configs H4) | +572,9 % | +501,4 % (≈ ÷1,14, soit -12 %) | 38,3 % | 38,9 % | 0/16 |
+| v6 avec régime (32 configs H4) | +440,0 % | +389,0 % (≈ ÷1,13, soit -12 %) | 38,9 % | 39,2 % | 0/32 |
+| v7 MTF (48 configs, H4 uniquement) | +243,1 % | +208,2 % (≈ ÷1,17, soit -14 %) | 41,1 % | 41,3 % | **0/48** |
+
+Sur D1 (échantillon déjà mince, 13-32 trades sur 6 ans, déjà signalé comme peu concluant) : bascules de signe fréquentes (12/16 v5, 21/32 v6) mais ampleur absolue minuscule (quelques points de pourcentage de retour) — cohérent avec du bruit de petit échantillon plutôt qu'un effet causal systématique, exactement le même constat que pour le P0 du cycle.
+
+### Conclusion — honnête sur l'ampleur, pas gonflée en "enjeu majeur"
+
+- **Sur H4 (le résultat qui compte, y compris le résultat phare `MTF_CROSS_VALIDATION_H4_D1.md`) : 100 % des configurations testées (48/48 v7, 32/32 v6, 16/16 v5) gardent le même signe.** Le fix ne change pas la conclusion directionnelle du projet.
+- **Ampleur réelle, bien plus petite que le P0 du cycle** (qui divisait le retour par ~4 et le win rate de ~10 points) : ici, le retour diminue d'environ 12-14 % (pas ÷4), et le win rate **s'améliore très légèrement** (+0,3 à +0,6 point) plutôt que de se dégrader — sens inverse du P0. C'est exactement ce que `PLAN.md` anticipait ("ampleur bien plus petite que #2 (fenêtre fixe de 3 barres, pas la série entière)") — confirmé, pas juste supposé.
+- **"Mitigé" plutôt que "résolu" au sens plein**, pour une raison différente du P0 : la correction technique elle-même est complète et vérifiée (test de causalité, propagation à v4/v5/v6/v7/capital_tiers/fibonacci), mais **`backtest_phase2_v4.py` et `backtest_phase2_capital_tiers.py`, bien que corrigés dans le code, n'ont pas été rejoués/requantifiés ici** (hors du "v5/v6/v7 au minimum" de la tâche — v4 est un moteur superseded sans référence causale de cycle, et capital_tiers duplique v7 pour une raison de coordination inter-agents documentée dans son propre fichier). Propagation restante, explicite plutôt que silencieuse : si ces deux moteurs sont un jour utilisés pour un chiffre cité, les rejouer avec le code désormais causal avant de citer leurs résultats existants.
+- **Fibonacci et trend_table sont, eux, pleinement propagés et vérifiés** (tests ajustés, 5/5 et 6/6) — pas une propagation restante, contrairement à ce que redoutait la découverte initiale.
 
 ## ❌ Jamais implémenté (liste exhaustive, pas de trou silencieux)
 
@@ -159,4 +194,4 @@ Détail complet (32 lignes) : `ablation_test_cycle_results.csv`.
 | ~~Fibonacci retracement comme critère d'entrée~~ | ~~#9, #10, #11, #13, #14~~ | **Fait** — règle resynthétisée fidèlement (PAS la "zone dorée 38-61,8%" supposée au départ, 2 des 5 sources ne documentent en réalité aucun niveau d'entrée), filtre optionnel implémenté et mesuré : dégrade uniformément la performance de ce proxy (32/32 configs), gardé optionnel — voir section ✅ ci-dessus pour le détail complet |
 
 ## Mise à jour de PLAN.md
-`PLAN.md` datait d'avant le refactoring, le classificateur de régime, la validation croisée MTF et la découverte des funding rates — il a été remis à jour (même commit que ce document) pour pointer vers ce document et refléter l'état réel. Remis à jour de nouveau ce cycle de travail pour le traitement du P0 (cycle causal).
+`PLAN.md` datait d'avant le refactoring, le classificateur de régime, la validation croisée MTF et la découverte des funding rates — il a été remis à jour (même commit que ce document) pour pointer vers ce document et refléter l'état réel. Remis à jour de nouveau ce cycle de travail pour le traitement du P0 (cycle causal), puis à nouveau pour le traitement du P0-bis (structure causale, occurrence #4/item 8).
