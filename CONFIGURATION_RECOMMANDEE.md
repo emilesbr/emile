@@ -212,6 +212,107 @@ composante gate MTF (structurellement non testée ici).
 
 ---
 
+## 4bis. Tentative de validation hors-échantillon élargie, gate MTF ACTIVÉ — recherche de données, résultat honnête : rien d'exploitable trouvé
+
+Reprend explicitement la limite énoncée en section 4 ("l'OOS XRP... ne valide donc
+pas le composant gate MTF, qui reste structurellement intestable sur un historique
+aussi court"). Objectif de cette tentative : trouver, sur GitHub, une donnée OHLCV
+**horaire ou plus fine** pour un actif **jamais utilisé dans ce projet** (ni
+BTC/ETH/BNB/SOL/XRP — les 5 actifs déjà mobilisés pour calibrer ou décider
+quelque chose), avec assez d'historique pour que le gate Hebdomadaire ("UT+2
+strict") converge (`EMA_SLOW=55` semaines) sur un nombre de bougies Hebdomadaires
+qui ne soit pas lui-même un artefact de petit échantillon — contrairement aux 53
+bougies Hebdo de l'OOS XRP (section 4).
+
+**Recherche menée** (dépôts et requêtes essayés, par ordre) :
+
+1. **Recherche de code GitHub ciblée par nom de fichier** (`filename:`) sur les
+   conventions courantes de nommage horaire (`ADAUSDT.csv`, `Binance_LTCUSDT_1h.csv`,
+   `Binance_DOGEUSDT_1h.csv`, `Binance_ADAUSDT_1h.csv`, `Binance_DOTUSDT_1h.csv`,
+   `Binance_LINKUSDT_1h.csv`) — résultats trouvés, mais soit des fenêtres de
+   quelques jours à quelques mois (caches d'appels API ponctuels, pas des dumps
+   historiques), soit en réalité des données **journalières** malgré le nom.
+2. **Recherche par contenu** (colonnes caractéristiques du format
+   CryptoDataDownload : `Volume XXX`, `Volume USDT`, `tradecount`) pour ADA, DOGE,
+   LINK, DOT, ETC, TRX, MATIC, XLM, ATOM, XMR — nombreux résultats, mais **tous**
+   en résolution journalière (`_d.csv`) ou sur des fenêtres bien trop courtes en
+   horaire.
+3. **Dépôt cloné et vérifié directement** (comme demandé, `git clone`, pas
+   seulement lu via l'API de recherche) : `priyanshux/cryptopy`
+   (`https://github.com/priyanshux/cryptopy`, cloné dans
+   `/home/user/priyanshux-cryptopy`). Contient bien des CSV horaires réels
+   (`CryptoPy/data_hourly/Binance_LTCUSDT_1h.csv`, colonnes klines Binance
+   authentiques) pour un actif jamais utilisé ici (LTC) — mais **seulement 3001
+   lignes, du 2020-08-01 23:00 au 2020-12-05 00:00 (~125 jours, ~4 mois)**.
+   Resamplé en Hebdomadaire, cela donnerait environ 18 bougies — **moins encore**
+   que les 53 bougies de l'OOS XRP D1, donc structurellement pire pour le gate
+   MTF, pas mieux. Rejeté pour cette raison précise (pas parce que la donnée est
+   fausse, mais parce qu'elle est trop courte pour l'usage visé ici).
+4. **Dépôt vérifié** : `ireneannx/deeplearning_crypto` — dossier nommé
+   `Crypto_data_Hourly/` contenant des fichiers pour ~25 altcoins jamais utilisés
+   ici (TRX, LINK, ETC, XLM, ADA, DOGE, ATOM, XMR, MATIC, DOT, etc.), mais
+   vérification directe du contenu : les lignes sont espacées d'**1 jour**, pas
+   d'1 heure (`2018-04-17` puis `2018-04-18`), et le SHA git du fichier "hourly"
+   est **identique** à celui du fichier "daily" correspondant (`Crypto_data_daily/`)
+   — le dossier est mal nommé, c'est une copie de la donnée journalière. Rejeté
+   (donnée réelle mais pas horaire malgré le nom).
+5. **Dépôts `kochlisGit/VIT2` et `iamaryaak/RL-Crypto-Bot`** : très riches en
+   altcoins jamais utilisés ici (LTC, ETC, TRX, LINK, XLM, ADA, DOGE, DOT, MATIC,
+   ATOM, XMR, EOS, ZEC, DASH, QTUM...), certains avec plusieurs années
+   d'historique réel (ex. `HitBTC_ETHUSD_d.csv`/`HitBTC_LTCUSD_d.csv` depuis
+   2018) — mais **exclusivement en résolution journalière** (`_d.csv`), aucun
+   fichier horaire dans ces dépôts (vérifié : recherche dédiée `"_1h" OR
+   "_hourly" OR "_h.csv"` dans `kochlisGit/VIT2`, 0 résultat). Une donnée
+   journalière pluriannuelle aurait pu suffire à faire converger un gate
+   Hebdomadaire (contrairement au cas XRP), mais cela aurait testé "exécution
+   D1 + gate Hebdo", pas la config de référence "exécution H4 + gate Hebdo" —
+   délibérément écarté plutôt que substitué en silence, pour ne pas présenter un
+   test différent comme la validation demandée.
+6. **Dataset Kaggle "G-Research Crypto Forecasting"** (minute par minute,
+   2018-2021, 14 actifs dont Litecoin/Ethereum Classic/Cardano/Dogecoin/Monero/
+   Stellar/TRON — plusieurs jamais utilisés ici) identifié comme source
+   théoriquement idéale (résolution encore plus fine que l'horaire, plusieurs
+   années) — mais son fichier `train.csv` (~24 millions de lignes, plusieurs Go)
+   n'est **committé sur aucun dépôt GitHub public trouvé** (recherche dédiée sur
+   le schéma de colonnes exact `timestamp,Asset_ID,Count,Open,High,Low,Close,
+   Volume,VWAP,Target`, 0 résultat) — cohérent avec sa taille (au-delà de la
+   limite de fichier GitHub sans LFS) et les conditions de la compétition
+   Kaggle ; seuls des notebooks qui le *lisent* depuis un chemin local/Kaggle
+   sont indexés, jamais la donnée elle-même.
+7. Dépôt local déjà présent dans l'environnement, `/home/user/trade-v1`
+   (`data/fetcher.py`) : récupère de la donnée horaire via `ccxt`/Binance en
+   direct, mais **aucune donnée committée** (fetcher exécuté à la demande) — pas
+   un dépôt de données au sens de cette tâche, et l'exécuter aurait signifié
+   aller chercher une donnée fraîche hors GitHub, hors du périmètre demandé ici.
+
+**Résultat honnête** : aucune source horaire (ou plus fine) exploitable —
+c'est-à-dire à la fois (a) réellement horaire ou plus fine, (b) pour un actif
+jamais utilisé dans ce projet, et (c) avec assez d'historique pour qu'un
+resample Hebdomadaire dépasse largement les 53 bougies déjà jugées trop minces
+sur XRP — n'a été trouvée après cette recherche. Conformément au principe déjà
+appliqué à l'OOS XRP (ne jamais réduire artificiellement un warmup pour faire
+semblant qu'un gate fonctionne), **aucun nouveau script `oos_new_asset_recommended.py`
+n'a été écrit** : l'écrire sur la seule donnée disponible (LTC horaire 4 mois,
+point 3 ci-dessus) aurait reproduit exactement le problème déjà documenté pour
+XRP (gate neutralisé faute de convergence), sans apporter d'information
+nouvelle — un "non trouvé, documenté" est le résultat honnête ici, pas un
+échec de méthode à masquer.
+
+**Ce que cela signifie pour la Phase 3** : la limite énoncée en section 4 reste
+entière — le composant gate MTF ("UT+2 strict", décision #2, l'élément le plus
+distinctif de la config recommandée) n'a toujours été testé que sur les 4
+actifs BTC/ETH/BNB/SOL déjà utilisés pour construire/choisir la config,
+jamais sur un actif véritablement hors-échantillon avec une résolution
+suffisante. Cette limite est structurelle à l'environnement actuel (absence de
+donnée intrajournalière pluriannuelle accessible pour un nouvel actif), pas à
+la méthode : si une telle donnée devient disponible (nouveau dépôt GitHub,
+export manuel depuis Binance, etc.), la procédure à suivre est déjà écrite
+(section 2 ci-dessus + `OOS_VALIDATION_CYCLE_SIGN.md` section 2) et
+`run_recommended(..., use_mtf_gate=True)` est déjà prêt à l'accueillir sans
+modification du moteur.
+
+---
+
 ## 5. Ce qui reste ouvert (pas caché)
 
 - Le composant **cycle isolé** ne montre aucune corrélation causale
@@ -229,8 +330,14 @@ composante gate MTF (structurellement non testée ici).
 - Le seuil de confluence percentile adaptatif du Cluster Technique n'a pas
   été stress-testé pour sa robustesse (`PLAN.md`, vague 5 potentielle).
 - L'OOS XRP ne valide que le socle signal+risk management, pas le gate MTF
-  (cf. section 4) — une donnée H4/H1 pour un actif indépendant permettrait
-  de fermer cette limite si elle devient disponible.
+  (cf. section 4) — **recherche déjà menée** pour une donnée H4/H1 sur un
+  actif indépendant (cf. section 4bis) : rien d'exploitable trouvé sur GitHub
+  à ce jour (données horaires trouvées soit trop courtes, soit en réalité
+  journalières malgré leur nom ; données journalières pluriannuelles trouvées
+  en abondance mais insuffisantes pour tester "H4 exécution", pas seulement
+  "gate Hebdo"). Cette limite reste donc ouverte, mais sa cause (absence de
+  donnée accessible, pas un choix de méthode) et la procédure à suivre si une
+  donnée devient disponible sont désormais documentées.
 - Le proxy reste un proxy : jamais validé contre le vrai PRO
   Framework/Momentum de Philippe Roux (accès TradingView requis, hors de
   portée technique actuelle) — limite fondamentale de tout ce document,
