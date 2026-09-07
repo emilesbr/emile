@@ -12,6 +12,10 @@ Suivi de toutes les transcriptions/résumés fournis par l'utilisateur, pour ne 
 | 6 | `TRADING_LESSONS_NEUROBIOLOGIE.md` | Neurosciences (amygdale/hippocampe/cortex préfrontal), règles mécaniques (latence 10s, session max 60-90min), 4 profils de réponse primaire | Non abordé — toujours en attente | Complète la checklist pré-trade (source #5) avec des garde-fous neuro |
 | 7 | `TRADING_LESSONS_CHAOS_DOPAMINE.md` | Théorie du chaos (Feigenbaum), circuit dopamine/anticipation, "method hopping" = erreur critique | Non abordé — toujours en attente | 4ᵉ confirmation de la "3ème borne de range" comme pilier central |
 | 8 | `TRADING_LESSONS_DOPAMINE_SEROTONINE.md` | Duel dopamine/sérotonine, expérience du marshmallow, boucle toxique du "succès chanceux" | Non abordé — toujours en attente | Explique neurologiquement le rejet du scalping ET du très long terme |
+| 9 | `TRADING_LESSONS_MTF_SUIVI_TENDANCE.md` | Source technique (pas psycho) : anatomie 3ème/4ème borne, breakout="reddition", règle du 80/20 | **🎯 PROBABLE RÉSOLUTION** : règle "UT+2" — tendance confirmée 2 niveaux au-dessus autorise à trader contre la structure locale (mécanisme identique en esprit, exemple à 3 niveaux vs 7 dans la description initiale) | Précise l'anatomie 3ème/4ème borne, confirme le ratio 80/20 |
+
+## 🎯 Statut de la question initiale (règle multi-timeframe)
+**Probablement résolue par la source #9** (voir `TRADING_LESSONS_MTF_SUIVI_TENDANCE.md`) : mécanisme "UT+2" — une tendance confirmée 2 niveaux de timeframe au-dessus autorise à trader/transgresser la structure du TF local. Correspond en esprit à la description initiale de l'utilisateur, avec un exemple simplifié (3 niveaux : Daily/Hebdo/Mensuel) plutôt que la séquence complète à 7 niveaux évoquée au départ (trimestre-mensuel-hebdo-journalier-4h-1h-15min). À confirmer si la vidéo source exacte de la description initiale est retrouvée.
 
 ## Items ouverts toujours en suspens (rappel, voir PLAN.md)
 1. XRP absent du backtest multi-timeframe (données non trouvées)
