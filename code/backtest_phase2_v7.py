@@ -73,13 +73,22 @@ def attach_higher_context(df_low: pd.DataFrame, df_high: pd.DataFrame, high_dura
 
 
 def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: bool = True,
-           use_mtf_stop: bool = False, record_trace: bool = False) -> dict:
+           use_mtf_stop: bool = False, record_trace: bool = False, reverse_at_limit: bool = False) -> dict:
     """`use_mtf_stop` (défaut False, préserve le comportement historique de
     v7) : si True, le stop ("Extreme Channel") utilisé à l'entrée est celui
     calculé sur le VRAI D1 (`ctx_support` D1, transmis sans lookahead par
     `attach_higher_context`) plutôt que le `ctx_support` recalculé sur le H4
     lui-même. Les deux sont des niveaux de prix absolus (pas des distances),
-    donc directement substituables dans le calcul de `stop_pct` ci-dessous."""
+    donc directement substituables dans le calcul de `stop_pct` ci-dessous.
+
+    `reverse_at_limit` (défaut False, préserve le comportement historique de
+    v7, même principe que `use_mtf_stop`) : transmis tel quel à
+    `run_position_engine` -- si True, une tranche qui se clôture à la Limite
+    ouvre en plus une jambe short "+Reverse" (RULES_EXTRACTION.md §3, profil
+    Très Agressif uniquement au sens du manuel, mais le paramètre est
+    utilisable avec n'importe quel profil ici -- c'est l'appelant qui décide
+    à qui l'appliquer, cf. hypothèse H-Reverse-Range dans
+    `position_engine.py`)."""
     p = PROFILES_V4[profile_name]
     h4 = prepare(h4)
     d1 = prepare(d1)
@@ -150,7 +159,7 @@ def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: 
         n, o, high, low, c, gated_long_signal, open_tranche_fn,
         val_close_frac=p["val_close"], conf_close_frac=p["conf_close"],
         conf_to_be=True, max_tranches=MAX_TRANCHES, fee=FEE,
-        record_trace=record_trace,
+        record_trace=record_trace, reverse_at_limit=reverse_at_limit,
     )
     result = {
         "n_trades": raw["n_trades"], "max_dd_%": raw["max_dd_%"],

@@ -6,10 +6,15 @@ attendu" dans chaque test).
 
 Aucune donnée réelle n'est utilisée. Exécution : `python3 test_position_engine.py`.
 Affiche PASS/FAIL par test et sort avec un code non-nul si un test échoue.
+
+8 tests (5 historiques Validation/Confirmation/Limite/Invalidation/
+pyramidalisation + 3 pour le mécanisme "+Reverse" du profil Très Agressif,
+table RANGE, RULES_EXTRACTION.md §3 -- cf. le bloc dédié en tête de
+`position_engine.py`, hypothèse H-Reverse-Range).
 """
 import numpy as np
 
-from position_engine import process_tranche, run_position_engine
+from position_engine import process_tranche, process_reverse, run_position_engine
 
 
 def make_tranche(entry, stop, remaining, val_px, conf_px, lim_px):
@@ -243,12 +248,136 @@ def test_pyramiding_two_tranches():
     assert raw["win_rate_%"] == 100.0
 
 
+# ---------------------------------------------------------------------------
+# Test 6 : "+Reverse" du profil Très Agressif (table RANGE) -- séquence
+# complète Validation -> Confirmation -> Limite -> Reverse, P&L exact pour
+# la jambe long ET pour la jambe short (hypothèse H-Reverse-Range, cf. tête
+# de position_engine.py). Profil Très Agressif réel : val_close_frac=0.0,
+# conf_close_frac=0.0 ("RIEN"/"—") -- la Validation/Confirmation sont
+# atteintes dans la série de prix (pour exercer la machine à états au
+# complet) mais ne clôturent rien, la totalité de la tranche reste ouverte
+# jusqu'à la Limite.
+# ---------------------------------------------------------------------------
+def test_reverse_at_limit_sequence():
+    """Jambe long : entrée 100, stop 90, val_px 105, conf_px 110, lim_px 120.
+    Validation touchée (close=106, i=3) puis Confirmation (close=111, i=4)
+    -- aucune des deux ne clôture rien (fractions à 0, profil Très Agressif).
+    Limite touchée (close=121, i=5) : clôture totale + ouverture immédiate
+    d'une jambe reverse (short) au même prix de clôture.
+
+    Calcul attendu à la main :
+      - Jambe long : pnl = (121-100)/100 = 0.21 -> equity = 1.21
+      - Jambe reverse (H-Reverse-Range) : stop_pct = (100-90)/100 = 0.10,
+        gain_pct = (120-100)/100 = 0.20 -> entry=121, stop=121*1.10=133.1,
+        target=121*0.80=96.8
+      - i=6 : close=90 <= target(96.8) -> cible atteinte, pnl reverse =
+        (121-90)/121 = 31/121
+      - equity finale = 1.21 * (1 + 31/121) = (121/100)*(152/121) = 152/100
+        = 1.52 (calcul exact, pas d'arrondi intermédiaire)
+      - total_return_% attendu = 52.0, n_trades attendu = 2 (jambe long +
+        jambe reverse), win_rate_% attendu = 100.0 (les deux gagnantes)
+    """
+    n = 7
+    o = np.array([100.0, 100.0, 102.0, 105.0, 109.0, 115.0, 115.0])
+    high = np.array([100.0, 101.0, 103.0, 107.0, 112.0, 122.0, 116.0])
+    low = np.array([100.0, 99.0, 101.0, 104.0, 108.0, 115.0, 85.0])
+    c = np.array([100.0, 100.0, 102.0, 106.0, 111.0, 121.0, 90.0])
+    long_signal = np.array([True] * n)
+
+    def open_tranche_fn(i, tranches, win_streak):
+        if i == 1 and len(tranches) == 0:
+            return make_tranche(entry=100.0, stop=90.0, remaining=1.0,
+                                 val_px=105.0, conf_px=110.0, lim_px=120.0)
+        return None
+
+    raw = run_position_engine(
+        n, o, high, low, c, long_signal, open_tranche_fn,
+        val_close_frac=0.0, conf_close_frac=0.0, conf_to_be=True,
+        max_tranches=1, fee=0.0, reverse_at_limit=True,
+    )
+    assert raw["n_trades"] == 2, f"n_trades attendu 2 (long + reverse), obtenu {raw['n_trades']}"
+    assert abs(raw["final_equity"] - 1.52) < 1e-9, f"final_equity attendu 1.52, obtenu {raw['final_equity']}"
+    assert raw["total_return_%"] == 52.0, f"total_return_% attendu 52.0, obtenu {raw['total_return_%']}"
+    assert raw["win_rate_%"] == 100.0
+
+
+def test_reverse_disabled_by_default_no_behavior_change():
+    """Même scénario que ci-dessus mais SANS `reverse_at_limit` (comportement
+    par défaut) : la jambe long se clôture à la Limite exactement pareil
+    (pnl=+21%), mais AUCUNE jambe reverse ne doit s'ouvrir -- n_trades doit
+    rester à 1, pas 2, et le mouvement de prix après la Limite (bar i=6, qui
+    aurait déclenché la cible reverse) ne doit avoir AUCUN effet sur l'equity.
+    """
+    n = 7
+    o = np.array([100.0, 100.0, 102.0, 105.0, 109.0, 115.0, 115.0])
+    high = np.array([100.0, 101.0, 103.0, 107.0, 112.0, 122.0, 116.0])
+    low = np.array([100.0, 99.0, 101.0, 104.0, 108.0, 115.0, 85.0])
+    c = np.array([100.0, 100.0, 102.0, 106.0, 111.0, 121.0, 90.0])
+    long_signal = np.array([True] * n)
+
+    def open_tranche_fn(i, tranches, win_streak):
+        if i == 1 and len(tranches) == 0:
+            return make_tranche(entry=100.0, stop=90.0, remaining=1.0,
+                                 val_px=105.0, conf_px=110.0, lim_px=120.0)
+        return None
+
+    raw = run_position_engine(
+        n, o, high, low, c, long_signal, open_tranche_fn,
+        val_close_frac=0.0, conf_close_frac=0.0, conf_to_be=True,
+        max_tranches=1, fee=0.0,
+        # reverse_at_limit omis -> défaut False
+    )
+    assert raw["n_trades"] == 1, f"n_trades attendu 1 (pas de reverse), obtenu {raw['n_trades']}"
+    assert abs(raw["final_equity"] - 1.21) < 1e-9, f"final_equity attendu 1.21, obtenu {raw['final_equity']}"
+    assert raw["total_return_%"] == 21.0, f"total_return_% attendu 21.0, obtenu {raw['total_return_%']}"
+
+
+# ---------------------------------------------------------------------------
+# Test 7 : process_reverse en isolation -- stop touché sur la MÈCHE (comme
+# l'Invalidation long) même si la clôture reste au-dessus du stop ; et cible
+# atteinte sur la CLÔTURE (comme la Limite long), P&L exact des deux côtés.
+# ---------------------------------------------------------------------------
+def test_process_reverse_stop_on_wick_and_target_on_close():
+    """Jambe reverse : entry=100, stop=110, target=80.
+
+    Cas A (stop, sur la mèche) : high=115 (>= stop=110) alors que close=105
+    reste EN DESSOUS du stop -- doit tout de même se déclencher (ordre réel
+    intrabar, même convention que l'Invalidation long).
+      pnl attendu = (100-110)/100 = -0.10
+
+    Cas B (cible, sur la clôture) : high=105 (< stop=110, pas de mèche
+    dangereuse) et close=79 (<= target=80) -- doit se déclencher sur la
+    clôture, comme la Limite long.
+      pnl attendu = (100-79)/100 = 0.21
+    """
+    rp_a = {"entry": 100.0, "stop": 110.0, "target": 80.0, "remaining": 1.0}
+    high_a = np.array([0.0, 115.0])
+    low_a = np.array([0.0, 95.0])
+    c_a = np.array([0.0, 105.0])
+    closed_a, fee_frac_a, realized_a = process_reverse(rp_a, 1, high_a, low_a, c_a)
+    assert closed_a is True
+    assert fee_frac_a == 1.0
+    assert abs(realized_a - (-0.10)) < 1e-9, f"pnl attendu -0.10, obtenu {realized_a}"
+
+    rp_b = {"entry": 100.0, "stop": 110.0, "target": 80.0, "remaining": 1.0}
+    high_b = np.array([0.0, 105.0])
+    low_b = np.array([0.0, 78.0])
+    c_b = np.array([0.0, 79.0])
+    closed_b, fee_frac_b, realized_b = process_reverse(rp_b, 1, high_b, low_b, c_b)
+    assert closed_b is True
+    assert fee_frac_b == 1.0
+    assert abs(realized_b - 0.21) < 1e-9, f"pnl attendu 0.21, obtenu {realized_b}"
+
+
 TESTS = [
     test_validation_confirmation_limite_sequence,
     test_immediate_stop_loss,
     test_no_breakeven_before_confirmation,
     test_trigger_on_close_not_on_wick,
     test_pyramiding_two_tranches,
+    test_reverse_at_limit_sequence,
+    test_reverse_disabled_by_default_no_behavior_change,
+    test_process_reverse_stop_on_wick_and_target_on_close,
 ]
 
 
