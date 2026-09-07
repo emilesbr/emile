@@ -40,6 +40,8 @@ Chaque agent réutilise/étend le moteur de backtest déjà construit (données 
 
 **Critère GO/NO-GO** : Sharpe out-of-sample > 0 de façon stable sur au moins 3 fenêtres consécutives, ET cohérence de signe des résultats entre timeframes voisins (pas de contradiction type H1 profitable / H4 catastrophique sur le même actif).
 
+**Statut réel (voir `PHASE1_CLOSEOUT.md`) : substantiellement complète pour H4/D1 (GO), H1/M15 en NO-GO. PAS entièrement close — 4 items restent ouverts : absence de données XRP, signal encore un proxy générique jamais validé contre le vrai PRO Framework, règle de sélection de timeframe "trimestre→journalier" non vérifiée (en attente des transcriptions Trading Lessons). Décision explicite : ces items n'empêchent pas d'avancer sur la Phase 2 en parallèle, mais restent à traiter.**
+
 ---
 
 ## Phase 2 — Gestion du risque (dérivée des règles extraites, pas inventée)

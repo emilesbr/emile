@@ -1,4 +1,6 @@
-# Phase 1 — Clôture (compléments : cascade multi-timeframe + sensibilité paramétrique)
+# Phase 1 — État réel (PAS une clôture complète — voir items ouverts)
+
+**Statut correct : substantiellement complète pour H4/D1. PAS "close".** Ce document avait initialement conclu "Phase 1 est close" — c'était inexact et corrigé ici. Voir la section "Items ouverts non résolus" en fin de document avant toute lecture des résultats ci-dessous comme définitifs.
 
 Suite à `BACKTEST_RESULTS_MTF.md` et `WALKFORWARD_ANALYSIS.md`, trois points restaient ouverts avant de considérer la Phase 1 terminée. Ce document les clôt.
 
@@ -45,4 +47,15 @@ Aucune donnée horaire réelle avec historique suffisant trouvée sur les dépô
 - **H1 = amélioré mais toujours instable** au sens du critère strict (pas de série ≥3 ans positifs). **NO-GO** avec ce proxy en l'état.
 - **M15 = rejeté sans appel** (cf. `WALKFORWARD_ANALYSIS.md`). **NO-GO.**
 
-Phase 1 est close. Passage à la Phase 2 (money management appliqué spécifiquement sur H4/D1).
+## Items ouverts non résolus (à ne pas considérer comme clos)
+
+| Item | Statut réel | Impact sur la suite |
+|---|---|---|
+| XRP absent du backtest multi-timeframe | Non résolu — aucune donnée H1 réelle trouvée | N'affecte pas H4/D1 sur BTC/ETH/BNB/SOL ; XRP reste un angle mort tant qu'aucune source n'est identifiée |
+| H1 reste NO-GO | Non résolu — amélioré par la cascade mais toujours instable | Ne pas trader H1 avec ce proxy ; pas un blocage pour H4/D1 |
+| Signal = proxy générique, jamais validé contre le vrai PRO Framework/Momentum | Non résolu — nécessite export TradingView réel (Data Window/alertes) | Tout résultat Phase 1 reste une approximation ; la Phase 2 (money management) hérite de cette même limite tant que le signal réel n'est pas branché |
+| Règle "tendance repérée sur TF X → trader TF X-2" (trimestre→journalier) | Non vérifiée — en attente des transcriptions Trading Lessons | Pourrait remettre en cause la logique de cascade (H1→H4, H4→D1, D1→W1) actuellement basée uniquement sur le PDF |
+
+## Décision de passage en Phase 2
+
+Ces 4 items restent ouverts et **ne sont pas résolus par ce document**. Décision explicite : ils sont indépendants du contenu de la Phase 2 (le money management par profil de risque ne dépend pas de la résolution de XRP, du signal réel, ou de la règle trimestrielle), donc le travail sur la Phase 2 peut avancer en parallèle sur H4/D1 — mais cette liste reste active et devra être reprise, pas oubliée.
