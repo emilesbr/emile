@@ -160,3 +160,19 @@ négatif (−0.59 %, p = 1.1 × 10⁻⁴), conformément à la procédure fixée
 (H1 : corrélation positive).
 
 **Conclusion en une phrase : le signe corrigé de la composante cycle (`-sin(phase)`) tient hors échantillon — validé de façon indépendante sur XRP, un actif et une relation jamais utilisés pour décider ce signe, avec une significativité statistique forte (p < 10⁻⁹) et confirmée par bootstrap.**
+
+Cette conclusion reste vraie **telle qu'énoncée** : elle porte sur le SIGNE, mesuré avec le calcul BATCH alors en production. Elle ne doit plus être lue comme une validation de l'AMPLEUR de la corrélation causale — voir section 7 ci-dessous, ajoutée après traitement du P0.
+
+## 7. Addendum — rejeu avec la version CAUSALE (traitement du P0, cf. `COUVERTURE_ENSEIGNEMENTS.md`)
+
+La limite signalée section 5 ("Transformée de Hilbert calculée sur la série entière d'un coup... calcul causal/rolling requis") a été traitée dans un cycle de travail ultérieur : `compute_cycle_phase_causal` (fenêtre glissante de 150 barres, `code/proxy_v2.py`) remplace désormais `compute_cycle_phase` (batch) dans `add_proxy_v2_score`. La procédure ci-dessus (section 2) a été rejouée à l'identique sur la MÊME donnée XRP (mêmes 365 barres, même fichier source), en remplaçant uniquement `compute_cycle_phase` par `compute_cycle_phase_causal` — résultats sauvegardés dans `oos_xrp_cycle_validation_CAUSAL.csv`.
+
+| Métrique | BATCH (section 3, ci-dessus) | CAUSALE (rejeu) |
+|---|---|---|
+| n (observations) | 344 | 214 (warmup causal plus long : 150j vs 20j) |
+| r (Pearson, sinewave vs rendement lendemain) | +0.3247 | **-0.0552** |
+| p (bilatéral) | 6.93 × 10⁻¹⁰ | **0.422 (non significatif)** |
+| IC 95 % bootstrap de r | [0.243, 0.409] | **[-0.182, +0.072] (contient 0)** |
+| `cycle_favorable` : rendement moyen groupe True vs False | +1.103 % vs −0.592 %, p=1.1×10⁻⁴ | −0.472 % vs −0.231 %, **p=0.753 (non significatif)** |
+
+**Conclusion honnête de cet addendum, à ne pas confondre avec la conclusion de la section 6** : une fois le calcul rendu réellement causal, **la corrélation cycle/rendement futur sur XRP hors-échantillon n'est plus statistiquement distinguable de zéro**. Ce résultat est cohérent avec ce qui est observé indépendamment sur BTC/ETH/BNB/SOL (H4 et D1, cf. `COUVERTURE_ENSEIGNEMENTS.md` ⚠️→◐) : sur les 5 actifs testés au total avec le calcul causal, aucun ne montre de corrélation significative. La validation OOS de la section 6 démontrait que le **signe** du batch tenait hors-échantillon ; elle ne peut plus être invoquée comme preuve que le composant cycle, une fois rendu causal, porte une information prédictive réelle — c'est précisément la question restée ouverte par cet addendum, pas tranchée en faveur du cycle.
