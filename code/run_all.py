@@ -31,7 +31,7 @@ CE QUE CE SCRIPT N'EST PAS
   données historiques déjà téléchargées (principe acté, PLAN.md en tête de
   document).
 
-MOTEURS COUVERTS (12 scripts `backtest_phase2_*.py` de `code/`)
+MOTEURS COUVERTS (13 scripts `backtest_phase2_*.py` de `code/`)
 ----------------------------------------------------------------
 Alias utilisable avec --only, module, description, CSV produit :
 
@@ -85,6 +85,13 @@ Alias utilisable avec --only, module, description, CSV produit :
                                         (none/d1_only/ut2_strict/d1_and_weekly,
                                         D1+Hebdomadaire) x 4 profils x 4 symboles.
                                         -> phase2_ut2_results.csv
+  recommended    backtest_phase2_recommended  LA config recommandée (synthèse,
+                                        vague 4 -- cf. CONFIGURATION_RECOMMANDEE.md) :
+                                        cycle+structure causaux, gate Hebdo seul
+                                        (UT+2 strict), sans Fibonacci/Andrews/
+                                        Wall Street/canal manuel/diversification/
+                                        reverse. H4 x 4 profils x 4 symboles.
+                                        -> phase2_recommended_results.csv
 
 Volontairement HORS PÉRIMÈTRE de ce script (pas des moteurs de backtest
 indépendants, mais des analyses dérivées qui lisent/comparent des CSV déjà
@@ -120,8 +127,13 @@ sur cette machine, pas une estimation)
                               ut2              27.4s
                               patterns         27.7s
 
-  TOTAL des 12 moteurs : 158.8s (~2,6 min) -- BTC/ETH/BNB/SOL, plusieurs
-  années de H1 rééchantillonné en H4/D1/Hebdo (~50-57k bougies H1 par actif).
+  recommended       7.0s (ajouté après ce chronométrage initial -- moteur
+                    le plus simple des 13 : H4+Hebdo seulement, pas de D1)
+
+  TOTAL des 12 moteurs pré-existants : 158.8s (~2,6 min) -- BTC/ETH/BNB/SOL,
+  plusieurs années de H1 rééchantillonné en H4/D1/Hebdo (~50-57k bougies H1
+  par actif). +7.0s pour "recommended" (mesuré séparément, cf. ci-dessus),
+  soit ~166s (~2,8 min) pour les 13 moteurs.
 
 Nettement plus rapide qu'on ne le craignait a priori : ces moteurs sont tous
 vectorisés (pandas/numpy), pas de boucle Python coûteuse par bougie. Les
@@ -217,6 +229,12 @@ ENGINES: list[Engine] = [
            "Validation multi-timeframe a N niveaux (D1+Hebdomadaire) x 4 "
            "gate_modes x 4 profils x 4 symboles",
            "phase2_ut2_results.csv"),
+    Engine("recommended", "backtest_phase2_recommended",
+           "LA config recommandee (synthese) : cycle+structure causaux, "
+           "gate Hebdo seul (UT+2 strict), sans Fibonacci/Andrews/Wall "
+           "Street/canal manuel/diversification/reverse. "
+           "H4 x 4 profils x 4 symboles",
+           "phase2_recommended_results.csv"),
 ]
 
 ENGINES_BY_ALIAS = {e.alias: e for e in ENGINES}
@@ -227,6 +245,7 @@ ENGINES_BY_ALIAS = {e.alias: e for e in ENGINES}
 FAST_FIRST_ORDER = [
     "base", "v4", "v5", "v6", "v7", "v7_reverse",
     "capital_tiers", "diversification", "fib", "trend", "ut2", "patterns",
+    "recommended",
 ]
 
 
@@ -314,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("Aucun --only fourni et --confirm-full absent : rien à faire.\n"
               "Utilise --only alias1,alias2 pour un sous-ensemble (recommandé), "
-              "ou --confirm-full pour rejouer les 12 moteurs (long, cf. docstring).\n"
+              "ou --confirm-full pour rejouer les 13 moteurs (long, cf. docstring).\n"
               "Utilise --list pour voir les alias disponibles.", file=sys.stderr)
         return 2
 

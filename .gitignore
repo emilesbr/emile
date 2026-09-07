@@ -1,2 +1,6 @@
 __pycache__/
 *.pyc
+# Sortie de code/run_all.py -- jamais la référence committée (voir sa
+# docstring : "ne remplace pas les CSV commités, qui restent la référence
+# tant que ce script n'a pas été relancé et ses sorties comparées à la main").
+code/run_all_output/

@@ -9,6 +9,33 @@
 
 ---
 
+## Configuration recommandée (réponse à "quelle config utiliser en Phase 3 ?")
+
+**`CONFIGURATION_RECOMMANDEE.md` est le document de synthèse qui répond,
+pour la première fois explicitement, à la question "quelle configuration
+utiliser en paper trading Phase 3 ?"** — jusqu'ici, chaque élément du
+corpus avait été testé isolément contre la baseline v7 (12 moteurs
+`backtest_phase2_*.py` distincts, cf. `code/run_all.py`), sans qu'aucun ne
+combine tout ce qui est validé en excluant ce qui dégrade. Ce document
+tranche les 10 décisions ON/OFF (cycle+structure causaux ON non négociable,
+gate Hebdomadaire "UT+2 strict" ON, Fibonacci/Andrews/canal manuel/
+diversification/stop cross-timeframe/+Reverse OFF par défaut, capital par
+palier en paramètre), cite pour chacune le chiffre déjà mesuré qui la
+justifie (rien n'est re-testé), et fournit LE chiffre de référence unique
+(BTC/ETH/BNB/SOL × 4 profils, `code/phase2_recommended_results.csv`), un
+walk-forward année par année (`code/walkforward_recommended_results.csv`,
+pas d'année catastrophique) et une validation hors-échantillon XRP
+(`code/oos_xrp_recommended_results.csv`, résultat honnête : échantillon de
+3 trades, non concluant, gate MTF non testable faute de données H4/H1 pour
+XRP). Moteur : `code/backtest_phase2_recommended.py` (+
+`code/walkforward_recommended.py`, `code/oos_xrp_recommended.py`,
+`code/test_backtest_phase2_recommended.py`, 7/7 tests), ajouté comme 13e
+moteur de `code/run_all.py` (alias `recommended`). Ce document pointe vers
+`COUVERTURE_ENSEIGNEMENTS.md`/`PLAN.md` plutôt que de dupliquer leur
+contenu — il ne remplace ni l'un ni l'autre, il choisit.
+
+---
+
 ## Document maître de couverture des enseignements
 
 **`COUVERTURE_ENSEIGNEMENTS.md` est désormais le document de référence unique pour savoir ce qui, du corpus (manuel PDF + 17 sources Trading Lessons), est implémenté ou non.** Avant de considérer une phase "faite", vérifier cette table plutôt que ce résumé narratif. Rappel du principe qui gouverne cette table depuis sa formulation explicite par l'utilisateur : **la performance du proxy ne sert jamais à décider si un élément du corpus doit être implémenté ou non** — le proxy n'est pas le vrai signal, donc une contre-performance en backtest n'est jamais un motif de rejet d'un élément documenté de la propriété intellectuelle de Philippe. Un élément documenté et non encore implémenté reste une lacune à combler, jamais une décision de conception.
@@ -169,7 +196,7 @@ P0, P0-bis, P1 "stop cross-timeframe", le test d'ablation du cycle, et désormai
 Le backlog "un élément du corpus par ligne" est soldé. Ce qui reste n'est plus "implémenter tel enseignement" mais consolider, requantifier et synthétiser un projet devenu tentaculaire (41 fichiers Python, 11 scripts `backtest_phase2_*.py` distincts, 67 tests). Rétrospective honnête (mode ingénieur senior) ayant motivé ce plan :
 
 **Ce qui ne satisferait pas un ingénieur senior en l'état** :
-1. Aucune synthèse : chaque feature a été testée isolément contre la baseline v7, personne n'a construit LA config recommandée combinant tout ce qui est validé (cycle causal, structure causale, UT+2 strict) en excluant ce qui dégrade (Fibonacci, gate Andrews) — pas de chiffre de référence unique à citer aujourd'hui.
+1. ~~Aucune synthèse : chaque feature a été testée isolément contre la baseline v7, personne n'a construit LA config recommandée combinant tout ce qui est validé (cycle causal, structure causale, UT+2 strict) en excluant ce qui dégrade (Fibonacci, gate Andrews) — pas de chiffre de référence unique à citer aujourd'hui.~~ — **traité** : `CONFIGURATION_RECOMMANDEE.md`, cf. section "Configuration recommandée" en tête de ce document.
 2. Hypothèses jamais croisées (H1-H12 trend_table, ×1.25 capital_tiers, jambe reverse "miroir", seuil confluence Cluster Technique) — chacune raisonnable isolément, jamais stress-testées ensemble.
 3. ~~`v4.py`/`capital_tiers.py` tournent encore sur l'ancienne structure batch (pré-P0-bis) — dette de requantification connue, jamais résorbée~~ — **résorbée ce cycle** : les deux fichiers importent bien la version causale (`compute_swing_low_confirmed` depuis `proxy_v2.py`, vérifié empiriquement, aucune copie locale), rejoués BTC/ETH/BNB/SOL tous profils. `capital_tiers.py` confirme le même schéma que v5/v6/v7 (0/48 bascule de signe, retour ÷1,08 environ) ; `v4.py` H4 est même **bit-à-bit identique** à l'ancien chiffre batch (sa maturité par comptage sur 90 bougies est peu sensible au décalage causal de 3 bougies, contrairement à `compute_ascending_lows`) — détail chiffré complet dans `COUVERTURE_ENSEIGNEMENTS.md` ⚠️→◐ P0-bis. Rappel : `v4.py` reste superseded (v4→v5→v6→v7), ce rejeu est de la complétude documentaire, pas une réhabilitation.
 4. ~~`regime_classifier.py` : zéro test, alors qu'il conditionne toutes les décisions d'entrée depuis v6.~~ — **traité ce cycle** : `code/test_regime_classifier.py` (10/10), voir "Critères de sortie Phase 2 → Phase 3" item 3 ci-dessus pour le détail.
@@ -183,7 +210,7 @@ Le backlog "un élément du corpus par ligne" est soldé. Ce qui reste n'est plu
   - ~~Rejeu de `v4.py`/`backtest_phase2_capital_tiers.py` avec la structure causale P0-bis (dette de requantification déjà identifiée, code déjà corrigé, juste jamais rejoué)~~ — **traité ce cycle** : rejoués, import causal vérifié, résultat conforme (v4 H4 bit-à-bit identique, capital_tiers ÷1,08 environ, 0 bascule de signe partout) — cf. `COUVERTURE_ENSEIGNEMENTS.md` ⚠️→◐ P0-bis
   - ~~Investigation dédiée de `cycle_ascending` (occurrence #3, non tranchée depuis le début) sur données réelles (pas seulement synthétique) — trancher si possible, sinon documenter pourquoi ça reste ouvert~~ — **traitée ce cycle** : tranchée (expliquée, pas un bug), cf. tableau occurrence #3 en tête de document
   - Pipeline unique rejouable (script qui relance tous les moteurs actuels d'un coup, remplace le geste manuel ad hoc)
-- **Vague 4 (séquentielle, après vague 3)** : synthèse — construire LA config recommandée (cycle+structure causaux, UT+2 strict, sans Fibonacci ni gate Andrews qui dégradent), produire un chiffre de référence unique, rejouer walk-forward + OOS XRP dessus.
+- ~~**Vague 4 (séquentielle, après vague 3)** : synthèse — construire LA config recommandée (cycle+structure causaux, UT+2 strict, sans Fibonacci ni gate Andrews qui dégradent), produire un chiffre de référence unique, rejouer walk-forward + OOS XRP dessus.~~ — **traitée** : cf. section "Configuration recommandée" en tête de ce document et `CONFIGURATION_RECOMMANDEE.md`. Walk-forward : pas d'année catastrophique sur BTC/ETH/BNB/SOL (2020-2026) ; OOS XRP : résultat honnête non concluant (3 trades, gate MTF non testable faute de données H4/H1 pour XRP, cf. document dédié section 4).
 - **Vague 5 (si le temps le permet)** : pistes ouvertes non tranchées — autre hypothèse de gating Andrews (celle testée dégrade nettement, pas forcément la seule lecture possible), robustesse du seuil de confluence Cluster Technique.
 
 Chaque retour d'agent vérifié indépendamment dans un clone isolé avant tout commit, comme fait pour les 13 chantiers précédents — aucun changement de discipline. Check-in de clôture programmé à l'échéance des 8h (`send_later`) pour un rapport final, que le travail soit fini avant ou non.

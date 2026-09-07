@@ -12,6 +12,8 @@ Le projet formalise, à partir du manuel officiel PRO Indicators (Philippe Roux)
 
 **Pour la liste exhaustive et à jour des lacunes ouvertes (corpus↔code) et leur priorisation : ne pas se fier au paragraphe ci-dessus au-delà du P0, consulter `COUVERTURE_ENSEIGNEMENTS.md` et le backlog priorisé de `PLAN.md`** — ce résumé exécutif n'est pas remis à jour à chaque changement, ces deux documents le sont.
 
+**Configuration recommandée pour la Phase 3 (paper trading), ajoutée ce cycle** : `CONFIGURATION_RECOMMANDEE.md` répond pour la première fois à "quelle config utiliser ?" — synthèse des 12 mesures existantes en 10 décisions ON/OFF (cycle+structure causaux ON, gate Hebdomadaire "UT+2 strict" ON, Fibonacci/Andrews/canal manuel/diversification/stop cross-timeframe/+Reverse OFF par défaut), un chiffre de référence unique (BTC/ETH/BNB/SOL × 4 profils), un walk-forward annuel (pas d'année catastrophique) et une validation OOS XRP (honnête, non concluante : 3 trades, gate MTF non testable). Moteur : `code/backtest_phase2_recommended.py`, alias `recommended` de `code/run_all.py` (13e moteur).
+
 ## Classement des documents
 
 ### Référence actuelle (à lire — reflète l'état le plus à jour du travail)
@@ -20,6 +22,7 @@ Le projet formalise, à partir du manuel officiel PRO Indicators (Philippe Roux)
 |---|---|
 | `PLAN.md` | Plan directeur, feuille de route par phase, statut le plus à jour |
 | `STATUS.md` (ce document) | Point d'entrée unique, classement documentaire |
+| `CONFIGURATION_RECOMMANDEE.md` | LA configuration recommandée pour la Phase 3 (synthèse des 10 décisions ON/OFF, chiffre de référence unique, walk-forward, OOS XRP) — réponse à "quelle config utiliser ?" |
 | `RULES_EXTRACTION.md` | Règles extraites du manuel PDF officiel (Phase 0) |
 | `TRADING_LESSONS_INDEX.md` | Index des 17 sources Trading Lessons, statut de la question multi-timeframe (résolue) |
 | `TRADING_LESSONS_*.md` (17 fichiers listés dans l'index) | Sources primaires (transcriptions/résumés) référencées par l'index — consulter via `TRADING_LESSONS_INDEX.md` pour le contexte |
@@ -39,7 +42,10 @@ Le projet formalise, à partir du manuel officiel PRO Indicators (Philippe Roux)
 | `code/proxy_v2.py`, `code/test_proxy_v2.py` | Signal proxy (TSI+cycle+structure), calcul du cycle désormais causal (`compute_cycle_phase_causal`, réserve P0 traitée) + 4 tests de régression (dont le test de causalité elle-même) |
 | `code/cycle_causal_window_selection.py` | Sélection empirique de la fenêtre causale (150) par stabilité inter-tiers temporels sur BTC/ETH/BNB/SOL réels |
 | `code/regime_classifier.py`, `code/backtest_phase2_v6.py`, `code/backtest_phase2_v7.py` | Moteurs v6 (régime) et v7 (validation croisée MTF) |
-| `code/run_all.py`, `code/test_run_all.py` | Point d'entrée unique pour rejouer les 12 moteurs `backtest_phase2_*.py` d'un coup (`--only alias1,alias2` ou `--confirm-full`), critère de sortie Phase 2→3 item 4 (`PLAN.md`). N'écrit jamais dans le dépôt (sortie dans `code/run_all_output/`) — ne remplace pas les CSV commités, qui restent la référence tant qu'il n'a pas été relancé et ses sorties comparées à la main. Rejeu complet mesuré : 158,8s (~2,6 min) |
+| `code/run_all.py`, `code/test_run_all.py` | Point d'entrée unique pour rejouer les 13 moteurs `backtest_phase2_*.py` d'un coup (`--only alias1,alias2` ou `--confirm-full`), critère de sortie Phase 2→3 item 4 (`PLAN.md`). N'écrit jamais dans le dépôt (sortie dans `code/run_all_output/`) — ne remplace pas les CSV commités, qui restent la référence tant qu'il n'a pas été relancé et ses sorties comparées à la main. Rejeu complet des 12 moteurs pré-existants mesuré : 158,8s (~2,6 min), +7,0s pour `recommended` |
+| `code/backtest_phase2_recommended.py`, `code/test_backtest_phase2_recommended.py` | LA configuration recommandée (synthèse) — cf. `CONFIGURATION_RECOMMANDEE.md`. 7/7 tests |
+| `code/walkforward_recommended.py` | Walk-forward annuel de la config recommandée (BTC/ETH/BNB/SOL, profil MODERE) |
+| `code/oos_xrp_recommended.py` | Validation hors-échantillon XRP de la config recommandée (D1, gate MTF désactivé faute de données H4/H1 — cf. `CONFIGURATION_RECOMMANDEE.md` section 4) |
 
 ### Historique / supersédé (pour archive — ne pas utiliser comme source de vérité)
 

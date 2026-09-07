@@ -1,0 +1,5 @@
+symbol,timeframe,gate_mtf,profile,n_trades,max_dd_%,total_return_%,win_rate_%,profit_factor
+XRPUSDT,D1,DESACTIVE (donnee insuffisante),FAIBLE,3,-1.2,-0.3,33.3,0.7
+XRPUSDT,D1,DESACTIVE (donnee insuffisante),MODERE,3,-2.4,-0.6,33.3,0.7
+XRPUSDT,D1,DESACTIVE (donnee insuffisante),AGRESSIF,3,-3.6,-1.5,33.3,0.47
+XRPUSDT,D1,DESACTIVE (donnee insuffisante),TRES_AGRESSIF,3,-4.1,-2.0,33.3,0.38
