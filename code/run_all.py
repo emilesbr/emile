@@ -97,10 +97,14 @@ Alias utilisable avec --only, module, description, CSV produit :
                                         unifié -- routeur range <-> tendance") :
                                         routeur bar-par-bar entre recommended.py
                                         (RANGE) et trend_table.py (TENDANCE),
-                                        priorité tendance si accumulation_active,
-                                        exclusivité mutuelle par actif. Compare
-                                        aussi à recommended.py seul (colonnes
-                                        côte à côte). H4 x 4 profils x 4 symboles.
+                                        gérés de façon INDÉPENDANTE (les deux
+                                        peuvent être ouverts simultanément sur
+                                        le même actif -- plus d'exclusivité
+                                        mutuelle, retirée car non justifiée par
+                                        le corpus, cf. "CORRECTION" dans
+                                        unified_protocol.py). Compare aussi à
+                                        recommended.py seul (colonnes côte à
+                                        côte). H4 x 4 profils x 4 symboles.
                                         -> backtest_phase2_unified_results.csv
 
 Volontairement HORS PÉRIMÈTRE de ce script (pas des moteurs de backtest
@@ -251,9 +255,9 @@ ENGINES: list[Engine] = [
     Engine("unified", "unified_protocol",
            "Protocole unifie (PLAN.md 'Protocole unifie -- routeur range <-> "
            "tendance') : routeur bar-par-bar recommended.py (RANGE) / "
-           "trend_table.py (TENDANCE), priorite tendance si "
-           "accumulation_active, exclusivite mutuelle par actif. Compare "
-           "aussi a recommended.py seul cote a cote. H4 x 4 profils x 4 symboles",
+           "trend_table.py (TENDANCE), geres de facon INDEPENDANTE (plus "
+           "d'exclusivite mutuelle, retiree car non justifiee par le corpus). "
+           "Compare aussi a recommended.py seul cote a cote. H4 x 4 profils x 4 symboles",
            "backtest_phase2_unified_results.csv"),
 ]
 

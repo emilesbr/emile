@@ -23,33 +23,86 @@ entre les deux (`run_unified`), et la fonction de décision live
 (`decide_now`) qui l'interroge sur l'état courant d'un actif.
 
 ================================================================================
-5 DÉCISIONS D'ARCHITECTURE (déjà tranchées dans PLAN.md avant tout code --
-ce fichier les EXÉCUTE, il ne les redessine pas)
+CORRECTION (8 sept. 2026) -- l'exclusivité mutuelle par actif a été RETIRÉE
 ================================================================================
-1. **Priorité de régime** : quand `accumulation_active` (déclencheur du
-   moteur TENDANCE, `trend_table.py::try_open_campaign`) est vrai, le moteur
-   TENDANCE a la priorité. Le moteur RANGE ne tente aucune nouvelle tranche
-   tant qu'une campagne tendance est active sur cet actif. Dans tous les
-   autres cas, le moteur RANGE garde le comportement déjà validé de
-   `recommended.py` (y compris son propre gate Hebdomadaire "regime != EXCES"
-   au niveau du contexte supérieur -- ce gate existe déjà dans
-   `_prepare_features`/`_run_core`, réutilisé tel quel, PAS un nouveau gate
-   sur le régime H4 propre).
-2. **Exclusivité mutuelle par actif** : `active_system in {None, "range",
-   "trend"}`, jamais range ET tendance ouverts en même temps. La bascule
-   TENDANCE -> RANGE (ou l'inverse) n'est évaluée QU'AU MOMENT DE
-   L'OUVERTURE, c'est-à-dire quand `active_system is None` -- si
-   `accumulation_active` devient vrai PENDANT qu'une tranche range est déjà
-   ouverte, le routeur continue de gérer la position range jusqu'à sa
-   clôture complète (cf. `test_unified_protocol.py`,
-   `test_accumulation_during_open_range_does_not_switch`).
+Version initiale de ce fichier : au plus UN système (RANGE ou TENDANCE)
+pouvait avoir une position ouverte par actif (`active_system in {None,
+"range", "trend"}`), justifiée à l'époque par "un seul contexte à la fois"
+(lecture de RULES_EXTRACTION.md section 1, "TOUJOURS TRADER DANS UN
+CONTEXTE"). L'utilisateur a directement contesté cette restriction ("nous ne
+devons pas nous limiter a une seul stratégie par actif... les enseignements
+n'indiquent pas que nous ne pouvons pas trader plusieurs ranges ou plusieurs
+tendances ou des range et des tendances simultanément"). Vérification
+directe des sources plutôt qu'une supposition dans un sens ou l'autre :
+
+- `RULES_EXTRACTION.md` section 1 ("Classification du contexte") décrit
+  comment CLASSER le régime (range neutre/tendanciel/tendance/excès) pour
+  choisir la bonne table de décision -- une règle de LECTURE du marché, pas
+  une restriction du nombre de positions simultanées. Rien dans cette
+  section ni ailleurs dans le manuel officiel n'interdit plusieurs positions
+  concurrentes.
+- `TRADING_LESSONS_CLUSTERS_PRIX.md` (source #16) documente EXPLICITEMENT le
+  contraire de l'exclusivité : "Diversification statistique du risque...
+  1% sur la pattern breakout/pullback + 1% sur la pattern de moyenne mobile
+  (cluster)... jouer les deux augmente les chances d'être 'dans le train'"
+  -- deux patterns indépendants, ouverts SIMULTANÉMENT, chacun avec son
+  propre risque. La seule limite posée est un plafond de risque agrégé
+  ("jamais >2% de risque maximal par zone de prix"), pas un système unique à
+  la fois.
+- `TRADING_LESSONS_PYRAMIDALISATION.md` (source #15) désigne les "positions
+  multiples" comme le mécanisme même de la pyramidalisation ("toute
+  augmentation du risque nominal (positions multiples) doit être compensée
+  par un contexte de probabilités exceptionnelles"), et cite un cas réel
+  (S&P 500) de DEUX patterns "3ème borne" ouverts en même temps.
+- Précédent déjà présent dans ce projet AVANT ce chantier : la
+  pyramidalisation range (`MAX_TRANCHES=3`, `position_engine.py`) autorise
+  déjà plusieurs tranches concurrentes sur le même actif -- l'exclusivité
+  mutuelle RANGE/TENDANCE était donc une restriction plus stricte que ce que
+  le projet appliquait déjà à l'intérieur d'un seul système.
+
+Conclusion : l'exclusivité mutuelle par actif était une simplification
+introduite unilatéralement lors de la conception de ce routeur, jamais une
+exigence du corpus -- au contraire, contredite par les sources #15/#16.
+Retirée ci-dessous. Ce que le corpus établit VRAIMENT comme plafond de
+risque (2% max par position -- déjà appliqué par système via son propre
+`risk_pct` de profil -- et 1%+1% pour la diversification statistique) reste
+hors du périmètre de CE routeur (qui reste RANGE vs TENDANCE, pas la
+diversification Cluster Technique, cf. "hors périmètre" plus bas) --
+documenté comme limite ouverte plutôt qu'inventé silencieusement : aucun
+plafond de risque AGRÉGÉ entre les deux systèmes n'est appliqué ici (cf. U5
+ci-dessous).
+
+================================================================================
+DÉCISIONS D'ARCHITECTURE (révisées -- ce fichier les EXÉCUTE)
+================================================================================
+1. **Indépendance totale des deux systèmes** : à chaque bougie, RANGE et
+   TENDANCE évaluent et gèrent chacun leurs propres positions SANS jamais se
+   bloquer l'un l'autre. `accumulation_active` (déclencheur du moteur
+   TENDANCE, `trend_table.py::try_open_campaign`) ouvre une campagne
+   tendance dès qu'aucune campagne/"+Reverse" tendance n'est déjà en cours
+   -- que le moteur RANGE ait ou non une tranche ouverte au même instant, et
+   réciproquement. Chaque système garde le comportement déjà validé de son
+   moteur seul (`recommended.py` côté RANGE, y compris son propre gate
+   Hebdomadaire "regime != EXCES" ; `trend_table.py` côté TENDANCE).
+2. **Aucun plafond de risque agrégé inventé entre les deux systèmes** (cf.
+   "CORRECTION" ci-dessus) : chaque système applique son propre `risk_pct`
+   de profil, déjà borné par système (`PROFILES_V4`/`PROFILES_TREND`,
+   inchangés). Le corpus documente un plafond agrégé explicite (1%+1%, "max
+   2% par zone de prix") pour la paire SPÉCIFIQUE breakout/pullback +
+   cluster-MA (diversification statistique, `TRADING_LESSONS_CLUSTERS_PRIX.md`)
+   -- pas pour la paire RANGE-table/TENDANCE-table de ce routeur, qui reste
+   une paire différente. Étendre ce plafond ici serait une extrapolation non
+   mesurée ; documenté comme limite ouverte (U5), pas comblé par une valeur
+   inventée.
 3. **Aucune réimplémentation de logique métier** : cf. import list
    ci-dessous -- uniquement des fonctions PAR BOUGIE déjà existantes.
-4. **Sortie "décision live"** : `decide_now()`.
-5. **Mesure honnête** : `main()` compare le protocole unifié à
-   `recommended.py` seul, sans présupposer un meilleur résultat (cf.
-   `phase2_unified_vs_recommended_results.csv`/
-   `backtest_phase2_unified_results.csv`).
+4. **Sortie "décision live"** : `decide_now()`, révisée pour rapporter RANGE
+   et TENDANCE indépendamment (les deux peuvent être actifs/avoir un signal
+   en même temps, cf. sa docstring).
+5. **Mesure honnête** : `main()` compare le protocole unifié (désormais sans
+   exclusivité) à `recommended.py` seul, sans présupposer un meilleur
+   résultat (cf. `backtest_phase2_unified_results.csv`, regénéré après cette
+   correction).
 
 ================================================================================
 CHOIX D'IMPLÉMENTATION DE CE FICHIER (documentés, pas inventés en silence,
@@ -65,7 +118,8 @@ U1. **`h4` doit inclure une colonne `volume`** (agrégée en somme sur la
 U2. **`win_streak` (Règle de Trois) est partagé entre les deux systèmes** :
     incrémenté par CHAQUE trade gagnant, qu'il vienne du moteur range ou du
     moteur tendance (cohérent avec "un seul tracker actif" / une seule
-    séquence de trades unifiée, décision #2). Seul le moteur RANGE utilise
+    séquence de trades unifiée -- ce choix ne dépendait pas de l'exclusivité
+    mutuelle retirée ci-dessus, il reste valide indépendamment). Seul le moteur RANGE utilise
     concrètement ce compteur (Règle de Trois, `RULE3_STREAK`/
     `RULE3_SIZE_MULT`) ; le moteur tendance ne le lit jamais. Un choix
     alternatif (deux compteurs séparés par système) serait aussi défendable
@@ -93,6 +147,20 @@ U4. **`decide_now` : approximation "bougie fantôme"** pour évaluer un signal
     d'entrée reporté est une approximation (documentée dans le champ
     `reason` de `decide_now`, jamais présentée comme un prix d'exécution
     garanti).
+U5. **Pas de plafond de risque agrégé RANGE+TENDANCE** (limite ouverte,
+    documentée, pas cachée -- cf. "CORRECTION" ci-dessus, décision #2) :
+    quand les deux systèmes ont une position ouverte simultanément sur le
+    même actif, le risque nominal total engagé est la SOMME des deux
+    `risk_pct` de profil (ex. MODERE : 2% range + 2% tendance = jusqu'à 4%
+    simultanés), jamais plafonné ici à un chiffre agrégé. Le corpus
+    documente un plafond agrégé explicite (2% max) mais pour une paire de
+    patterns différente (diversification statistique breakout/pullback +
+    cluster-MA, `TRADING_LESSONS_CLUSTERS_PRIX.md`) -- l'étendre tel quel à
+    la paire RANGE-table/TENDANCE-table de ce routeur serait une
+    extrapolation non mesurée. À réexaminer si ce chantier est un jour
+    étendu pour englober aussi la diversification Cluster Technique dans le
+    même routeur (hors périmètre actuel, cf. "Ce que ce chantier NE fait
+    PAS" dans PLAN.md).
 """
 import sys
 sys.path.insert(0, ".")
@@ -232,16 +300,21 @@ def run_unified(h4: pd.DataFrame, weekly: pd.DataFrame, profile_name: str,
     de contexte pour le gate RANGE (Hebdomadaire, "UT+2 strict", inchangé
     par rapport à `recommended.py`).
 
-    À chaque bougie H4 (après warmup), au plus UN système est actif par
-    actif (`active_system in {None, "range", "trend"}`, décision #2) :
-      - si aucun système actif : `accumulation_active` -> ouvre une
-        campagne TENDANCE (priorité, décision #1) ; sinon tente une
-        ouverture RANGE (comportement de `recommended.py`, gate Hebdo
-        déjà inclus).
-      - si TENDANCE active : fait progresser la campagne
-        (`step_campaign`)/le "+Reverse" tendance (`step_reverse`).
-      - si RANGE active : fait progresser les tranches (`process_tranche`)
-        et la pyramidalisation, exactement comme `recommended.py`.
+    À chaque bougie H4 (après warmup), RANGE et TENDANCE sont gérés de façon
+    INDÉPENDANTE (décision #1, révisée -- plus d'exclusivité mutuelle, cf.
+    "CORRECTION" en tête de fichier) :
+      - TENDANCE : si aucune campagne/"+Reverse" tendance en cours,
+        `accumulation_active` ouvre une nouvelle campagne ; sinon fait
+        progresser la campagne (`step_campaign`)/le "+Reverse" tendance
+        (`step_reverse`) en cours -- exactement comme `trend_table.py` seul.
+      - RANGE : tant qu'il reste de la place (`len(tranches) < MAX_TRANCHES`),
+        tente une ouverture/pyramidalisation (comportement de
+        `recommended.py`, gate Hebdo déjà inclus) ; fait progresser les
+        tranches déjà ouvertes (`process_tranche`) -- exactement comme
+        `recommended.py` seul.
+      - Les deux peuvent être actifs SIMULTANÉMENT sur le même actif -- ce
+        n'est plus arbitré (cf. U5 pour la limite documentée sur le risque
+        agrégé qui en résulte).
     Les trades des deux systèmes sont agrégés dans les MÊMES statistiques
     (n_trades/max_dd_%/total_return_%/win_rate_%/profit_factor), comme le
     fait déjà `position_engine.py` pour range+"+Reverse" (cf. sa docstring).
@@ -305,7 +378,6 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
     equity_curve = np.empty(n)
     equity_curve[0] = equity
 
-    active_system = None
     tranches: list = []
     range_reverses: list = []
     campaign = None
@@ -327,8 +399,6 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
                 equity *= (1 - FEE * fee_r)
             if closed_r:
                 trend_reverse = None
-                if campaign is None:
-                    active_system = None
 
         # ---- 1) "+Reverse" RANGE (H-Reverse-Range, position_engine.py) ----
         remaining_reverses = []
@@ -343,8 +413,6 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
             if not closed_r:
                 remaining_reverses.append(rp)
         range_reverses = remaining_reverses
-        if active_system == "range" and not tranches and not range_reverses:
-            active_system = None
 
         # ---- 2) campagne TENDANCE en cours ----
         if campaign is not None:
@@ -360,8 +428,6 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
                 campaign = None
                 if reverse_request is not None:
                     trend_reverse = reverse_request
-                elif trend_reverse is None:
-                    active_system = None
 
         # ---- 3) tranches RANGE en cours ----
         if tranches:
@@ -388,31 +454,30 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
                     remaining_tranches.append(tr)
             tranches = remaining_tranches
             range_reverses.extend(new_range_reverses)
-            if not tranches and not range_reverses and active_system == "range":
-                active_system = None
 
-        # ---- 4) tentative d'ouverture / pyramidalisation ----
-        if active_system is None:
-            if _accumulation_active(feat, i):
-                j = i - 1
-                new_campaign, fee_frac = try_open_campaign(i, o, feat["ctx_support"][j], True, p_trend)
-                if new_campaign is not None:
-                    campaign = new_campaign
-                    active_system = "trend"
-                    n_trend_campaigns_opened += 1
-                    if fee_frac > 0:
-                        equity *= (1 - FEE * fee_frac)
-            else:
-                new_tr = open_tranche_fn(i, tranches, win_streak)
-                if new_tr is not None:
-                    tranches.append(new_tr)
-                    active_system = "range"
-                    n_range_fresh_entries += 1
-                    equity *= (1 - FEE * new_tr["remaining"])
-        elif active_system == "range" and len(tranches) < MAX_TRANCHES:
+        # ---- 4) tentatives d'ouverture INDÉPENDANTES (décision #1 révisée --
+        # plus d'exclusivité mutuelle, cf. "CORRECTION" en tête de fichier) ----
+        # TENDANCE : ouvre une nouvelle campagne si aucune campagne/"+Reverse"
+        # tendance n'est en cours, QUEL QUE SOIT l'état RANGE au même instant.
+        if campaign is None and trend_reverse is None and _accumulation_active(feat, i):
+            j = i - 1
+            new_campaign, fee_frac = try_open_campaign(i, o, feat["ctx_support"][j], True, p_trend)
+            if new_campaign is not None:
+                campaign = new_campaign
+                n_trend_campaigns_opened += 1
+                if fee_frac > 0:
+                    equity *= (1 - FEE * fee_frac)
+
+        # RANGE : tente une ouverture fraîche ou une pyramidalisation tant
+        # qu'il reste de la place, QUEL QUE SOIT l'état TENDANCE au même
+        # instant -- exactement le même appel que `recommended.py` seul.
+        if len(tranches) < MAX_TRANCHES:
+            was_flat = not tranches
             new_tr = open_tranche_fn(i, tranches, win_streak)
             if new_tr is not None:
                 tranches.append(new_tr)
+                if was_flat:
+                    n_range_fresh_entries += 1
                 equity *= (1 - FEE * new_tr["remaining"])
 
         # ---- 5) mark-to-market / equity curve ----
@@ -444,18 +509,20 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
 
     if record_state:
         result["live_state"] = _build_live_state(
-            feat, i=n - 1, active_system=active_system, tranches=tranches,
+            feat, i=n - 1, tranches=tranches,
             range_reverses=range_reverses, campaign=campaign, trend_reverse=trend_reverse,
         )
     return result
 
 
-def _build_live_state(feat, i, active_system, tranches, range_reverses, campaign,
-                       trend_reverse) -> dict:
+def _build_live_state(feat, i, tranches, range_reverses, campaign, trend_reverse) -> dict:
     """État DESCRIPTIF du protocole à la dernière bougie `i` de l'historique
-    fourni -- ne devine RIEN au-delà de cet historique. `decide_now`
+    fourni -- ne devine RIEN au-delà de cet historique. `range_active` et
+    `trend_active` sont rapportés INDÉPENDAMMENT (peuvent être vrais tous les
+    deux à la fois, cf. correction de l'exclusivité mutuelle en tête de
+    fichier) plutôt qu'un `active_system` exclusif unique. `decide_now`
     (cf. ci-dessous) est responsable de l'éventuelle évaluation "bougie
-    fantôme" (U4) quand `active_system is None` ici : elle rappelle
+    fantôme" (U4) quand un système est FLAT ici : elle rappelle
     `run_unified` sur un historique étendu d'UNE bougie plutôt que de
     dupliquer la logique de gate dans cette fonction."""
     return {
@@ -464,12 +531,90 @@ def _build_live_state(feat, i, active_system, tranches, range_reverses, campaign
         "regime_h4": str(feat["regime"][i]),
         "gate_score_weekly": float(feat["gate_score"][i]),
         "gate_regime_weekly": str(feat["gate_regime"][i]),
-        "active_system": active_system,
+        "range_active": bool(tranches or range_reverses),
+        "trend_active": bool(campaign is not None or trend_reverse is not None),
         "range_tranches": [dict(tr) for tr in tranches],
         "range_reverses": [dict(rp) for rp in range_reverses],
         "trend_campaign": dict(campaign) if campaign is not None else None,
         "trend_reverse": dict(trend_reverse) if trend_reverse is not None else None,
     }
+
+
+def _describe_range_hold(live: dict) -> dict:
+    """RANGE déjà actif (`live["range_active"]`) -- décrit l'état réel
+    (tranches et/ou "+Reverse" range), pas une évaluation "bougie fantôme"."""
+    trs = live["range_tranches"]
+    revs = live["range_reverses"]
+    stops = [tr["stop"] for tr in trs] + [rp["stop"] for rp in revs]
+    entry_price = trs[0]["entry"] if trs else revs[0]["entry"]
+    targets = {}
+    if trs:
+        targets["tranches"] = [
+            {"entry": tr["entry"], "stop": tr["stop"], "val_px": tr["val_px"],
+             "conf_px": tr["conf_px"], "lim_px": tr["lim_px"],
+             "val_done": tr["val_done"], "conf_done": tr["conf_done"]}
+            for tr in trs
+        ]
+    if revs:
+        targets["reverses"] = [{"entry": rp["entry"], "stop": rp["stop"], "target": rp["target"]} for rp in revs]
+    reason = f"{len(trs)} tranche(s)"
+    if revs:
+        reason += f" + {len(revs)} jambe(s) '+Reverse'"
+    reason += (f" range déjà ouverte(s) au {live['last_date']} -- laisser le moteur gérer "
+               "Validation/Confirmation/Limite/Invalidation.")
+    return {"action": "HOLD", "entry_price": entry_price, "stop_price": min(stops),
+            "targets": targets, "reason": reason}
+
+
+def _describe_trend_hold(live: dict) -> dict:
+    """TENDANCE déjà actif (`live["trend_active"]`) -- décrit l'état réel
+    (campagne et/ou "+Reverse" tendance), pas une évaluation "bougie fantôme"."""
+    camp = live["trend_campaign"]
+    if camp is not None:
+        return {"action": "HOLD", "entry_price": camp["entry"], "stop_price": camp["stop"],
+                "targets": {"stage": camp["stage"]},
+                "reason": f"Campagne tendance en cours (étape {camp['stage']}) au {live['last_date']}."}
+    rev = live["trend_reverse"]
+    return {"action": "HOLD", "entry_price": rev["entry"], "stop_price": rev["stop"],
+            "targets": {"target": rev["target"]},
+            "reason": f"Jambe '+Reverse' tendance (short) en cours au {live['last_date']}."}
+
+
+def _describe_range_open(live2: dict, last_date: str) -> dict:
+    """RANGE FLAT sur l'historique réel -- évalue la bougie fantôme (U4)
+    pour un éventuel signal d'ouverture."""
+    trs = live2["range_tranches"]
+    if trs:
+        tr = trs[0]
+        return {
+            "action": "OPEN_LONG", "entry_price": tr["entry"], "stop_price": tr["stop"],
+            "targets": {"val_px": tr["val_px"], "conf_px": tr["conf_px"], "lim_px": tr["lim_px"]},
+            "reason": (
+                f"Signal range (score>=2 + gate Hebdomadaire) présent sur la dernière bougie H4 "
+                f"close ({last_date}) -- ouverture d'une tranche à l'open de la prochaine bougie. "
+                "entry_price approximé par la dernière clôture connue (U4), pas un prix garanti."
+            ),
+        }
+    return {"action": "NO_POSITION", "entry_price": None, "stop_price": None, "targets": None,
+            "reason": f"Aucune tranche range ouverte et aucun signal range au {last_date}."}
+
+
+def _describe_trend_open(live2: dict, last_date: str) -> dict:
+    """TENDANCE FLAT sur l'historique réel -- évalue la bougie fantôme (U4)
+    pour un éventuel signal d'ouverture (`accumulation_active`)."""
+    camp = live2["trend_campaign"]
+    if camp is not None:
+        return {
+            "action": "OPEN_LONG", "entry_price": camp["entry"], "stop_price": camp["stop"],
+            "targets": {"stage": camp["stage"]},
+            "reason": (
+                f"accumulation_active vrai sur la dernière bougie H4 close ({last_date}) -- "
+                "ouverture d'une campagne tendance à l'open de la prochaine bougie. "
+                "entry_price approximé par la dernière clôture connue (U4), pas un prix garanti."
+            ),
+        }
+    return {"action": "NO_POSITION", "entry_price": None, "stop_price": None, "targets": None,
+            "reason": f"Aucune campagne tendance ouverte et accumulation_active faux au {last_date}."}
 
 
 def decide_now(h1_recent: pd.DataFrame, profile_name: str, capital_eur: float = None) -> dict:
@@ -478,6 +623,14 @@ def decide_now(h1_recent: pd.DataFrame, profile_name: str, capital_eur: float = 
     high/low/close/volume -- la colonne `volume` est requise, cf. U1) et
     retourne l'état/la décision actuelle, sans jamais rejouer un backtest
     agrégé complet côté appelant.
+
+    RÉVISÉ après correction de l'exclusivité mutuelle (cf. "CORRECTION" en
+    tête de fichier) : RANGE et TENDANCE sont rapportés INDÉPENDAMMENT sous
+    deux clés séparées (`range`, `trend`) -- lire les DEUX, pas un seul
+    "système gagnant". Les deux peuvent être simultanément "HOLD" (positions
+    déjà ouvertes sur les deux systèmes) ou "OPEN_LONG" (signaux présents
+    sur les deux à la fois) ; ce n'est plus arbitré, cf. U5 pour la limite
+    documentée sur le risque agrégé qui en résulte.
 
     COMBIEN D'HISTORIQUE FOURNIR : `h1_recent` est resamplé en interne en H4
     (exécution) et Hebdomadaire (gate RANGE, "UT+2 strict"). Une bougie H4
@@ -493,35 +646,29 @@ def decide_now(h1_recent: pd.DataFrame, profile_name: str, capital_eur: float = 
     jamais silencieusement, cf. `_prepare_features`), mais signalée comme
     potentiellement peu fiable plutôt que cachée.
 
-    SÉMANTIQUE DES CHAMPS DU DICT RETOURNÉ :
-      - `action` : "HOLD_RANGE" (une ou plusieurs tranches range déjà
-        ouvertes, aucune action requise sinon laisser le moteur gérer les
-        clôtures), "HOLD_TREND" (campagne tendance et/ou "+Reverse" tendance
-        déjà ouverts), "OPEN_LONG" (AUCUNE position ouverte actuellement,
-        mais un signal d'entrée est présent sur la DERNIÈRE bougie H4
-        entièrement close -- l'exécution réelle se ferait à l'ouverture de
-        la PROCHAINE bougie H4, prix approximé ici par la dernière clôture
-        connue, cf. U4 -- PAS un prix d'exécution garanti), "NO_POSITION"
-        (aucune position, aucun signal), "INSUFFICIENT_DATA" (historique H4
-        trop court, cf. ci-dessus -- tous les autres champs sont `None`).
-      - `system` : "range" | "trend" | None -- quel moteur porte la décision.
+    SÉMANTIQUE DU DICT RETOURNÉ :
+      - Cas `INSUFFICIENT_DATA` (historique H4 trop court) : `action` vaut
+        `"INSUFFICIENT_DATA"`, `range`/`trend`/`regime` valent `None`.
+      - Cas normal : pas de clé `action` au niveau racine (il n'y a plus UN
+        système gagnant à annoncer) -- `range` et `trend` sont chacun un
+        dict `{"action", "entry_price", "stop_price", "targets", "reason"}`
+        où `action` vaut "HOLD" (position déjà ouverte sur CE système --
+        `entry_price` réel, déjà exécuté), "OPEN_LONG" (aucune position sur
+        CE système, mais un signal d'entrée est présent sur la DERNIÈRE
+        bougie H4 entièrement close -- exécution réelle à l'ouverture de la
+        PROCHAINE bougie H4, `entry_price` APPROXIMÉ par la dernière clôture
+        connue, cf. U4 -- PAS un prix garanti), ou "NO_POSITION" (ni
+        position ni signal sur ce système).
+      - `targets` (RANGE) : {"tranches": [...]} et/ou {"reverses": [...]}
+        si HOLD, {"val_px", "conf_px", "lim_px"} si OPEN_LONG.
+      - `targets` (TENDANCE) : {"stage": ...} (campagne) ou {"target": ...}
+        ("+Reverse" tendance) si HOLD, {"stage": ...} si OPEN_LONG -- la
+        table de tendance n'a pas de cible de PRIX fixe mais des ÉVÉNEMENTS
+        de structure (Breakout/Divergence/Pull-Back/Excès final, cf.
+        `trend_table.py` tête de fichier).
       - `regime` : régime H4 (RANGE_NEUTRE/RANGE_TENDANCIEL/TENDANCE/EXCES)
         de la dernière bougie close (`regime_classifier.add_regime`, réutilisé
-        tel quel).
-      - `entry_price` : prix d'entrée -- réel (déjà exécuté) si HOLD_*,
-        APPROXIMÉ (dernière clôture, cf. U4) si OPEN_LONG. `None` sinon.
-      - `stop_price` : niveau de protection courant (`ctx_support`
-        "Extreme Channel" pour une entrée fraîche/campagne, ou le stop
-        remonté au break-even si la Confirmation/Divergence l'a déjà fait).
-      - `targets` : dict spécifique au système -- RANGE :
-        {"val_px", "conf_px", "lim_px"} (niveaux de prix fixes, calculés à
-        l'entrée) ; TENDANCE : {"stage": ...} (la table de tendance n'a pas
-        de cible de PRIX fixe mais des ÉVÉNEMENTS de structure -- Breakout/
-        Divergence/Pull-Back/Excès final, cf. `trend_table.py` tête de
-        fichier -- le champ `stage` indique l'étape courante/à venir,
-        `reason` en donne le déclencheur littéral).
-      - `reason` : texte libre expliquant la décision (quel gate a validé/
-        bloqué, quelle étape de campagne, limite de données le cas échéant).
+        tel quel) -- commun aux deux systèmes (même bougie).
       - `weekly_gate_reliable` : bool, cf. ci-dessus.
       - `n_h4_bars`, `n_weekly_bars` : tailles des historiques resamplés,
         pour que l'appelant puisse juger lui-même de la marge par rapport
@@ -538,8 +685,7 @@ def decide_now(h1_recent: pd.DataFrame, profile_name: str, capital_eur: float = 
 
     if n_h4 <= WARMUP + 1:
         return {
-            "action": "INSUFFICIENT_DATA", "system": None, "regime": None,
-            "entry_price": None, "stop_price": None, "targets": None,
+            "action": "INSUFFICIENT_DATA", "range": None, "trend": None, "regime": None,
             "reason": (
                 f"{n_h4} bougies H4 disponibles, {WARMUP + 1} minimum requises "
                 f"(WARMUP={WARMUP}=EMA_SLOW+20 bougies H4) avant toute tentative "
@@ -552,90 +698,31 @@ def decide_now(h1_recent: pd.DataFrame, profile_name: str, capital_eur: float = 
     live = result["live_state"]
     base = {"weekly_gate_reliable": weekly_reliable, "n_h4_bars": n_h4, "n_weekly_bars": len(weekly)}
 
-    if live["active_system"] == "range":
-        trs = live["range_tranches"]
-        stop_price = min(tr["stop"] for tr in trs)
-        return {
-            "action": "HOLD_RANGE", "system": "range", "regime": live["regime_h4"],
-            "entry_price": trs[0]["entry"], "stop_price": stop_price,
-            "targets": {"tranches": [
-                {"entry": tr["entry"], "stop": tr["stop"], "val_px": tr["val_px"],
-                 "conf_px": tr["conf_px"], "lim_px": tr["lim_px"],
-                 "val_done": tr["val_done"], "conf_done": tr["conf_done"]}
-                for tr in trs
-            ]},
-            "reason": f"{len(trs)} tranche(s) range déjà ouverte(s) au {live['last_date']} -- "
-                      "laisser le moteur gérer Validation/Confirmation/Limite/Invalidation.",
-            **base,
-        }
+    range_desc = _describe_range_hold(live) if live["range_active"] else None
+    trend_desc = _describe_trend_hold(live) if live["trend_active"] else None
 
-    if live["active_system"] == "trend":
-        camp = live["trend_campaign"]
-        rev = live["trend_reverse"]
-        if camp is not None:
-            return {
-                "action": "HOLD_TREND", "system": "trend", "regime": live["regime_h4"],
-                "entry_price": camp["entry"], "stop_price": camp["stop"],
-                "targets": {"stage": camp["stage"]},
-                "reason": f"Campagne tendance en cours (étape {camp['stage']}) au {live['last_date']}.",
-                **base,
-            }
-        return {
-            "action": "HOLD_TREND", "system": "trend", "regime": live["regime_h4"],
-            "entry_price": rev["entry"], "stop_price": rev["stop"],
-            "targets": {"target": rev["target"]},
-            "reason": f"Jambe '+Reverse' tendance (short) en cours au {live['last_date']}.",
-            **base,
-        }
+    if range_desc is None or trend_desc is None:
+        # Au moins un système est FLAT sur l'historique réel -- bougie
+        # fantôme (U4) : rappelle run_unified sur l'historique étendu d'UNE
+        # bougie synthétique (open=high=low=close=dernière clôture connue,
+        # volume=0) pour évaluer si un signal d'entrée est présent, SANS
+        # dupliquer la logique de gate. Évaluée pour les DEUX systèmes FLAT
+        # indépendamment -- l'un peut ouvrir pendant que l'autre reste HOLD.
+        last = h4.iloc[-1]
+        phantom = pd.DataFrame([{
+            "date": last["date"] + pd.Timedelta(hours=4),
+            "open": last["close"], "high": last["close"], "low": last["close"], "close": last["close"],
+            "volume": 0.0,
+        }])
+        h4_ext = pd.concat([h4, phantom], ignore_index=True)
+        result2 = run_unified(h4_ext, weekly, profile_name, capital_eur=capital_eur, record_state=True)
+        live2 = result2["live_state"]
+        if range_desc is None:
+            range_desc = _describe_range_open(live2, live["last_date"])
+        if trend_desc is None:
+            trend_desc = _describe_trend_open(live2, live["last_date"])
 
-    # Aucune position ouverte sur l'historique réel -- bougie fantôme (U4) :
-    # rappelle run_unified sur l'historique étendu d'UNE bougie synthétique
-    # (open=high=low=close=dernière clôture connue, volume=0) pour évaluer
-    # si un signal d'entrée est présent SANS dupliquer la logique de gate.
-    last = h4.iloc[-1]
-    phantom = pd.DataFrame([{
-        "date": last["date"] + pd.Timedelta(hours=4),
-        "open": last["close"], "high": last["close"], "low": last["close"], "close": last["close"],
-        "volume": 0.0,
-    }])
-    h4_ext = pd.concat([h4, phantom], ignore_index=True)
-    result2 = run_unified(h4_ext, weekly, profile_name, capital_eur=capital_eur, record_state=True)
-    live2 = result2["live_state"]
-
-    if live2["active_system"] == "trend" and live2["trend_campaign"] is not None:
-        camp = live2["trend_campaign"]
-        return {
-            "action": "OPEN_LONG", "system": "trend", "regime": live["regime_h4"],
-            "entry_price": camp["entry"], "stop_price": camp["stop"],
-            "targets": {"stage": camp["stage"]},
-            "reason": (
-                f"accumulation_active vrai sur la dernière bougie H4 close ({live['last_date']}) -- "
-                "ouverture d'une campagne tendance à l'open de la prochaine bougie. "
-                "entry_price approximé par la dernière clôture connue (U4), pas un prix garanti."
-            ),
-            **base,
-        }
-
-    if live2["active_system"] == "range" and live2["range_tranches"]:
-        tr = live2["range_tranches"][0]
-        return {
-            "action": "OPEN_LONG", "system": "range", "regime": live["regime_h4"],
-            "entry_price": tr["entry"], "stop_price": tr["stop"],
-            "targets": {"val_px": tr["val_px"], "conf_px": tr["conf_px"], "lim_px": tr["lim_px"]},
-            "reason": (
-                f"Signal range (score>=2 + gate Hebdomadaire) présent sur la dernière bougie H4 "
-                f"close ({live['last_date']}) -- ouverture d'une tranche à l'open de la prochaine "
-                "bougie. entry_price approximé par la dernière clôture connue (U4), pas un prix garanti."
-            ),
-            **base,
-        }
-
-    return {
-        "action": "NO_POSITION", "system": None, "regime": live["regime_h4"],
-        "entry_price": None, "stop_price": None, "targets": None,
-        "reason": f"Aucune position ouverte et aucun signal d'entrée (range ou tendance) au {live['last_date']}.",
-        **base,
-    }
+    return {"range": range_desc, "trend": trend_desc, "regime": live["regime_h4"], **base}
 
 
 def main():

@@ -2,6 +2,17 @@
 Tests unitaires du protocole unifié (`unified_protocol.py`, PLAN.md section
 "Protocole unifié -- routeur de régime range <-> tendance").
 
+RÉVISÉ (8 sept. 2026) suite à la correction de l'exclusivité mutuelle par
+actif (cf. "CORRECTION" en tête de `unified_protocol.py`) : les anciens tests
+1/2 vérifiaient explicitement l'exclusivité ("le routeur ne bascule PAS",
+"préemption tendance") -- ce comportement a été retiré parce que le corpus
+ne le justifie pas (au contraire, `TRADING_LESSONS_CLUSTERS_PRIX.md` #16 et
+`TRADING_LESSONS_PYRAMIDALISATION.md` #15 documentent explicitement des
+positions multiples simultanées). Ces deux tests sont remplacés par des
+tests de CONCURRENCE : un signal tendance qui survient PENDANT qu'une
+tranche range est déjà ouverte doit maintenant ouvrir la campagne tendance
+EN PLUS de la tranche range (pas à sa place, pas bloqué).
+
 Teste la boucle d'ORCHESTRATION (`_run_core_unified`) sur des `feat` dicts
 CONSTRUITS À LA MAIN (scénarios synthétiques à vérité terrain connue),
 exactement comme `test_trend_table.py` teste `step_campaign`/
@@ -71,11 +82,13 @@ def _make_base_feat(n=N):
 
 
 # ---------------------------------------------------------------------------
-# Test 1 (décision #2, exclusivité mutuelle) : accumulation_active devient
-# vrai PENDANT qu'une tranche range est déjà ouverte -> le routeur ne
-# bascule PAS vers tendance tant que cette position n'est pas close.
+# Test 1 (décision #1 révisée, indépendance) : accumulation_active devient
+# vrai PENDANT qu'une tranche range est déjà ouverte -> le routeur ouvre la
+# campagne tendance EN PLUS (pas à la place, pas bloqué) -- preuve directe
+# que l'ancienne exclusivité mutuelle a bien été retirée, pas seulement
+# renommée.
 # ---------------------------------------------------------------------------
-def test_accumulation_during_open_range_does_not_switch():
+def test_accumulation_during_open_range_opens_trend_concurrently():
     feat = _make_base_feat()
     entry_i = WARMUP + 2
     j_open = entry_i - 1
@@ -90,17 +103,18 @@ def test_accumulation_during_open_range_does_not_switch():
     # Juste après l'ouverture (bougie j_accum = entry_i), on fait basculer
     # accumulation_active à True (régime TENDANCE + rejet canal +
     # retracement 38-61%) -- exactement la condition que
-    # `trend_table.try_open_campaign` exigerait pour ouvrir une campagne.
+    # `trend_table.try_open_campaign` exigerait pour ouvrir une campagne --
+    # et on la maintient vraie sur le reste de l'historique.
     j_accum = entry_i
-    feat["regime"][j_accum] = "TENDANCE"
-    feat["ctx_support"][j_accum] = 99.5
-    feat["low"][j_accum] = 99.0
-    feat["close"][j_accum] = 100.0
-    feat["accum_retracement_frac"][j_accum] = 0.5
+    feat["regime"][j_accum:] = "TENDANCE"
+    feat["ctx_support"][j_accum:] = 99.5
+    feat["low"][j_accum:] = 99.0
+    feat["close"][j_accum:] = 100.0
+    feat["accum_retracement_frac"][j_accum:] = 0.5
 
     # Garde-fou : le scénario doit être réellement "vivant" -- si aucune
-    # tranche range n'était ouverte, accumulation_active(entry_i+1) doit
-    # valoir True (sinon ce test ne prouverait rien).
+    # tranche range n'était déjà ouverte, accumulation_active(entry_i+1)
+    # doit valoir True (sinon ce test ne prouverait rien).
     assert _accumulation_active(feat, entry_i + 1) is True, (
         "scénario invalide : accumulation_active devrait être vrai à cette bougie "
         "si aucune position n'était déjà ouverte (sinon le test ne prouve rien)"
@@ -108,30 +122,44 @@ def test_accumulation_during_open_range_does_not_switch():
 
     res = _run_core_unified(feat, "MODERE", record_state=True)
     live = res["live_state"]
-    assert live["active_system"] == "range", (
-        f"le routeur a basculé vers {live['active_system']!r} alors qu'une tranche range "
-        "était déjà ouverte -- viole l'exclusivité mutuelle (décision #2 de PLAN.md)"
-    )
-    assert live["trend_campaign"] is None, "aucune campagne tendance ne doit avoir été ouverte"
+    assert live["range_active"] is True, "la tranche range ouverte à l'entrée doit rester active"
     assert len(live["range_tranches"]) >= 1, "la tranche range ouverte à l'entrée doit toujours être présente"
+    assert live["trend_active"] is True, (
+        "accumulation_active était vrai pendant que la tranche range était déjà ouverte -- "
+        "le routeur aurait dû ouvrir une campagne tendance EN PLUS (indépendance des deux "
+        "systèmes, décision #1 révisée), pas rester bloqué par une exclusivité qui n'est plus "
+        "de mise"
+    )
+    assert live["trend_campaign"] is not None
+    assert res["n_trend_campaigns_opened"] >= 1
 
 
 # ---------------------------------------------------------------------------
-# Test 2 (décision #1, priorité de régime) : aucune position ouverte et
-# accumulation_active devient vrai -> le routeur ouvre une campagne
-# TENDANCE, PAS une tranche range (même si le signal range serait lui aussi
-# éligible à la même bougie -- preuve d'une vraie préemption, pas d'un
-# signal range absent par accident).
+# Test 2 (décision #1 révisée, indépendance) : aucune position ouverte et
+# accumulation_active devient vrai en même temps qu'un signal range éligible
+# -> le routeur ouvre LES DEUX (campagne tendance ET tranche range), aucune
+# préemption d'un système sur l'autre.
 # ---------------------------------------------------------------------------
-def test_opens_trend_when_flat_and_accumulation_active():
+def test_opens_both_systems_concurrently_when_both_signals_fire():
     feat = _make_base_feat()
     entry_i = WARMUP + 2
     j = entry_i - 1
 
-    # Signal RANGE éligible à la même bougie (pour prouver que la tendance
-    # PRÉEMPTE, pas seulement "range n'avait rien à ouvrir")...
-    feat["score"][j] = 2
-    # ...ET accumulation_active vrai simultanément.
+    # Signal RANGE éligible dès la bougie j (score>=2 maintenu ensuite pour
+    # que la tranche ne se referme pas sur un flip de signal)...
+    feat["score"][j:] = 2
+    # ...ET accumulation_active vrai à l'ouverture, les deux lus sur la MÊME
+    # bougie j (`open_tranche_fn`/`try_open_campaign` lisent tous deux les
+    # features de la bougie i-1 pour une ouverture à i=entry_i). Modifié
+    # UNIQUEMENT à la bougie j (pas en slice jusqu'à la fin, contrairement au
+    # test 1) : `ctx_support[j]`=99.5 devient AUSSI le stop de la tranche
+    # range ouverte à entry_i (calculé à l'entrée à partir de cette même
+    # bougie j) -- si `low` restait à 99.0 sur tout le reste de l'historique,
+    # cette tranche serait stoppée dès la bougie suivante (99.0 <= 99.5),
+    # rouvrirait, serait re-stoppée, etc. (scénario dégénéré, pas celui
+    # qu'on veut tester). En ne modifiant que la bougie j, `low` revient à
+    # son défaut (100.0, au-dessus du stop) dès la bougie suivante -- la
+    # tranche survit, comme on veut le vérifier.
     feat["regime"][j] = "TENDANCE"
     feat["ctx_support"][j] = 99.5
     feat["low"][j] = 99.0
@@ -142,23 +170,26 @@ def test_opens_trend_when_flat_and_accumulation_active():
 
     res = _run_core_unified(feat, "MODERE", record_state=True)
     live = res["live_state"]
-    assert live["active_system"] == "trend", (
-        f"le routeur a ouvert {live['active_system']!r} au lieu de 'trend' alors "
-        "qu'accumulation_active était vrai et qu'aucune position n'était ouverte "
-        "-- viole la priorité de régime (décision #1 de PLAN.md)"
-    )
-    assert live["trend_campaign"] is not None, "une campagne tendance doit avoir été ouverte"
+    assert live["trend_active"] is True, "une campagne tendance doit avoir été ouverte (accumulation_active vrai)"
+    assert live["trend_campaign"] is not None
     assert live["trend_campaign"]["stage"] in ("ACCUMULATION", "POST_BREAKOUT", "PULLBACK_WATCH", "EXCESS_WATCH")
-    assert live["range_tranches"] == [], "aucune tranche range ne doit avoir été ouverte (préemption tendance)"
+    assert live["range_active"] is True, (
+        "une tranche range aurait dû être ouverte EN PLUS de la campagne tendance -- le signal "
+        "range (score>=2 + gate Hebdo) était éligible à la même bougie et rien ne doit plus "
+        "l'en empêcher (indépendance des deux systèmes, décision #1 révisée)"
+    )
+    assert len(live["range_tranches"]) >= 1
     assert res["n_trend_campaigns_opened"] == 1
-    assert res["n_range_fresh_entries"] == 0
+    assert res["n_range_fresh_entries"] == 1
 
 
 # ---------------------------------------------------------------------------
 # Test 3 (décision #5, non-régression) : séquence complète RANGE
 # (Validation -> Confirmation -> Limite) sans jamais croiser une condition
 # tendance -> P&L identique à recommended.py (_run_core) seul sur le MÊME
-# feat dict.
+# feat dict. Toujours valide après la correction : en l'absence de tout
+# signal tendance, l'indépendance des deux systèmes ne change rien au
+# comportement RANGE seul.
 # ---------------------------------------------------------------------------
 def test_pure_range_sequence_matches_recommended_engine():
     feat = _make_base_feat()
@@ -213,7 +244,9 @@ def test_pure_range_sequence_matches_recommended_engine():
 # Test 4 : decide_now sur un historique H1 synthétique construit à la main
 # -- vérifie la COHÉRENCE structurelle de la sortie (pas un scénario de
 # régime précis, trop fragile à garantir à travers tout le pipeline causal
-# réel proxy_v2/regime_classifier -- cf. docstring de ce fichier).
+# réel proxy_v2/regime_classifier -- cf. docstring de ce fichier). RÉVISÉ :
+# `range`/`trend` sont désormais deux sous-dicts indépendants (plus de
+# clé `action`/`system` unique au niveau racine).
 # ---------------------------------------------------------------------------
 def _make_synthetic_h1(n_hours, seed=0, start_price=100.0):
     rng = np.random.default_rng(seed)
@@ -231,43 +264,50 @@ def _make_synthetic_h1(n_hours, seed=0, start_price=100.0):
 
 def test_decide_now_insufficient_data_is_coherent():
     """Historique H1 délibérément trop court (moins que WARMUP+1 bougies H4)
-    -> INSUFFICIENT_DATA, avec tous les champs de niveaux/prix à None."""
+    -> INSUFFICIENT_DATA, avec range/trend/regime à None."""
     h1 = _make_synthetic_h1(n_hours=200, seed=1)   # 200/4 = 50 bougies H4 < WARMUP+1=76
     d = decide_now(h1, "MODERE")
     assert d["action"] == "INSUFFICIENT_DATA"
-    assert d["system"] is None
-    assert d["entry_price"] is None and d["stop_price"] is None and d["targets"] is None
+    assert d["range"] is None and d["trend"] is None and d["regime"] is None
     assert "bougies H4" in d["reason"]
+
+
+def _assert_system_desc_coherent(desc: dict, label: str):
+    for key in ("action", "entry_price", "stop_price", "targets", "reason"):
+        assert key in desc, f"champ manquant dans la sortie {label} de decide_now : {key}"
+    assert desc["action"] in ("HOLD", "OPEN_LONG", "NO_POSITION")
+    assert isinstance(desc["reason"], str) and len(desc["reason"]) > 0
+    if desc["action"] == "NO_POSITION":
+        assert desc["entry_price"] is None and desc["stop_price"] is None and desc["targets"] is None
+    else:
+        assert desc["entry_price"] is not None and desc["stop_price"] is not None and desc["targets"] is not None
 
 
 def test_decide_now_structured_output_is_coherent():
     """Historique H1 synthétique assez long (plusieurs années) pour couvrir
     largement le warmup H4 ET le warmup Hebdomadaire -- vérifie que la
-    sortie structurée de `decide_now` est INTERNEMENT cohérente, quel que
-    soit l'état réel qu'un pipeline synthétique aléatoire produit (pas un
-    scénario ciblé, cf. docstring)."""
+    sortie structurée de `decide_now` est INTERNEMENT cohérente pour CHAQUE
+    système (range ET trend indépendamment), quel que soit l'état réel
+    qu'un pipeline synthétique aléatoire produit (pas un scénario ciblé,
+    cf. docstring)."""
     h1 = _make_synthetic_h1(n_hours=24 * 400, seed=42)   # ~400 jours, ~90 bougies hebdo
     d = decide_now(h1, "AGRESSIF")
 
-    for key in ("action", "system", "regime", "entry_price", "stop_price", "targets",
-                "reason", "weekly_gate_reliable", "n_h4_bars", "n_weekly_bars"):
+    for key in ("range", "trend", "regime", "weekly_gate_reliable", "n_h4_bars", "n_weekly_bars"):
         assert key in d, f"champ manquant dans la sortie de decide_now : {key}"
 
-    assert d["action"] in ("HOLD_RANGE", "HOLD_TREND", "OPEN_LONG", "NO_POSITION", "INSUFFICIENT_DATA")
     assert isinstance(d["weekly_gate_reliable"], bool)
     assert d["n_h4_bars"] == len(h1) // 4  # resample('4h') sur un H1 sans trou
-    assert isinstance(d["reason"], str) and len(d["reason"]) > 0
+    assert d["regime"] in ("RANGE_NEUTRE", "RANGE_TENDANCIEL", "TENDANCE", "EXCES")
 
-    if d["action"] in ("NO_POSITION", "INSUFFICIENT_DATA"):
-        assert d["system"] is None
-        assert d["entry_price"] is None and d["stop_price"] is None and d["targets"] is None
-    else:
-        assert d["system"] in ("range", "trend")
-        assert d["entry_price"] is not None and d["stop_price"] is not None and d["targets"] is not None
-        if d["system"] == "range":
-            assert "tranches" in d["targets"] or {"val_px", "conf_px", "lim_px"} <= set(d["targets"])
-        else:
-            assert "stage" in d["targets"] or "target" in d["targets"]
+    _assert_system_desc_coherent(d["range"], "range")
+    _assert_system_desc_coherent(d["trend"], "trend")
+    if d["range"]["action"] == "HOLD":
+        assert "tranches" in d["range"]["targets"] or "reverses" in d["range"]["targets"]
+    elif d["range"]["action"] == "OPEN_LONG":
+        assert {"val_px", "conf_px", "lim_px"} <= set(d["range"]["targets"])
+    if d["trend"]["action"] in ("HOLD", "OPEN_LONG"):
+        assert "stage" in d["trend"]["targets"] or "target" in d["trend"]["targets"]
 
 
 def test_decide_now_requires_volume_column():

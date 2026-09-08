@@ -364,57 +364,99 @@ intégrée à cette config recommandée — deux moteurs séparés, jamais aigui
 entre eux, réponse honnête à l'époque à la question directe "avons-nous
 unifié tous les moteurs de décision dans un même protocole de trading ?" :
 non. **Traité depuis** (PLAN.md, section "Protocole unifié — routeur de
-régime range ↔ tendance") : `code/unified_protocol.py` route entre le moteur
-RANGE (ce document) et le moteur TENDANCE (`trend_table.py`) selon un
-déclencheur unique (`accumulation_active`), avec exclusivité mutuelle par
-actif (`active_system ∈ {None, "range", "trend"}`) — au plus un système
-ouvert à la fois, jamais deux avis contradictoires sur le même actif.
+régime range ↔ tendance") : `code/unified_protocol.py` fait tourner le
+moteur RANGE (ce document) et le moteur TENDANCE (`trend_table.py`) dans la
+MÊME boucle bar-par-bar, chacun gérant ses positions de façon **totalement
+indépendante** — pas d'aiguillage exclusif.
 
-**Résultat mesuré, honnête** (BTC/ETH/BNB/SOL × 4 profils,
-`code/backtest_phase2_unified_results.csv`, comparé côte à côte à ce
-document) : des campagnes tendance se déclenchent RÉELLEMENT sur ce jeu de
-données (123 au total), mais **toutes se referment en étape ACCUMULATION**
-(vérifié, pas supposé), cohérent avec le résultat déjà documenté de
-`trend_table.py` seul. Conséquence : **14 des 16 combinaisons actif×profil
-ont un retour total INFÉRIEUR** à cette config recommandée seule (moyenne
--15,6 points), le drawdown est aussi légèrement dégradé en moyenne (-1,1
-pt) — l'unification ne remet pas en cause la config recommandée
-elle-même (elle reste la référence pour un usage RANGE seul, ce document
-n'est pas modifié), mais son AJOUT du routeur tendance ne s'est PAS montré
-bénéfique sur ce jeu de données précis. Rapporté tel quel, pas maquillé en
-amélioration.
+**Correction (8 sept. 2026)** : la version initiale de ce routeur imposait
+une exclusivité mutuelle par actif (au plus un système ouvert à la fois),
+présentée alors comme fidèle au corpus ("un seul contexte à la fois").
+L'utilisateur a contesté directement cette restriction, et la vérification
+des sources lui a donné raison : rien dans `RULES_EXTRACTION.md` ne
+l'impose (sa section 1 classe le régime pour choisir la bonne table, ce
+n'est pas une règle de concurrence), et deux sources documentent
+explicitement le contraire — `TRADING_LESSONS_CLUSTERS_PRIX.md` (source #16,
+diversification statistique "1% sur la pattern breakout/pullback + 1% sur
+la pattern de moyenne mobile... jouer les deux") et
+`TRADING_LESSONS_PYRAMIDALISATION.md` (source #15, "positions multiples"
+désignées comme le mécanisme même de la pyramidalisation, cas réel de deux
+patterns "3ème borne" ouverts simultanément). L'exclusivité a donc été
+retirée (détail complet : "CORRECTION" en tête de `code/unified_protocol.py`)
+— RANGE et TENDANCE peuvent désormais être ouverts en même temps sur le même
+actif.
+
+**Résultat mesuré, honnête, REGÉNÉRÉ après la correction** (BTC/ETH/BNB/SOL
+× 4 profils, `code/backtest_phase2_unified_results.csv`, comparé côte à côte
+à ce document) : 147 campagnes tendance se déclenchent (davantage qu'avant
+la correction, 123 — cohérent : la tendance peut désormais s'ouvrir même
+pendant une position range déjà en cours), mais **toutes se referment en
+étape ACCUMULATION** (vérifié par spot-check instrumenté BTC/MODERE : 7/7,
+pas supposé), cohérent avec le résultat déjà documenté de `trend_table.py`
+seul. Conséquence : **10 des 16 combinaisons actif×profil ont un retour
+total INFÉRIEUR** à cette config recommandée seule (moyenne -19,2 points,
+allant de +1,8 pt SOL/FAIBLE à -132,6 pts SOL/TRES_AGRESSIF), le drawdown
+est aussi légèrement dégradé en moyenne (-1,4 pt) — l'unification ne remet
+pas en cause la config recommandée elle-même (elle reste la référence pour
+un usage RANGE seul, ce document n'est pas modifié), mais l'AJOUT du
+routeur tendance (avec ou sans exclusivité) ne s'est TOUJOURS PAS montré
+bénéfique sur ce jeu de données précis — le résultat est même légèrement
+plus dégradé en moyenne sans exclusivité qu'avec (le risque cumulé des deux
+systèmes ouverts en même temps, cf. limite U5 ci-dessous, pèse plus que le
+gain de ne plus rater d'opportunités range pendant une campagne tendance).
+Rapporté tel quel, pas maquillé en amélioration — la correction d'un biais
+de conception n'est pas devenue, après coup, une raison de forcer un
+résultat plus favorable.
 
 **Sortie "décision live"** (répond à la demande "lire le jeu de données d'un
-actif pour en tirer UNE décision de position") : `unified_protocol.decide_now(h1_recent, profile_name, capital_eur=None)`
+actif pour en tirer les positions à prendre") : `unified_protocol.decide_now(h1_recent, profile_name, capital_eur=None)`
 prend un historique H1 récent (avec `volume`), le resample en interne
-(H4 exécution + Hebdomadaire gate) et retourne un dict structuré. Exemple
-réel (BTC, historique tronqué au 2020-11-29, profil AGRESSIF) :
+(H4 exécution + Hebdomadaire gate) et retourne un dict structuré, RANGE et
+TENDANCE rapportés SÉPARÉMENT (plus un seul "système gagnant" — révisé avec
+la correction ci-dessus). Exemple réel (BTC, historique tronqué au
+2020-11-29, profil AGRESSIF) :
 
 ```json
 {
-  "action": "HOLD_RANGE",
-  "system": "range",
+  "range": {
+    "action": "HOLD",
+    "entry_price": 17816.9,
+    "stop_price": 16698.15,
+    "targets": {"tranches": [
+      {"entry": 17816.9, "stop": 16698.15, "val_px": 21190.09, "conf_px": 21671.09, "lim_px": 23598.18,
+       "val_done": false, "conf_done": false},
+      "... (2 tranches pyramidées au total)"
+    ]},
+    "reason": "2 tranche(s) range déjà ouverte(s) au 2020-11-29T00:00:00 -- laisser le moteur gérer Validation/Confirmation/Limite/Invalidation."
+  },
+  "trend": {
+    "action": "NO_POSITION",
+    "entry_price": null,
+    "stop_price": null,
+    "targets": null,
+    "reason": "Aucune campagne tendance ouverte et accumulation_active faux au 2020-11-29T00:00:00."
+  },
   "regime": "RANGE_NEUTRE",
-  "entry_price": 17816.9,
-  "stop_price": 16698.15,
-  "targets": {"tranches": [
-    {"entry": 17816.9, "stop": 16698.15, "val_px": 21190.09, "conf_px": 21671.09, "lim_px": 23598.18,
-     "val_done": false, "conf_done": false},
-    "... (3 tranches pyramidées au total)"
-  ]},
-  "reason": "3 tranche(s) range déjà ouverte(s) au 2020-11-29T04:00:00 -- laisser le moteur gérer Validation/Confirmation/Limite/Invalidation.",
   "weekly_gate_reliable": false,
-  "n_h4_bars": 2000,
+  "n_h4_bars": 1999,
   "n_weekly_bars": 48
 }
 ```
 
 Moteur : `code/unified_protocol.py` (`run_unified`, `decide_now`), 14e
 moteur de `code/run_all.py` (alias `unified`), `code/test_unified_protocol.py`
-(6/6 tests). Limite documentée, pas cachée : le capital par palier
-(`capital_eur`) n'est appliqué qu'au risk_pct du moteur RANGE, pas au moteur
-TENDANCE (jamais mesuré pour la table de tendance) — cf. docstring du
-module (choix U3).
+(6/6 tests, revus pour vérifier la CONCURRENCE des deux systèmes plutôt que
+leur exclusivité). Limites documentées, pas cachées :
+- le capital par palier (`capital_eur`) n'est appliqué qu'au risk_pct du
+  moteur RANGE, pas au moteur TENDANCE (jamais mesuré pour la table de
+  tendance) — cf. docstring du module (choix U3) ;
+- aucun plafond de risque AGRÉGÉ n'est appliqué entre RANGE et TENDANCE
+  quand les deux sont ouverts simultanément (chacun garde son propre
+  `risk_pct` de profil, ex. jusqu'à 4% simultanés en MODERE) — le corpus
+  documente un plafond agrégé explicite (2% max) mais pour une paire de
+  patterns différente (diversification statistique, cf. correction
+  ci-dessus) ; l'étendre tel quel ici serait une extrapolation non mesurée
+  (choix U5).
 
 ## 6. Pour aller plus loin (documents à consulter, pas à dupliquer)
 
