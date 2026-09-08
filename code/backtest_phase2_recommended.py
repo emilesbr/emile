@@ -117,7 +117,7 @@ from backtest_phase2_v7 import (
     MAX_TRANCHES, EMA_SLOW,
 )
 from backtest_phase2_ut2 import attach_multi_context, CLOSURE_DELAY
-from position_engine import run_position_engine
+from position_engine import run_position_engine, make_open_tranche_fn
 from capital_tiers import effective_sizing
 
 # Même définition que backtest_phase2_v7.py::run_v7 (i > warmup avant toute
@@ -201,44 +201,23 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
     def gate(i: int) -> bool:
         return bool(gate_score[i] >= 2 and gate_regime[i] != "EXCES")
 
+    def gate_extra(j):
+        # Même gate pour l'entrée fraîche et le renfort (config recommandée :
+        # pas de distinction régime/fib comme v6/fib, cf. position_engine.py).
+        g = gate(j)
+        return g, g
+
     state = {"last_pyramid_high": -np.inf}
 
-    def open_tranche_fn(i, tranches, win_streak):
-        if i <= local_warmup:
-            return None
-        long_signal_prev = score[i - 1] >= 2
-        mature = (not np.isnan(n_borders_v[i - 1])) and n_borders_v[i - 1] >= MIN_BORDERS
-        gated_signal = long_signal_prev and gate(i - 1)
-        valid_inputs = (
-            not np.isnan(atr_v[i - 1]) and not np.isnan(ctx_support_v[i - 1])
-            and not np.isnan(local_range_v[i - 1]) and local_range_v[i - 1] > 0
-            and not np.isnan(context_range_v[i - 1]) and context_range_v[i - 1] > 0
-        )
-        is_fresh_entry = (len(tranches) == 0 and gated_signal and mature and valid_inputs)
-        is_pyramid_add = (
-            0 < len(tranches) < MAX_TRANCHES and gated_signal and valid_inputs
-            and high[i - 1] > state["last_pyramid_high"]
-        )
-        if not (is_fresh_entry or is_pyramid_add):
-            return None
-
-        entry_price = o[i]
-        stop_price = min(ctx_support_v[i - 1], entry_price * 0.999)
-        stop_pct = (entry_price - stop_price) / entry_price
-        eff_risk = risk_pct
-        if win_streak >= RULE3_STREAK:
-            eff_risk *= RULE3_SIZE_MULT
-        size_frac = min(1.0 / MAX_TRANCHES, eff_risk / stop_pct) if stop_pct > 0 else 0.0
-        if size_frac <= 0:
-            return None
-        state["last_pyramid_high"] = max(state["last_pyramid_high"], high[i - 1]) if is_pyramid_add else high[i - 1]
-        return {
-            "entry": entry_price, "stop": stop_price, "remaining": size_frac,
-            "val_done": False, "conf_done": False, "pnl_accum": 0.0,
-            "val_px": entry_price + local_range_v[i - 1],
-            "conf_px": entry_price + context_range_v[i - 1],
-            "lim_px": entry_price + 1.5 * context_range_v[i - 1],
-        }
+    # NB : `local_warmup` joue ici le rôle de `warmup` de make_open_tranche_fn
+    # -- comparaison `i > warmup` équivalente à l'ancien early-return
+    # `if i <= local_warmup: return None` (is_fresh_entry/is_pyramid_add
+    # exigeaient déjà i > local_warmup de toute façon, même effet net).
+    open_tranche_fn = make_open_tranche_fn(
+        atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v, high, o, score,
+        local_warmup, MIN_BORDERS, MAX_TRANCHES, RULE3_STREAK, RULE3_SIZE_MULT, risk_pct, state,
+        extra_gate_fn=gate_extra,
+    )
 
     gated_long_signal = np.array([(score[i] >= 2) and gate(i) for i in range(n)])
 
