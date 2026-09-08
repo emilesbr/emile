@@ -235,6 +235,10 @@ def test_pure_range_sequence_matches_faithful_engine():
         "wall_street_active",
     ]
     feat_range_only = {k: feat[k] for k in range_keys}
+    # "regime" (unified) et "regime_h4" (faithful) désignent la MÊME grandeur
+    # (régime H4 natif) sous deux noms différents -- cf. CORRECTION EXCES H4
+    # dans les deux fichiers.
+    feat_range_only["regime_h4"] = feat["regime"]
 
     for profile in ("FAIBLE", "MODERE", "AGRESSIF", "TRES_AGRESSIF"):
         res_unified = _run_core_unified(feat, profile)

@@ -1,0 +1,17 @@
+symbol,profile,max_risk_total_pct,n_range_trades,n_trend_trades,n_div_a_trades,n_div_b_trades,exceeds_5pct_global_cap,exceeds_2pct_diversification_cap,max_bar_index,max_date,max_risk_range_pct,max_risk_trend_pct,max_risk_div_a_pct,max_risk_div_b_pct,max_n_range_tranches_open,max_n_range_reverses_open,max_trend_campaign_open,max_trend_reverse_open,max_pattern_a_open,max_pattern_b_open,max_n_systems_open
+BTCUSDT,FAIBLE,5.0,288,0,312,60,False,True,2146,2020-12-23T16:00:00.000000,3.0,0.0,1.0,1.0,3,0,False,False,True,True,3
+BTCUSDT,MODERE,8.0,288,7,312,60,True,True,2146,2020-12-23T16:00:00.000000,6.0,0.0,1.0,1.0,3,0,False,False,True,True,3
+BTCUSDT,AGRESSIF,11.0,288,7,312,60,True,True,1996,2020-11-28T16:00:00.000000,9.0,0.0,1.0,1.0,3,0,False,False,True,True,3
+BTCUSDT,TRES_AGRESSIF,17.0,303,7,312,60,True,True,1996,2020-11-28T16:00:00.000000,15.0,0.0,1.0,1.0,3,0,False,False,True,True,3
+ETHUSDT,FAIBLE,4.0381,313,1,270,38,False,True,7324,2023-05-05T16:00:00.000000,3.0,0.0381,1.0,0.0,3,0,True,False,True,False,3
+ETHUSDT,MODERE,7.0,313,8,270,38,True,True,1951,2020-11-21T04:00:00.000000,6.0,0.0,1.0,0.0,3,0,False,False,True,False,2
+ETHUSDT,AGRESSIF,10.0,313,8,270,38,True,True,9685,2024-06-02T04:00:00.000000,9.0,0.0,1.0,0.0,3,0,False,False,True,False,2
+ETHUSDT,TRES_AGRESSIF,16.0,322,8,270,38,True,True,1909,2020-11-14T04:00:00.000000,15.0,0.0,1.0,0.0,3,0,False,False,True,False,2
+BNBUSDT,FAIBLE,8.8091,397,3,329,47,True,True,9197,2024-04-22T04:00:00.000000,3.0,4.8091,1.0,0.0,3,0,True,False,True,False,3
+BNBUSDT,MODERE,7.0,397,16,329,47,True,True,1937,2020-12-29T04:00:00.000000,6.0,0.0,1.0,0.0,3,0,False,False,True,False,2
+BNBUSDT,AGRESSIF,10.0,397,16,329,47,True,True,1034,2020-07-31T16:00:00.000000,9.0,0.0,1.0,0.0,3,0,False,False,True,False,2
+BNBUSDT,TRES_AGRESSIF,16.0,409,16,329,47,True,True,1034,2020-07-31T16:00:00.000000,15.0,0.0,1.0,0.0,3,0,False,False,True,False,2
+SOLUSDT,FAIBLE,5.4862,205,3,198,48,True,True,5740,2023-04-28T20:00:00.000000,0.0,4.4862,1.0,0.0,0,0,True,False,True,False,2
+SOLUSDT,MODERE,7.0,205,8,198,48,True,True,2046,2021-08-21T04:00:00.000000,6.0,0.0,1.0,0.0,3,0,False,False,True,False,2
+SOLUSDT,AGRESSIF,11.0,205,8,198,48,True,True,7114,2023-12-13T20:00:00.000000,9.0,0.0,1.0,1.0,3,0,False,False,True,True,3
+SOLUSDT,TRES_AGRESSIF,17.0,214,8,198,48,True,True,7114,2023-12-13T20:00:00.000000,15.0,0.0,1.0,1.0,3,0,False,False,True,True,3

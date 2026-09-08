@@ -68,6 +68,26 @@ invention silencieuse) :
     reconnue comme telle dans `andrews_pitchfork.py`/`andrews_gate_
     alternative.py` -- laissé backtest-tunable.
 
+CORRECTION EXCES H4 (mobilisation multi-agents, audit systématique de
+fidélité IP) : `RULES_EXTRACTION.md` §1 ("Bulle / Excès -> NE PAS TRADER",
+~5% du temps) est une règle littérale INCONDITIONNELLE portant sur le
+régime du MARCHÉ QU'ON TRADE -- pas seulement sur son contexte supérieur.
+Depuis `backtest_phase2_v7.py` (qui a introduit la validation croisée D1),
+TOUS les moteurs descendants (`ut2`, `capital_tiers`, `fib`, `recommended`,
+et CE FICHIER jusqu'à cette correction) ne vérifiaient plus QUE le régime
+EXCES du contexte supérieur (D1/Hebdomadaire) -- le régime EXCES du H4 natif
+(pourtant calculé par `prepare()`, jamais consulté) n'était plus jamais lu
+par aucun gate. Preuve que c'est un oubli de refactor, pas un choix : le
+commentaire de tête de `backtest_phase2_fib.py` affirme "ni le H4 ni le D1
+ne doivent être en régime EXCES" alors que son code ne vérifie QUE le D1.
+Le côté TENDANCE de `unified_protocol.py` (`trend_table.py`, jamais touché
+par ce bug) vérifie correctement son PROPRE régime H4 pour abandonner une
+campagne -- exactement ce que le côté RANGE ne faisait plus depuis v7.
+**Corrigé ici** : `regime_h4` ajouté à `_prepare_features`, `gate()` de
+`_run_core` vérifie désormais `regime_h4_v[i] != "EXCES"` EN PLUS du
+contexte Hebdomadaire. Impact chiffré honnête : cf. `PLAN.md`/
+`CONFIGURATION_RECOMMANDEE.md`.
+
 HORS PÉRIMÈTRE DE CE FICHIER (traités ailleurs, pas oubliés, déjà corrects) :
   - **Table de tendance** (`trend_table.py`) : déjà toujours active en
     parallèle du moteur RANGE via `unified_protocol.py` (RANGE+TENDANCE
@@ -167,6 +187,7 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         "n_borders": h4["n_borders"].values,
         "gate_score": gate_score,
         "gate_regime": gate_regime,
+        "regime_h4": h4["regime"].values,   # cf. CORRECTION EXCES H4 en tête de fichier
         "wall_street_active": h4["wall_street_active"].values,
     }
 
@@ -195,13 +216,19 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
     n_borders_v = feat["n_borders"][start_:end]
     gate_score = feat["gate_score"][start_:end]
     gate_regime = feat["gate_regime"][start_:end]
+    regime_h4_v = feat["regime_h4"][start_:end]
     wall_street_v = feat["wall_street_active"][start_:end]
     n = end - start_
 
     local_warmup = max(0, WARMUP - start_)
 
     def gate(i: int) -> bool:
-        return bool(gate_score[i] >= 2 and gate_regime[i] != "EXCES")
+        # CORRECTION EXCES H4 (cf. tête de fichier) : le régime EXCES du H4
+        # natif (timeframe d'exécution) doit bloquer, pas seulement celui du
+        # contexte Hebdomadaire -- "Bulle/Excès -> NE PAS TRADER"
+        # (RULES_EXTRACTION.md §1) porte sur le marché qu'on trade, pas
+        # seulement sur son contexte supérieur.
+        return bool(gate_score[i] >= 2 and gate_regime[i] != "EXCES" and regime_h4_v[i] != "EXCES")
 
     def gate_extra(j):
         # Abstention Wall Street NON CONDITIONNELLE (littérale, cf. tête de

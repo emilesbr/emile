@@ -95,6 +95,7 @@ def _synthetic_feat(n: int, favorable_from: int = 0) -> dict:
         "n_borders": np.full(n, 3.0),
         "gate_score": np.full(n, 10.0),
         "gate_regime": np.full(n, "TENDANCE", dtype=object),
+        "regime_h4": np.full(n, "TENDANCE", dtype=object),   # jamais EXCES -- cf. CORRECTION EXCES H4
     }
 
 

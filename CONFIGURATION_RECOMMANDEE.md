@@ -430,31 +430,54 @@ INFÉRIEUR** à `faithful.py` seul (moyenne **-9,3 points** — nettement moins
 que les -19,2 points mesurés à tort contre `recommended.py` avant la
 consolidation, une partie de cet ancien écart venait d'une différence de
 règles RANGE, pas seulement du coût de la tendance), drawdown moyen -1,5 pt.
-**Point de vigilance concret, pas juste un chiffre parmi d'autres** :
-BNB/TRES_AGRESSIF cumule maintenant 3 effets défavorables (stop D1 large +
-"+Reverse" + campagnes tendance qui n'aboutissent jamais) — retour -42,6%,
-**drawdown -72,5%** — à éviter en usage réel sur ce couple actif/profil
-précis. Rapporté tel quel, pas maquillé en amélioration. **Approfondi par
-walk-forward (`code/walkforward_unified.py`)** : ce -72,5% agrégé sur 6 ans
-n'est PAS étalé — il vient d'**UNE SEULE année, 2021** (-45,9% de retour,
--63,5% de drawdown sur cette seule année ; 6/7 années négatives au total
-pour ce couple). Conclusion actionnable, pas un simple chiffre à surveiller :
-**exclure BNB/TRES_AGRESSIF d'un usage réel** — le risque s'est déjà
-matérialisé une fois dans l'historique testé.
+**Point de vigilance identifié AVANT la correction EXCES-H4 ci-dessous, très largement résolu APRÈS** :
+BNB/TRES_AGRESSIF cumulait 3 effets défavorables (stop D1 large + "+Reverse"
++ campagnes tendance qui n'aboutissent jamais) — retour -42,6%, **drawdown
+-72,5%**. **Chiffres régénérés après la correction EXCES-H4** (le gate ne
+vérifiait plus le régime EXCES du H4 natif, cf. section "Correction EXCES-H4"
+ci-dessous) : retour **+24,5%**, drawdown **-27,1%** — toujours le profil le
+plus faible des 16 combinaisons, mais plus catastrophique. **Approfondi par
+walk-forward (`code/walkforward_unified.py`)**, également régénéré : l'année
+2021, seule responsable du -72,5%/-45,9% agrégé, passe à **+6,2% de retour,
+-8,4% de drawdown**. Conclusion actionnable révisée : **l'exclusion de
+BNB/TRES_AGRESSIF n'est plus justifiée** — conservé comme profil à
+surveiller en priorité, pas à exclure.
 
 **Recherche systématique d'autres combinaisons dangereuses, faite (mobilisation
-multi-agents)** : `code/cross_stress_test_faithful_gates.py` (faithful.py +
+multi-agents, AVANT la correction EXCES-H4)** : `code/cross_stress_test_faithful_gates.py` (faithful.py +
 gate Fibonacci/Andrews) et `code/cross_stress_test_unified_capital_tiers.py`
 (unified.py × 3 paliers de capital), walk-forward annuel BTC/ETH/BNB/SOL ×
 4 profils. **Aucune nouvelle combinaison catastrophique trouvée** — BNB/TRES_AGRESSIF/2021
-reste le seul cas. Deux résultats notables : **le capital par palier ne
-résout pas ce cas** (le palier >100k€, plafond 2%, donne un résultat
+restait alors le seul cas. Deux résultats notables, mesurés sur ce cas AVANT
+qu'il ne soit résolu par la correction ci-dessous (conservés pour la
+traçabilité, ne décrivent plus un problème actuel) : **le capital par palier
+ne résolvait pas ce cas** (le palier >100k€, plafond 2%, donnait un résultat
 légèrement PIRE malgré un risque effectif 2,5× plus faible — effet de
-chemin de l'équity, cas isolé vérifié 1/112 combinaisons testées) ; **le
-gate Fibonacci neutralise incidemment ce cas précis** (dd -60,2%→-5,3%) mais
+chemin de l'équité, cas isolé vérifié 1/112 combinaisons testées) ; **le
+gate Fibonacci neutralisait incidemment ce cas précis** (dd -60,2%→-5,3%) mais
 reste une hypothèse d'implémentation à nous, pas une règle littérale pour la
 table RANGE — un effet favorable incident ne le rend pas littéral, aucun
 défaut changé.
+
+**Correction EXCES-H4 (mobilisation multi-agents, audit proactif — même
+cycle)** : `RULES_EXTRACTION.md` §1 ("Bulle/Excès -> NE PAS TRADER") est une
+règle littérale et inconditionnelle sur le régime du marché **réellement
+tradé** (H4 natif), pas seulement sur son contexte supérieur. Depuis
+l'introduction de la validation croisée D1 (`backtest_phase2_v7.py`), le
+gate ne vérifiait plus QUE le régime D1/Hebdomadaire — le régime H4 natif
+était calculé mais jamais relu par le gate, régression silencieuse (v6→v7),
+pas un choix documenté (preuve : le commentaire de tête de
+`backtest_phase2_fib.py` affirme encore "ni le H4 ni le D1 ne doivent être
+en régime EXCES" alors que son code ne vérifiait que le D1). **Corrigé dans
+les 3 moteurs opérationnellement recommandés** (`backtest_phase2_faithful.py`,
+`unified_protocol.py`, `backtest_phase2_recommended.py`) — gate ajoute la
+vérification du régime H4 natif. **Non corrigé, documenté comme tel**, dans
+les moteurs superseded/comparaison (`v7`, `ut2`, `capital_tiers`, `fib`,
+`diversification` Pattern A), cf. `COUVERTURE_ENSEIGNEMENTS.md` et `PLAN.md`
+tableau "2e pattern récurrent". Impact chiffré : cf. BNB/TRES_AGRESSIF
+ci-dessus, résolu par cette correction, pas recherché comme tel — la
+correction suit la fidélité au corpus, l'amélioration du chiffre est une
+conséquence.
 
 **Sortie "décision live"** (répond à la demande "lire le jeu de données d'un
 actif pour en tirer les positions à prendre") : `unified_protocol.decide_now(h1_recent, profile_name, capital_eur=None)`
@@ -534,10 +557,10 @@ RANGE) :
 indépendant, cf. `diversification.py`, toujours utilisable sans condition en
 plus de ce moteur ; la table de tendance — item "hors périmètre" — est
 utilisée sans condition via `code/unified_protocol.py`, section 5bis. Le
-canal manuel — item 7 — reste une piste ouverte non résolue, cf. tableau
-ci-dessus et tête de fichier `backtest_phase2_faithful.py`, pour une raison
-d'ambiguïté d'implémentation non résolue par le corpus, PAS une question de
-performance.)
+canal manuel — item 7 — reconstruit sur D1 et comparé au stop actif, cf.
+section 5quater ci-dessous ; les deux lectures restent valides, aucun
+défaut changé, pour une raison d'ambiguïté d'implémentation non résolue par
+le corpus, PAS une question de performance.)
 
 **Résultat mesuré, honnête, comparé côte à côte à `recommended.py`**
 (BTC/ETH/BNB/SOL × 4 profils, `code/backtest_phase2_faithful_results.csv`) :
@@ -595,6 +618,48 @@ existant, 19/19 tests reconfirmés verts après l'ajout, vérifié
 indépendamment). **Résultat honnête, non concluant** : seulement 3 trades
 sur 365 barres, quel que soit le profil — trop peu pour conclure quoi que
 ce soit, ni un échec de méthode ni un résultat forcé.
+
+---
+
+## 5quater. Canal manuel D1 et risque agrégé — 2 chantiers de la mobilisation multi-agents (cycle suivant)
+
+**Canal manuel D1 (Agent A)** : le stop UT+1 littéral (`faithful.py`) utilise
+le canal EMA±ATR H4 remonté en D1 — le canal manuel (Supports→Apex→Tangente,
+`manual_trend_channel.py`) est une règle littérale DISTINCTE, jusqu'ici
+mesurée seulement sur H4 natif, jamais reconstruite sur D1.
+`code/backtest_phase2_faithful_manual_channel.py` (nouveau, réutilise
+`_prepare_features`/`_run_core` de `faithful.py` sans modification) construit
+cette alternative. Couverture confirmée : 97,77-99,53% des barres D1 selon
+actif/année (BTC/ETH/BNB/SOL, walk-forward 2020-2026) — la reconstruction
+fonctionne sans adaptation. **Résultat, comparaison directe**
+(`code/backtest_phase2_faithful_manual_channel_walkforward_results.csv`,
+112 lignes actif×année) : canal manuel D1 retour total moyen **10,46%**
+contre **5,31%** pour EMA±ATR D1 (stop actif), mais aussi drawdown moyen
+plus profond, **-6,58%** contre **-4,14%**. Ni l'un ni l'autre strictement
+meilleur. **Décision suivie : ne PAS remplacer le stop actuel** — le corpus
+ne tranche pas lequel des deux stops littéraux prime en cas de désaccord,
+et la performance ne doit jamais servir à choisir entre deux lectures
+également fidèles du corpus. Les deux restent documentées comme valides,
+aucun code de production changé.
+
+**Risque agrégé RANGE+TENDANCE+diversification (Agent B)** :
+`code/risk_aggregation_triple_system.py` (nouveau) fait tourner
+simultanément, sur le même actif/historique, `unified_protocol.py`
+(RANGE+TENDANCE) et `diversification.py` (Pattern A + Pattern B), et
+calcule le risque nominal agrégé bougie par bougie — répond à la limite
+laissée ouverte en section 5bis. **Résultat honnête**
+(`risk_aggregation_full_history.csv` + `risk_aggregation_walkforward.csv`,
+BTC/ETH/BNB/SOL × 4 profils) : risque agrégé maximal observé **17,00%**
+(BTC/TRES_AGRESSIF, 2020-11-28), très au-dessus du plafond global 5%
+documenté (`RULES_EXTRACTION.md` §5) ; 68/112 combinaisons année×actif×profil
+le dépassent en walk-forward. **Root cause** : le pyramidage RANGE seul
+(3 tranches × 5% = 15% en TRES_AGRESSIF) dépasse déjà le plafond avant toute
+combinaison — ce n'est pas la combinaison de systèmes qui casse le plafond.
+**Volontairement pas comblé par un plafond inventé** : le corpus ne spécifie
+aucun plafond pour cette combinaison précise de systèmes (RANGE+TENDANCE+
+diversification simultanés est une architecture du projet, pas une
+prescription du corpus, cf. choix U5 `unified_protocol.py`) — documenté
+comme limite ouverte, pas silencieuse.
 
 ---
 

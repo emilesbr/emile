@@ -163,6 +163,7 @@ def _prepare_features(h4: pd.DataFrame, higher: pd.DataFrame, use_mtf_gate: bool
         "n_borders": h4["n_borders"].values,
         "gate_score": gate_score,
         "gate_regime": gate_regime,
+        "regime_h4": h4["regime"].values,   # cf. CORRECTION EXCES H4 (module backtest_phase2_faithful.py)
     }
 
 
@@ -189,6 +190,7 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
     n_borders_v = feat["n_borders"][start_:end]
     gate_score = feat["gate_score"][start_:end]
     gate_regime = feat["gate_regime"][start_:end]
+    regime_h4_v = feat["regime_h4"][start_:end]
     n = end - start_
 
     # cf. docstring module : warmup exprimé en index ABSOLU de l'historique
@@ -199,7 +201,12 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
     local_warmup = max(0, WARMUP - start_)
 
     def gate(i: int) -> bool:
-        return bool(gate_score[i] >= 2 and gate_regime[i] != "EXCES")
+        # CORRECTION EXCES H4 (cf. backtest_phase2_faithful.py, mobilisation
+        # multi-agents, audit systématique de fidélité IP) : le régime EXCES
+        # du H4 natif doit aussi bloquer, pas seulement celui du contexte
+        # supérieur -- "Bulle/Excès -> NE PAS TRADER" (RULES_EXTRACTION.md
+        # §1) porte sur le marché qu'on trade, pas seulement son contexte.
+        return bool(gate_score[i] >= 2 and gate_regime[i] != "EXCES" and regime_h4_v[i] != "EXCES")
 
     def gate_extra(j):
         # Même gate pour l'entrée fraîche et le renfort (config recommandée :

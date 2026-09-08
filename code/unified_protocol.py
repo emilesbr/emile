@@ -54,6 +54,24 @@ cross-timeframe D1 : ce sont deux règles distinctes du corpus, pas la même
 règle appliquée deux fois).
 
 ================================================================================
+CORRECTION EXCES H4 (mobilisation multi-agents, audit systématique de
+fidélité IP) -- côté RANGE ne vérifiait plus le régime EXCES du H4 natif
+================================================================================
+`RULES_EXTRACTION.md` §1 ("Bulle / Excès -> NE PAS TRADER", ~5% du temps)
+est une règle littérale INCONDITIONNELLE portant sur le régime du MARCHÉ
+QU'ON TRADE -- pas seulement sur son contexte supérieur. Depuis
+`backtest_phase2_v7.py` (qui a introduit la validation croisée D1), le
+gate RANGE de ce fichier (hérité de cette lignée) ne vérifiait plus QUE le
+régime EXCES du contexte Hebdomadaire -- le régime EXCES du H4 natif
+(`feat["regime"]`, déjà calculé pour le côté TENDANCE, jamais lu côté
+RANGE) n'était jamais consulté par le gate RANGE. Le côté TENDANCE, lui,
+vérifie correctement son PROPRE régime H4 pour abandonner une campagne
+(`_campaign_ev::regime_excess`) -- exactement ce que le côté RANGE ne
+faisait plus. **Corrigé** : `gate()` de `_run_core_unified` vérifie
+désormais `feat["regime"][i] != "EXCES"` EN PLUS du gate Hebdomadaire.
+Impact chiffré honnête : cf. `PLAN.md`/`CONFIGURATION_RECOMMANDEE.md`.
+
+================================================================================
 CORRECTION (8 sept. 2026) -- l'exclusivité mutuelle par actif a été RETIRÉE
 ================================================================================
 Version initiale de ce fichier : au plus UN système (RANGE ou TENDANCE)
@@ -441,7 +459,17 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
     end = n_total if end is None else end
 
     def gate(i: int) -> bool:
-        return bool(feat["gate_score"][i] >= 2 and feat["gate_regime"][i] != "EXCES")
+        # CORRECTION EXCES H4 (mobilisation multi-agents, audit systématique
+        # de fidélité IP -- cf. CORRECTION dans backtest_phase2_faithful.py) :
+        # le régime EXCES du H4 natif (feat["regime"], déjà calculé pour le
+        # côté TENDANCE, jamais lu ici jusqu'à cette correction) doit aussi
+        # bloquer côté RANGE -- "Bulle/Excès -> NE PAS TRADER"
+        # (RULES_EXTRACTION.md §1) porte sur le marché qu'on trade, pas
+        # seulement sur son contexte Hebdomadaire.
+        return bool(
+            feat["gate_score"][i] >= 2 and feat["gate_regime"][i] != "EXCES"
+            and feat["regime"][i] != "EXCES"
+        )
 
     def gate_extra(j):
         # Abstention Wall Street NON CONDITIONNELLE (littérale, cf.
