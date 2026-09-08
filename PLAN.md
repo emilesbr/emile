@@ -131,6 +131,10 @@ Catégorie de risque DIFFÉRENTE de celle ci-dessus (pas un bug de calcul, une *
 
 **Conséquence pratique** : avant de poser toute règle de conception qui RESTREINT ou DÉSACTIVE un comportement ("un seul système à la fois", "ce filtre reste optionnel", "cette combinaison est hors périmètre"), vérifier explicitement si le corpus l'exige littéralement ou si c'est une inférence à moi — et le dire dans le commentaire/docstring au moment où la règle est posée, pas seulement après coup si l'utilisateur la conteste. Les deux occurrences ci-dessus auraient pu être évitées par cette seule discipline, appliquée AVANT d'écrire le code plutôt qu'en réponse à une question directe.
 
+### Règle de méthode ajoutée (rappel direct de l'utilisateur, ce cycle) : "que ferait un ingénieur senior ?" mobilise une ÉQUIPE, pas une réponse individuelle
+
+Jusqu'ici, chaque "que ferait un ingénieur senior ?" a été traité par une analyse portée SEULE (par moi, séquentiellement) — ce qui explique en partie le 2e pattern récurrent ci-dessus : un seul jugement, jamais confronté à un second regard, a laissé passer deux erreurs de conception avant que l'utilisateur ne les conteste. L'utilisateur a explicitement demandé que ce déclencheur mobilise désormais **plusieurs agents en parallèle** (comme une vraie équipe d'ingénierie — revue indépendante, recherche dédiée, vérification croisée), pas une réponse individuelle. Appliqué concrètement à partir de ce cycle : quand "que ferait un ingénieur senior (directeur) ?" est demandé, identifier les items de backlog/risques pertinents et les répartir entre plusieurs agents délégués tournant EN PARALLÈLE plutôt que de les traiter un par un moi-même — chaque retour d'agent reste vérifié indépendamment avant d'être accepté (discipline déjà en place pour tout travail délégué, cf. ci-dessus), la mobilisation multi-agents ne remplace pas la vérification, elle s'y ajoute.
+
 ### Mode ingénieur senior — quand ralentir sans qu'on ait à le redemander
 
 Adapté de `ideeri-v2/CLAUDE.md` §16. Déclencheurs, sur ce projet :
