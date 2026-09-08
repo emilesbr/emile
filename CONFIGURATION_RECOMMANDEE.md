@@ -45,14 +45,20 @@ Le moteur qui implémente cette configuration : `code/backtest_phase2_recommende
 | 9 | Capital par palier | **Paramètre, pas une décision ON/OFF de signal** | `capital_tiers.py::effective_sizing`, exposé via `run_recommended(..., capital_eur=...)`. Absent (`None`) → risk_pct du profil choisi, inchangé |
 | 10 | +Reverse (table range, TRES_AGRESSIF) | **OFF par défaut** (paramètre disponible) | `phase2_v7_reverse_results.csv` : mixte (3/4 actifs améliorés +2,2 à +18,7 pts, BNB dégradé -6,1 pts) et spécifique au seul profil TRES_AGRESSIF selon le corpus (RULES_EXTRACTION §3) — pas un défaut applicable aux 4 profils. Exposé via `reverse_at_limit=True` pour qui veut l'activer sur ce profil précis |
 
-**Hors périmètre, justifié, pas un oubli** : la table "trade de tendance" à 5
-étapes (`trend_table.py`) n'est pas intégrée — structurellement incompatible
-avec `position_engine.py` (justifié en tête de `trend_table.py`), et son
-propre résultat mesuré montre que 100% des campagnes se referment en étape
-Accumulation sur ce jeu de données (`phase2_trend_table_results.csv`) — les
-étapes 2-5 jamais exercées empiriquement. L'intégrer ici ajouterait un
-second moteur parallèle sans preuve d'apport, contraire au principe "un
-chiffre de référence unique" de cette synthèse.
+**Hors périmètre DE CE MOTEUR précis (`backtest_phase2_recommended.py`),
+mais désormais routé ailleurs** : la table "trade de tendance" à 5 étapes
+(`trend_table.py`) n'est toujours pas intégrée À CE FICHIER — reste
+structurellement incompatible avec `position_engine.py` (justifié en tête
+de `trend_table.py`), et son propre résultat mesuré montre que 100% des
+campagnes se referment en étape Accumulation sur ce jeu de données
+(`phase2_trend_table_results.csv`) — les étapes 2-5 jamais exercées
+empiriquement. L'intégrer ICI ajouterait un second moteur parallèle sans
+preuve d'apport, contraire au principe "un chiffre de référence unique" de
+cette synthèse précise. **Ceci ne veut plus dire que les deux moteurs
+restent jamais aiguillés entre eux** : cf. section 5bis ci-dessous
+(`code/unified_protocol.py`), qui répond à la question "les moteurs
+sont-ils unifiés ?" — ce fichier (`backtest_phase2_recommended.py`) reste
+inchangé et continue de documenter le moteur RANGE seul.
 
 ---
 
@@ -350,6 +356,66 @@ modification du moteur.
 
 ---
 
+## 5bis. Les moteurs sont-ils unifiés dans un seul protocole de trading ? OUI désormais
+
+Ce document notait initialement (section "Hors périmètre" ci-dessus, point 1)
+que la table "trade de tendance" à 5 étapes (`trend_table.py`) n'était pas
+intégrée à cette config recommandée — deux moteurs séparés, jamais aiguillés
+entre eux, réponse honnête à l'époque à la question directe "avons-nous
+unifié tous les moteurs de décision dans un même protocole de trading ?" :
+non. **Traité depuis** (PLAN.md, section "Protocole unifié — routeur de
+régime range ↔ tendance") : `code/unified_protocol.py` route entre le moteur
+RANGE (ce document) et le moteur TENDANCE (`trend_table.py`) selon un
+déclencheur unique (`accumulation_active`), avec exclusivité mutuelle par
+actif (`active_system ∈ {None, "range", "trend"}`) — au plus un système
+ouvert à la fois, jamais deux avis contradictoires sur le même actif.
+
+**Résultat mesuré, honnête** (BTC/ETH/BNB/SOL × 4 profils,
+`code/backtest_phase2_unified_results.csv`, comparé côte à côte à ce
+document) : des campagnes tendance se déclenchent RÉELLEMENT sur ce jeu de
+données (123 au total), mais **toutes se referment en étape ACCUMULATION**
+(vérifié, pas supposé), cohérent avec le résultat déjà documenté de
+`trend_table.py` seul. Conséquence : **14 des 16 combinaisons actif×profil
+ont un retour total INFÉRIEUR** à cette config recommandée seule (moyenne
+-15,6 points), le drawdown est aussi légèrement dégradé en moyenne (-1,1
+pt) — l'unification ne remet pas en cause la config recommandée
+elle-même (elle reste la référence pour un usage RANGE seul, ce document
+n'est pas modifié), mais son AJOUT du routeur tendance ne s'est PAS montré
+bénéfique sur ce jeu de données précis. Rapporté tel quel, pas maquillé en
+amélioration.
+
+**Sortie "décision live"** (répond à la demande "lire le jeu de données d'un
+actif pour en tirer UNE décision de position") : `unified_protocol.decide_now(h1_recent, profile_name, capital_eur=None)`
+prend un historique H1 récent (avec `volume`), le resample en interne
+(H4 exécution + Hebdomadaire gate) et retourne un dict structuré. Exemple
+réel (BTC, historique tronqué au 2020-11-29, profil AGRESSIF) :
+
+```json
+{
+  "action": "HOLD_RANGE",
+  "system": "range",
+  "regime": "RANGE_NEUTRE",
+  "entry_price": 17816.9,
+  "stop_price": 16698.15,
+  "targets": {"tranches": [
+    {"entry": 17816.9, "stop": 16698.15, "val_px": 21190.09, "conf_px": 21671.09, "lim_px": 23598.18,
+     "val_done": false, "conf_done": false},
+    "... (3 tranches pyramidées au total)"
+  ]},
+  "reason": "3 tranche(s) range déjà ouverte(s) au 2020-11-29T04:00:00 -- laisser le moteur gérer Validation/Confirmation/Limite/Invalidation.",
+  "weekly_gate_reliable": false,
+  "n_h4_bars": 2000,
+  "n_weekly_bars": 48
+}
+```
+
+Moteur : `code/unified_protocol.py` (`run_unified`, `decide_now`), 14e
+moteur de `code/run_all.py` (alias `unified`), `code/test_unified_protocol.py`
+(6/6 tests). Limite documentée, pas cachée : le capital par palier
+(`capital_eur`) n'est appliqué qu'au risk_pct du moteur RANGE, pas au moteur
+TENDANCE (jamais mesuré pour la table de tendance) — cf. docstring du
+module (choix U3).
+
 ## 6. Pour aller plus loin (documents à consulter, pas à dupliquer)
 
 - **Détail complet des preuves citées section 1** : `COUVERTURE_ENSEIGNEMENTS.md`
@@ -362,5 +428,9 @@ modification du moteur.
   10 décisions résumées avec chiffres), `code/walkforward_recommended.py`,
   `code/oos_xrp_recommended.py`, `code/test_backtest_phase2_recommended.py`
   (7/7 tests).
+- **Protocole unifié (routeur range ↔ tendance)** : cf. section 5bis
+  ci-dessus, `code/unified_protocol.py`, `code/test_unified_protocol.py`
+  (6/6 tests), `PLAN.md` section "Protocole unifié".
 - **Point d'entrée pipeline** : `python code/run_all.py --only recommended`
-  (alias `recommended` de `code/run_all.py`, 13e moteur du pipeline).
+  (alias `recommended` de `code/run_all.py`, 13e moteur du pipeline) ou
+  `python code/run_all.py --only unified` (alias `unified`, 14e moteur).
