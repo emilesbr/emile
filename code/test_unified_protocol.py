@@ -22,10 +22,17 @@ exactement comme `test_trend_table.py` teste `step_campaign`/
 (cf. `unified_protocol.py`) -- ce qui rend ces scénarios synthétiques
 possibles sans passer par le vrai pipeline `proxy_v2`/`regime_classifier`.
 
-Le test de non-régression (test 3) compare directement `_run_core_unified`
-à `_run_core` (recommended.py) sur le MÊME `feat` dict synthétique -- deux
-moteurs réels appelés sur les mêmes données, pas une réimplémentation d'un
-des deux pour la comparaison.
+RÉVISÉ À NOUVEAU (8 sept. 2026, CONSOLIDATION) : le côté RANGE de ce routeur
+applique désormais les mêmes règles littérales que `backtest_phase2_faithful.py`
+(stop D1 UT+1, abstention Wall Street, +Reverse scopé TRES_AGRESSIF), pas
+celles de `recommended.py`. `_make_base_feat` expose donc `ctx_support_d1`
+et `wall_street_active` en plus de `ctx_support` (toujours utilisé côté
+TENDANCE, cf. hypothèse H4 de `trend_table.py` -- stop natif H4, PAS le même
+stop que RANGE). Le test de non-régression (test 3) compare désormais
+`_run_core_unified` à `_run_core` de `backtest_phase2_faithful.py` (pas
+`recommended.py`) sur le MÊME `feat` dict synthétique -- deux moteurs réels
+appelés sur les mêmes données, pas une réimplémentation d'un des deux pour
+la comparaison.
 
 Le test `decide_now` (test 4) est le seul à repasser par le VRAI pipeline
 (`_prepare_unified`) sur un historique H1 synthétique construit à la main
@@ -43,7 +50,8 @@ import sys
 sys.path.insert(0, ".")
 
 from backtest_phase2_v7 import MIN_BORDERS
-from backtest_phase2_recommended import _run_core as _run_core_recommended, WARMUP
+from backtest_phase2_recommended import WARMUP
+from backtest_phase2_faithful import _run_core as _run_core_faithful
 from unified_protocol import _run_core_unified, _accumulation_active, decide_now
 
 
@@ -65,6 +73,8 @@ def _make_base_feat(n=N):
         "score": np.zeros(n),
         "atr": np.full(n, 1.0),
         "ctx_support": np.full(n, 90.0),
+        "ctx_support_d1": np.full(n, 90.0),
+        "wall_street_active": np.full(n, False),
         "local_range": np.full(n, 5.0),
         "context_range": np.full(n, 10.0),
         "n_borders": np.full(n, float(MIN_BORDERS)),
@@ -191,7 +201,7 @@ def test_opens_both_systems_concurrently_when_both_signals_fire():
 # signal tendance, l'indépendance des deux systèmes ne change rien au
 # comportement RANGE seul.
 # ---------------------------------------------------------------------------
-def test_pure_range_sequence_matches_recommended_engine():
+def test_pure_range_sequence_matches_faithful_engine():
     feat = _make_base_feat()
     entry_i = WARMUP + 2
     j_open = entry_i - 1
@@ -220,19 +230,21 @@ def test_pure_range_sequence_matches_recommended_engine():
         )
 
     range_keys = [
-        "date", "open", "high", "low", "close", "score", "atr", "ctx_support",
+        "date", "open", "high", "low", "close", "score", "atr", "ctx_support_d1",
         "local_range", "context_range", "n_borders", "gate_score", "gate_regime",
+        "wall_street_active",
     ]
     feat_range_only = {k: feat[k] for k in range_keys}
 
     for profile in ("FAIBLE", "MODERE", "AGRESSIF", "TRES_AGRESSIF"):
         res_unified = _run_core_unified(feat, profile)
-        res_reco = _run_core_recommended(feat_range_only, profile)
+        res_faithful = _run_core_faithful(feat_range_only, profile)
         for key in ("n_trades", "max_dd_%", "total_return_%", "win_rate_%", "profit_factor"):
-            assert res_unified[key] == res_reco[key], (
+            assert res_unified[key] == res_faithful[key], (
                 f"profil {profile}, champ {key} : unifié={res_unified[key]!r} != "
-                f"recommended={res_reco[key]!r} -- régression du protocole unifié en "
-                "l'absence de toute condition tendance (devrait être identique à recommended.py seul)"
+                f"faithful={res_faithful[key]!r} -- régression du protocole unifié en "
+                "l'absence de toute condition tendance (devrait être identique à "
+                "backtest_phase2_faithful.py seul, MÊMES règles littérales côté RANGE)"
             )
         assert res_unified["n_trend_campaigns_opened"] == 0
         # Vérifie que la séquence a bien exercé les 3 étapes (test non vacueux :

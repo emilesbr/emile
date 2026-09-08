@@ -392,65 +392,66 @@ entre eux, réponse honnête à l'époque à la question directe "avons-nous
 unifié tous les moteurs de décision dans un même protocole de trading ?" :
 non. **Traité depuis** (PLAN.md, section "Protocole unifié — routeur de
 régime range ↔ tendance") : `code/unified_protocol.py` fait tourner le
-moteur RANGE (ce document) et le moteur TENDANCE (`trend_table.py`) dans la
-MÊME boucle bar-par-bar, chacun gérant ses positions de façon **totalement
+moteur RANGE et le moteur TENDANCE (`trend_table.py`) dans la MÊME boucle
+bar-par-bar, chacun gérant ses positions de façon **totalement
 indépendante** — pas d'aiguillage exclusif.
 
-**Correction (8 sept. 2026)** : la version initiale de ce routeur imposait
+**Correction #1 (8 sept. 2026)** : la version initiale de ce routeur imposait
 une exclusivité mutuelle par actif (au plus un système ouvert à la fois),
 présentée alors comme fidèle au corpus ("un seul contexte à la fois").
 L'utilisateur a contesté directement cette restriction, et la vérification
 des sources lui a donné raison : rien dans `RULES_EXTRACTION.md` ne
-l'impose (sa section 1 classe le régime pour choisir la bonne table, ce
-n'est pas une règle de concurrence), et deux sources documentent
-explicitement le contraire — `TRADING_LESSONS_CLUSTERS_PRIX.md` (source #16,
-diversification statistique "1% sur la pattern breakout/pullback + 1% sur
-la pattern de moyenne mobile... jouer les deux") et
+l'impose, et deux sources documentent explicitement le contraire —
+`TRADING_LESSONS_CLUSTERS_PRIX.md` (source #16) et
 `TRADING_LESSONS_PYRAMIDALISATION.md` (source #15, "positions multiples"
-désignées comme le mécanisme même de la pyramidalisation, cas réel de deux
-patterns "3ème borne" ouverts simultanément). L'exclusivité a donc été
-retirée (détail complet : "CORRECTION" en tête de `code/unified_protocol.py`)
-— RANGE et TENDANCE peuvent désormais être ouverts en même temps sur le même
-actif.
+désignées comme le mécanisme même de la pyramidalisation). L'exclusivité a
+donc été retirée — RANGE et TENDANCE peuvent être ouverts en même temps sur
+le même actif.
 
-**Résultat mesuré, honnête, REGÉNÉRÉ après la correction** (BTC/ETH/BNB/SOL
-× 4 profils, `code/backtest_phase2_unified_results.csv`, comparé côte à côte
-à ce document) : 147 campagnes tendance se déclenchent (davantage qu'avant
-la correction, 123 — cohérent : la tendance peut désormais s'ouvrir même
-pendant une position range déjà en cours), mais **toutes se referment en
-étape ACCUMULATION** (vérifié par spot-check instrumenté BTC/MODERE : 7/7,
-pas supposé), cohérent avec le résultat déjà documenté de `trend_table.py`
-seul. Conséquence : **10 des 16 combinaisons actif×profil ont un retour
-total INFÉRIEUR** à cette config recommandée seule (moyenne -19,2 points,
-allant de +1,8 pt SOL/FAIBLE à -132,6 pts SOL/TRES_AGRESSIF), le drawdown
-est aussi légèrement dégradé en moyenne (-1,4 pt) — l'unification ne remet
-pas en cause la config recommandée elle-même (elle reste la référence pour
-un usage RANGE seul, ce document n'est pas modifié), mais l'AJOUT du
-routeur tendance (avec ou sans exclusivité) ne s'est TOUJOURS PAS montré
-bénéfique sur ce jeu de données précis — le résultat est même légèrement
-plus dégradé en moyenne sans exclusivité qu'avec (le risque cumulé des deux
-systèmes ouverts en même temps, cf. limite U5 ci-dessous, pèse plus que le
-gain de ne plus rater d'opportunités range pendant une campagne tendance).
-Rapporté tel quel, pas maquillé en amélioration — la correction d'un biais
-de conception n'est pas devenue, après coup, une raison de forcer un
-résultat plus favorable.
+**Correction #2 / CONSOLIDATION (même cycle)** : le côté RANGE de ce routeur
+utilisait encore `recommended.py` (les 3 règles littérales désactivées à
+tort, cf. section 5ter ci-dessous), alors que le côté TENDANCE, lui, était
+déjà fidèle au corpus. Incohérence corrigée : le côté RANGE applique
+désormais les MÊMES règles que `backtest_phase2_faithful.py`, SANS
+CONDITION (stop D1 UT+1, abstention Wall Street, +Reverse scopé
+TRES_AGRESSIF) — `unified_protocol.py` devient ainsi LE protocole complet
+unique à utiliser opérationnellement, plutôt que deux livrables séparés
+mesurant chacun une combinaison partielle. `run_unified`/`decide_now`
+prennent désormais un paramètre `d1` supplémentaire.
+
+**Résultat mesuré, honnête, REGÉNÉRÉ après les deux corrections** (BTC/ETH/BNB/SOL
+× 4 profils, `code/backtest_phase2_unified_results.csv`, comparé désormais
+à `faithful.py` — la bonne référence RANGE, pas `recommended.py`) : 147
+campagnes tendance se déclenchent, mais **toutes se referment en étape
+ACCUMULATION** (vérifié par spot-check instrumenté BTC/MODERE : 7/7, pas
+supposé), cohérent avec le résultat déjà documenté de `trend_table.py` seul.
+Conséquence : **10 des 16 combinaisons actif×profil ont un retour total
+INFÉRIEUR** à `faithful.py` seul (moyenne **-9,3 points** — nettement moins
+que les -19,2 points mesurés à tort contre `recommended.py` avant la
+consolidation, une partie de cet ancien écart venait d'une différence de
+règles RANGE, pas seulement du coût de la tendance), drawdown moyen -1,5 pt.
+**Point de vigilance concret, pas juste un chiffre parmi d'autres** :
+BNB/TRES_AGRESSIF cumule maintenant 3 effets défavorables (stop D1 large +
+"+Reverse" + campagnes tendance qui n'aboutissent jamais) — retour -42,6%,
+**drawdown -72,5%** — à éviter en usage réel sur ce couple actif/profil
+précis. Rapporté tel quel, pas maquillé en amélioration.
 
 **Sortie "décision live"** (répond à la demande "lire le jeu de données d'un
 actif pour en tirer les positions à prendre") : `unified_protocol.decide_now(h1_recent, profile_name, capital_eur=None)`
 prend un historique H1 récent (avec `volume`), le resample en interne
-(H4 exécution + Hebdomadaire gate) et retourne un dict structuré, RANGE et
-TENDANCE rapportés SÉPARÉMENT (plus un seul "système gagnant" — révisé avec
-la correction ci-dessus). Exemple réel (BTC, historique tronqué au
-2020-11-29, profil AGRESSIF) :
+(H4 exécution + D1 stop + Hebdomadaire gate) et retourne un dict structuré,
+RANGE et TENDANCE rapportés SÉPARÉMENT. Exemple réel (BTC, historique
+tronqué au 2020-11-29, profil AGRESSIF — stop désormais D1, nettement plus
+large que l'ancien stop H4 natif) :
 
 ```json
 {
   "range": {
     "action": "HOLD",
     "entry_price": 17816.9,
-    "stop_price": 16698.15,
+    "stop_price": 12903.97,
     "targets": {"tranches": [
-      {"entry": 17816.9, "stop": 16698.15, "val_px": 21190.09, "conf_px": 21671.09, "lim_px": 23598.18,
+      {"entry": 17816.9, "stop": 12903.97, "val_px": 21190.09, "conf_px": 21671.09, "lim_px": 23598.18,
        "val_done": false, "conf_done": false},
       "... (2 tranches pyramidées au total)"
     ]},
@@ -470,10 +471,9 @@ la correction ci-dessus). Exemple réel (BTC, historique tronqué au
 }
 ```
 
-Moteur : `code/unified_protocol.py` (`run_unified`, `decide_now`), 14e
+Moteur : `code/unified_protocol.py` (`run_unified`, `decide_now`), 15e
 moteur de `code/run_all.py` (alias `unified`), `code/test_unified_protocol.py`
-(6/6 tests, revus pour vérifier la CONCURRENCE des deux systèmes plutôt que
-leur exclusivité). Limites documentées, pas cachées :
+(6/6 tests). Limites documentées, pas cachées :
 - le capital par palier (`capital_eur`) n'est appliqué qu'au risk_pct du
   moteur RANGE, pas au moteur TENDANCE (jamais mesuré pour la table de
   tendance) — cf. docstring du module (choix U3) ;
@@ -555,6 +555,21 @@ masqué dans une moyenne.
 
 Moteur : `code/backtest_phase2_faithful.py`, `code/test_backtest_phase2_faithful.py`
 (5/5 tests), 15e moteur de `code/run_all.py` (alias `faithful`).
+
+**Walk-forward, fait ce cycle** (`code/walkforward_faithful.py`, sur le même
+modèle que `walkforward_recommended.py`, jamais fait jusqu'ici sur ce moteur) :
+résultat rassurant et STRICTEMENT MEILLEUR que l'ancien walk-forward de
+`recommended.py` sur chaque métrique — pire drawdown annuel **-8,1%**
+(contre -24,8%), pire retour annuel **-2,8%** (contre -14,5%), moins
+d'années négatives sur BNB (1/7 contre 3/7). Aucune année catastrophique sur
+BTC/ETH/BNB/SOL (2020-2026). Cohérent avec le profil "retour réduit mais
+drawdown nettement réduit" déjà documenté en agrégé ci-dessus. **Reste
+ouvert** : OOS XRP de ce moteur pas encore tenté — plus complexe que pour
+`recommended.py` (ce moteur a besoin de 3 niveaux de timeframe distincts —
+exécution/D1-stop/Hebdo-gate — alors que XRP n'a que du D1 disponible dans
+cet environnement, ce qui exigerait Hebdo comme source de stop et Mensuel
+comme gate, ce dernier bien trop court pour converger sur 365 barres) ; pas
+tenté à la hâte plutôt que de produire un résultat mal posé.
 
 ---
 

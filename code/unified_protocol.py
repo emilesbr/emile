@@ -11,9 +11,11 @@ instant sans qu'aucun code ne tranche.
 Ce fichier N'IMPLÉMENTE AUCUNE NOUVELLE LOGIQUE DE POSITION. Il réutilise
 tel quel :
   - côté RANGE : `position_engine.py::process_tranche`/`process_reverse`/
-    `make_open_tranche_fn`, et la préparation de features de
+    `make_open_tranche_fn`, la préparation de features de
     `backtest_phase2_recommended.py::_prepare_features` (cycle+structure
-    causaux, gate Hebdomadaire "UT+2 strict").
+    causaux, gate Hebdomadaire "UT+2 strict"), et depuis la CONSOLIDATION
+    ci-dessous les 3 règles littérales de `backtest_phase2_faithful.py`
+    (stop D1 UT+1, abstention Wall Street, +Reverse scopé TRES_AGRESSIF).
   - côté TENDANCE : `trend_table.py::step_campaign`/`try_open_campaign`/
     `step_reverse`/`add_leg`, et sa préparation de features
     (`backtest_phase2_v7.prepare` + `trend_table.add_trend_context` +
@@ -21,6 +23,35 @@ tel quel :
 Le seul code nouveau ici est la BOUCLE D'ORCHESTRATION bar-par-bar qui route
 entre les deux (`run_unified`), et la fonction de décision live
 (`decide_now`) qui l'interroge sur l'état courant d'un actif.
+
+================================================================================
+CONSOLIDATION (8 sept. 2026) -- le côté RANGE utilise désormais les mêmes
+règles littérales que `backtest_phase2_faithful.py`, pas celles (moins
+fidèles) de `recommended.py`
+================================================================================
+Constat qui motive ce chantier : `recommended.py` (utilisé jusqu'ici comme
+côté RANGE de ce routeur) désactive par défaut 3 règles littérales du corpus
+(stop UT+1 réel, abstention Wall Street, +Reverse TRES_AGRESSIF) sur la
+seule base d'une contre-performance mesurée sur le proxy -- exactement
+l'erreur corrigée dans `backtest_phase2_faithful.py` (cf. sa tête de
+fichier, `CONFIGURATION_RECOMMANDEE.md` section 5ter). Faire tourner ce
+routeur avec le côté RANGE de `recommended.py` produisait donc un protocole
+"unifié" qui n'était PLUS fidèle au corpus sur son propre volet RANGE, alors
+même que le volet TENDANCE, lui, l'était. Incohérence corrigée ici : le
+côté RANGE de ce fichier applique désormais les 3 mêmes règles SANS
+CONDITION, exactement comme `backtest_phase2_faithful.py` -- ce fichier
+devient ainsi LE protocole complet à utiliser opérationnellement (RANGE
+fidèle + TENDANCE, tous deux concurrents et indépendants), plutôt que deux
+livrables séparés (`faithful.py` pour RANGE seul, `unified_protocol.py`
+pour RANGE(recommended)+TENDANCE) mesurant chacun une combinaison
+partielle.
+`h4` DOIT désormais inclure les colonnes nécessaires au stop D1 (fournies
+via un nouveau paramètre `d1` dans `run_unified`/`decide_now`, cf.
+`resample(h1, "1D")`). Le côté TENDANCE reste inchangé (son propre stop
+"Extreme Channel" est déjà, par choix littéral de `trend_table.py` lui-même
+-- hypothèse H4 documentée là-bas --, le canal NATIF H4, pas le stop
+cross-timeframe D1 : ce sont deux règles distinctes du corpus, pas la même
+règle appliquée deux fois).
 
 ================================================================================
 CORRECTION (8 sept. 2026) -- l'exclusivité mutuelle par actif a été RETIRÉE
@@ -82,8 +113,10 @@ DÉCISIONS D'ARCHITECTURE (révisées -- ce fichier les EXÉCUTE)
    tendance dès qu'aucune campagne/"+Reverse" tendance n'est déjà en cours
    -- que le moteur RANGE ait ou non une tranche ouverte au même instant, et
    réciproquement. Chaque système garde le comportement déjà validé de son
-   moteur seul (`recommended.py` côté RANGE, y compris son propre gate
-   Hebdomadaire "regime != EXCES" ; `trend_table.py` côté TENDANCE).
+   moteur seul (`backtest_phase2_faithful.py` côté RANGE depuis la
+   CONSOLIDATION ci-dessus -- gate Hebdomadaire "regime != EXCES", stop D1
+   UT+1, abstention Wall Street, +Reverse scopé TRES_AGRESSIF ; `trend_table.py`
+   côté TENDANCE, inchangé).
 2. **Aucun plafond de risque agrégé inventé entre les deux systèmes** (cf.
    "CORRECTION" ci-dessus) : chaque système applique son propre `risk_pct`
    de profil, déjà borné par système (`PROFILES_V4`/`PROFILES_TREND`,
@@ -174,8 +207,11 @@ from backtest_phase2_v7 import (
     prepare, PROFILES_V4, MIN_BORDERS, RULE3_STREAK, RULE3_SIZE_MULT,
     MAX_TRANCHES, EMA_SLOW,
 )
-from backtest_phase2_recommended import _prepare_features, run_recommended, WARMUP
+from backtest_phase2_recommended import _prepare_features, WARMUP
+from backtest_phase2_faithful import REVERSE_SCOPED_PROFILE, run_faithful
+from backtest_phase2_ut2 import attach_multi_context, CLOSURE_DELAY
 from position_engine import make_open_tranche_fn, process_tranche, process_reverse
+from wall_street_pattern import add_wall_street_column
 from trend_table import (
     PROFILES_TREND, add_trend_context, add_leg, make_campaign, step_campaign,
     try_open_campaign, step_reverse, load_volume, resample_volume,
@@ -200,16 +236,21 @@ def resample_h4_with_volume(h1: pd.DataFrame) -> pd.DataFrame:
     return merged.reset_index(drop=True)
 
 
-def _prepare_unified(h4: pd.DataFrame, weekly: pd.DataFrame, use_mtf_gate: bool = True) -> dict:
+def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
+                      use_mtf_gate: bool = True) -> dict:
     """Calcule TOUTES les colonnes nécessaires aux deux moteurs, une fois,
     sur l'historique complet fourni.
 
     RANGE : réutilise `backtest_phase2_recommended._prepare_features` tel
-    quel (cycle+structure causaux, gate Hebdomadaire "UT+2 strict").
+    quel (cycle+structure causaux, gate Hebdomadaire "UT+2 strict"), PLUS
+    (CONSOLIDATION, cf. tête de fichier) le stop D1 réel UT+1
+    (`ctx_support_d1`, même jointure sans lookahead que `backtest_phase2_faithful.py`)
+    et la colonne Wall Street (`wall_street_active`).
     TENDANCE : réutilise `backtest_phase2_v7.prepare` +
-    `trend_table.add_trend_context` tels quels, plus la détection volume de
-    `trend_table.py` (H9) calculée ici EXACTEMENT comme dans
-    `run_trend_table` (même fenêtre glissante, même seuil)."""
+    `trend_table.add_trend_context` tels quels (stop natif H4, hypothèse H4
+    de `trend_table.py`, inchangé -- pas le même stop que RANGE), plus la
+    détection volume de `trend_table.py` (H9) calculée ici EXACTEMENT comme
+    dans `run_trend_table` (même fenêtre glissante, même seuil)."""
     if "volume" not in h4.columns:
         raise ValueError(
             "h4 doit contenir une colonne 'volume' (requise par le moteur "
@@ -218,6 +259,17 @@ def _prepare_unified(h4: pd.DataFrame, weekly: pd.DataFrame, use_mtf_gate: bool 
         )
 
     range_feat = _prepare_features(h4, weekly, use_mtf_gate=use_mtf_gate)
+
+    # CONSOLIDATION : stop D1 réel (UT+1, cf. backtest_phase2_faithful.py)
+    # et colonne Wall Street (abstention totale, non conditionnelle), côté
+    # RANGE uniquement -- même jointure sans lookahead que `faithful.py`.
+    d1p = prepare(d1.copy())
+    ctx = attach_multi_context(h4, [("D1", d1p)], closure_delay=CLOSURE_DELAY)
+    ctx_support_d1 = ctx["D1"]["ctx_support"]
+
+    h4_ws = prepare(h4[["date", "open", "high", "low", "close"]].copy())
+    h4_ws = add_wall_street_column(h4_ws)
+    wall_street_active = h4_ws["wall_street_active"].values
 
     trend_df = prepare(h4[["date", "open", "high", "low", "close"]].copy())
     trend_df = add_trend_context(trend_df)
@@ -231,6 +283,8 @@ def _prepare_unified(h4: pd.DataFrame, weekly: pd.DataFrame, use_mtf_gate: bool 
 
     feat = dict(range_feat)
     feat.update({
+        "ctx_support_d1": ctx_support_d1,
+        "wall_street_active": wall_street_active,
         "regime": trend_df["regime"].values,
         "ctx_resistance": trend_df["ctx_resistance"].values,
         "ctx_high": trend_df["ctx_high"].values,
@@ -291,14 +345,19 @@ def _campaign_ev(feat: dict, i: int) -> dict:
     }
 
 
-def run_unified(h4: pd.DataFrame, weekly: pd.DataFrame, profile_name: str,
-                 capital_eur: float = None, reverse_at_limit: bool = False,
+def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profile_name: str,
+                 capital_eur: float = None,
                  use_mtf_gate: bool = True, record_state: bool = False) -> dict:
     """Boucle d'orchestration bar-par-bar -- LE seul code nouveau de ce
     fichier (cf. tête de fichier, décision #3). `h4` DOIT inclure une
-    colonne `volume` (cf. `resample_h4_with_volume`, U1). `weekly` : niveau
-    de contexte pour le gate RANGE (Hebdomadaire, "UT+2 strict", inchangé
-    par rapport à `recommended.py`).
+    colonne `volume` (cf. `resample_h4_with_volume`, U1). `d1` : niveau
+    Journalier pour le stop RANGE réel (UT+1, cf. CONSOLIDATION en tête de
+    fichier) -- `resample(h1, "1D")`. `weekly` : niveau de contexte pour le
+    gate RANGE (Hebdomadaire, "UT+2 strict", inchangé par rapport à
+    `recommended.py`/`faithful.py`). `reverse_at_limit` n'est plus un
+    paramètre : appliqué SANS CONDITION mais UNIQUEMENT au profil
+    TRES_AGRESSIF, exactement comme `backtest_phase2_faithful.py` (règle
+    littérale scopée, pas un choix de l'appelant).
 
     À chaque bougie H4 (après warmup), RANGE et TENDANCE sont gérés de façon
     INDÉPENDANTE (décision #1, révisée -- plus d'exclusivité mutuelle, cf.
@@ -322,18 +381,17 @@ def run_unified(h4: pd.DataFrame, weekly: pd.DataFrame, profile_name: str,
     `record_state=True` ajoute la clé "live_state" au résultat : l'état du
     protocole à la TOUTE DERNIÈRE bougie de l'historique fourni, utilisé par
     `decide_now` (cf. U4 pour l'approximation "bougie fantôme")."""
-    feat = _prepare_unified(h4, weekly, use_mtf_gate=use_mtf_gate)
+    feat = _prepare_unified(h4, d1, weekly, use_mtf_gate=use_mtf_gate)
     risk_pct = None
     if capital_eur is not None:
         # U3 : capital par palier appliqué SEULEMENT au moteur RANGE.
         sizing = effective_sizing(capital_eur, profile_name, PROFILES_V4, MAX_TRANCHES)
         risk_pct = sizing.risk_pct
-    return _run_core_unified(feat, profile_name, risk_pct=risk_pct,
-                              reverse_at_limit=reverse_at_limit, record_state=record_state)
+    return _run_core_unified(feat, profile_name, risk_pct=risk_pct, record_state=record_state)
 
 
 def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
-                       reverse_at_limit: bool = False, record_state: bool = False) -> dict:
+                       record_state: bool = False) -> dict:
     """La boucle d'orchestration elle-même, séparée de `run_unified` sur le
     modèle `_prepare_features`/`_run_core` de `backtest_phase2_recommended.py`
     -- pour pouvoir être testée unitairement (`test_unified_protocol.py`) sur
@@ -342,37 +400,51 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
     `_prepare_features` dans `test_backtest_phase2_recommended.py`.
 
     `feat` doit exposer TOUTES les clés produites par `_prepare_unified` :
-    date/open/high/low/close/score/atr/ctx_support/local_range/
-    context_range/n_borders/gate_score/gate_regime (côté RANGE, mêmes clés
-    que `backtest_phase2_recommended._prepare_features`) + regime/
+    date/open/high/low/close/score/atr/ctx_support/ctx_support_d1/
+    wall_street_active/local_range/context_range/n_borders/gate_score/
+    gate_regime (côté RANGE, mêmes clés que `backtest_phase2_faithful.py`
+    plus `ctx_support` natif H4, utilisé côté TENDANCE) + regime/
     ctx_resistance/ctx_high/local_high/accum_retracement_frac/
     cycle_favorable/ema_trend/volume_expansion (côté TENDANCE). `risk_pct`
     (défaut `None`) : risk_pct RANGE déjà résolu par l'appelant (profil fixe
     ou `capital_tiers.effective_sizing(...).risk_pct`, cf. U3) -- si `None`,
-    celui du profil (`PROFILES_V4[profile_name]["risk_pct"]`)."""
+    celui du profil (`PROFILES_V4[profile_name]["risk_pct"]`).
+
+    RANGE applique désormais SANS CONDITION les 3 règles littérales de
+    `backtest_phase2_faithful.py` (CONSOLIDATION, cf. tête de fichier) :
+    stop D1 (`ctx_support_d1`, pas le canal H4 natif), abstention Wall
+    Street (bloque entrée fraîche ET renfort), +Reverse (`reverse_at_limit`)
+    UNIQUEMENT pour le profil TRES_AGRESSIF."""
     p_range = PROFILES_V4[profile_name]
     p_trend = PROFILES_TREND[profile_name]
     if risk_pct is None:
         risk_pct = p_range["risk_pct"]
+    reverse_at_limit = (profile_name == REVERSE_SCOPED_PROFILE)
 
     o, high, low, c = feat["open"], feat["high"], feat["low"], feat["close"]
     score = feat["score"]
+    wall_street_v = feat["wall_street_active"]
     n = len(o)
 
     def gate(i: int) -> bool:
         return bool(feat["gate_score"][i] >= 2 and feat["gate_regime"][i] != "EXCES")
 
     def gate_extra(j):
-        g = gate(j)
+        # Abstention Wall Street NON CONDITIONNELLE (littérale, cf.
+        # backtest_phase2_faithful.py) : bloque entrée fraîche ET renfort.
+        abstain = bool(wall_street_v[j])
+        g = gate(j) and not abstain
         return g, g
 
     range_state = {"last_pyramid_high": -np.inf}
     open_tranche_fn = make_open_tranche_fn(
-        feat["atr"], feat["ctx_support"], feat["local_range"], feat["context_range"],
+        feat["atr"], feat["ctx_support_d1"], feat["local_range"], feat["context_range"],
         feat["n_borders"], high, o, score, WARMUP, MIN_BORDERS, MAX_TRANCHES,
         RULE3_STREAK, RULE3_SIZE_MULT, risk_pct, range_state, extra_gate_fn=gate_extra,
     )
-    gated_long_signal = np.array([(score[i] >= 2) and gate(i) for i in range(n)])
+    gated_long_signal = np.array([
+        (score[i] >= 2) and gate(i) and not bool(wall_street_v[i]) for i in range(n)
+    ])
 
     equity = 1.0
     equity_curve = np.empty(n)
@@ -679,6 +751,7 @@ def decide_now(h1_recent: pd.DataFrame, profile_name: str, capital_eur: float = 
                           "requise par le déclencheur Breakout de la table de tendance).")
 
     h4 = resample_h4_with_volume(h1_recent)
+    d1 = resample(h1_recent[["date", "open", "high", "low", "close"]], "1D")
     weekly = resample(h1_recent[["date", "open", "high", "low", "close"]], "W")
     n_h4 = len(h4)
     weekly_reliable = len(weekly) >= EMA_SLOW + 20
@@ -694,7 +767,7 @@ def decide_now(h1_recent: pd.DataFrame, profile_name: str, capital_eur: float = 
             "weekly_gate_reliable": weekly_reliable, "n_h4_bars": n_h4, "n_weekly_bars": len(weekly),
         }
 
-    result = run_unified(h4, weekly, profile_name, capital_eur=capital_eur, record_state=True)
+    result = run_unified(h4, d1, weekly, profile_name, capital_eur=capital_eur, record_state=True)
     live = result["live_state"]
     base = {"weekly_gate_reliable": weekly_reliable, "n_h4_bars": n_h4, "n_weekly_bars": len(weekly)}
 
@@ -715,7 +788,7 @@ def decide_now(h1_recent: pd.DataFrame, profile_name: str, capital_eur: float = 
             "volume": 0.0,
         }])
         h4_ext = pd.concat([h4, phantom], ignore_index=True)
-        result2 = run_unified(h4_ext, weekly, profile_name, capital_eur=capital_eur, record_state=True)
+        result2 = run_unified(h4_ext, d1, weekly, profile_name, capital_eur=capital_eur, record_state=True)
         live2 = result2["live_state"]
         if range_desc is None:
             range_desc = _describe_range_open(live2, live["last_date"])
@@ -727,8 +800,9 @@ def decide_now(h1_recent: pd.DataFrame, profile_name: str, capital_eur: float = 
 
 def main():
     """Backtest comparatif honnête (décision d'architecture #5, PLAN.md) :
-    protocole unifié vs `recommended.py` (moteur RANGE) seul, BTC/ETH/BNB/SOL
-    x 4 profils, MÊME historique H4/Hebdomadaire pour les deux -- ne
+    protocole unifié vs `backtest_phase2_faithful.py` (moteur RANGE seul,
+    MÊMES règles littérales depuis la CONSOLIDATION) seul, BTC/ETH/BNB/SOL
+    x 4 profils, MÊME historique H4/D1/Hebdomadaire pour les deux -- ne
     présuppose PAS que l'unification améliore le résultat, cf. lecture des
     deux colonnes ci-dessous plutôt qu'une seule conclusion forcée.
 
@@ -747,11 +821,16 @@ def main():
         vol_h1 = load_volume(symbol)
         h1_full = h1.merge(vol_h1, on="date", how="inner")
         h4 = resample_h4_with_volume(h1_full)
+        d1 = resample(h1_full[["date", "open", "high", "low", "close"]], "1D")
         weekly = resample(h1_full[["date", "open", "high", "low", "close"]], "W")
         h4_no_vol = h4[["date", "open", "high", "low", "close"]]
         for profile in PROFILE_NAMES:
-            res_unified = run_unified(h4.copy(), weekly.copy(), profile)
-            res_reco = run_recommended(h4_no_vol.copy(), weekly.copy(), profile)
+            res_unified = run_unified(h4.copy(), d1.copy(), weekly.copy(), profile)
+            # Référence : backtest_phase2_faithful.py (RANGE seul, MÊMES 3
+            # règles littérales que le côté RANGE de ce routeur depuis la
+            # CONSOLIDATION -- comparaison apples-to-apples, pas contre
+            # recommended.py qui n'a plus les mêmes règles par défaut).
+            res_faithful = run_faithful(h4_no_vol.copy(), d1.copy(), weekly.copy(), profile)
             rows.append({
                 "symbol": symbol, "profile": profile,
                 "unified_n_trades": res_unified["n_trades"],
@@ -760,11 +839,11 @@ def main():
                 "unified_win_rate_%": res_unified["win_rate_%"],
                 "unified_profit_factor": res_unified["profit_factor"],
                 "unified_n_trend_campaigns_opened": res_unified["n_trend_campaigns_opened"],
-                "recommended_n_trades": res_reco["n_trades"],
-                "recommended_max_dd_%": res_reco["max_dd_%"],
-                "recommended_total_return_%": res_reco["total_return_%"],
-                "recommended_win_rate_%": res_reco["win_rate_%"],
-                "recommended_profit_factor": res_reco["profit_factor"],
+                "faithful_n_trades": res_faithful["n_trades"],
+                "faithful_max_dd_%": res_faithful["max_dd_%"],
+                "faithful_total_return_%": res_faithful["total_return_%"],
+                "faithful_win_rate_%": res_faithful["win_rate_%"],
+                "faithful_profit_factor": res_faithful["profit_factor"],
             })
     result = pd.DataFrame(rows)
     pd.set_option("display.width", 260)
@@ -775,10 +854,10 @@ def main():
     total_campaigns = result["unified_n_trend_campaigns_opened"].sum()
     print(f"\nCampagnes tendance ouvertes (routeur unifié, toutes combinaisons) : {total_campaigns}")
     identical = (
-        (result["unified_n_trades"] == result["recommended_n_trades"]).all()
-        and (result["unified_total_return_%"] == result["recommended_total_return_%"]).all()
+        (result["unified_n_trades"] == result["faithful_n_trades"]).all()
+        and (result["unified_total_return_%"] == result["faithful_total_return_%"]).all()
     )
-    print(f"Résultat identique à recommended.py seul sur toutes les combinaisons : {identical}")
+    print(f"Résultat identique à faithful.py seul sur toutes les combinaisons : {identical}")
     if total_campaigns == 0:
         print("Aucune campagne tendance déclenchée sur ce jeu de données -- cohérent avec le "
               "constat déjà documenté (trend_table.py seul n'a jamais dépassé Accumulation) : "
