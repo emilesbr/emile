@@ -231,9 +231,14 @@ def _run_triple_core(feat_u: dict, h4p: pd.DataFrame, profile_name: str,
         )
 
     def gate_extra(j):
+        # CORRECTION PYRAMIDALISATION-RÉGIME (cf. unified_protocol.py) :
+        # réplique le gate RANGE RÉEL de _run_core_unified tel qu'il existe
+        # désormais -- le renfort exige EN PLUS que le régime H4 natif soit
+        # TENDANCE/RANGE_TENDANCIEL, pas une version pré-correction figée.
         abstain = bool(wall_street_v[j])
         g = gate(j) and not abstain
-        return g, g
+        pyramiding_allowed = feat_u["regime"][j] in ("TENDANCE", "RANGE_TENDANCIEL")
+        return g, (g and pyramiding_allowed)
 
     range_state = {"last_pyramid_high": -np.inf}
     open_tranche_fn = make_open_tranche_fn(

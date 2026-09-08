@@ -170,6 +170,66 @@ def test_capital_eur_changes_sizing_not_which_trades_win():
     )
 
 
+def _synthetic_pyramid_feat(n: int, regime_h4_value) -> dict:
+    """Tableau synthétique CONTRÔLÉ (même esprit que `_synthetic_feat` de
+    `test_backtest_phase2_recommended.py`) : hausse continue, jamais de stop
+    touché, signal/gate/maturité toujours favorables -- SEUL `regime_h4`
+    varie selon le paramètre, pour isoler l'effet de la correction
+    PYRAMIDALISATION-RÉGIME indépendamment du reste du gate."""
+    close = 100 * (1 + 0.001 * np.arange(n))
+    high = close * 1.001
+    low = close * 0.999
+    openp = close.copy()
+    return {
+        "date": pd.date_range("2020-01-01", periods=n, freq="4h").values,
+        "open": openp, "high": high, "low": low, "close": close,
+        "score": np.full(n, 3.0),
+        "atr": np.full(n, 1.0),
+        "ctx_support_d1": low - 5.0,   # jamais touché par la hausse continue
+        "local_range": np.full(n, 50.0),
+        "context_range": np.full(n, 80.0),
+        "n_borders": np.full(n, 3.0),
+        "gate_score": np.full(n, 10.0),
+        "gate_regime": np.full(n, "TENDANCE", dtype=object),
+        "regime_h4": np.full(n, regime_h4_value, dtype=object),
+        "wall_street_active": np.zeros(n, dtype=bool),
+    }
+
+
+def test_pyramid_renfort_blocked_when_h4_regime_range_neutre():
+    """CORRECTION PYRAMIDALISATION-RÉGIME (cf. tête de fichier) :
+    `RULES_EXTRACTION.md` §3 (table RANGE) n'a jamais de cellule "Renfort" --
+    sur un scénario synthétique entièrement favorable au pyramidage (hausse
+    continue, jamais de stop touché, gate/maturité toujours vrais), un seul
+    trade doit s'ouvrir (l'entrée fraîche) si le régime H4 natif est
+    RANGE_NEUTRE à chaque bougie -- AUCUN renfort, même si le prix dépasse
+    `last_pyramid_high` à chaque pas (ce qui, sans la correction, ouvrirait
+    un renfort à quasiment chaque bougie jusqu'à MAX_TRANCHES)."""
+    n = WARMUP + 40
+    feat = _synthetic_pyramid_feat(n, "RANGE_NEUTRE")
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) == 1, (
+        f"{len(res['trace'])} tranche(s) ouverte(s) en régime RANGE_NEUTRE, attendu exactement 1 "
+        "(entrée fraîche seule -- le renfort doit être bloqué par pyramiding_allowed)"
+    )
+
+
+def test_pyramid_renfort_allowed_when_h4_regime_tendance():
+    """Contrôle positif du test ci-dessus (sinon il pourrait passer
+    trivialement sur un moteur qui ne pyramide jamais) : le MÊME scénario
+    synthétique, régime H4 TENDANCE à chaque bougie, doit produire PLUSIEURS
+    tranches (jusqu'à MAX_TRANCHES) -- le renfort doit rester possible
+    quand le corpus l'autorise."""
+    n = WARMUP + 40
+    feat = _synthetic_pyramid_feat(n, "TENDANCE")
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) > 1, (
+        f"{len(res['trace'])} tranche(s) ouverte(s) en régime TENDANCE, attendu plusieurs "
+        "(le scénario synthétique est construit pour pyramider à chaque pas -- si un seul "
+        "trade s'ouvre, la correction bloque aussi le renfort légitime, pas seulement l'illégitime)"
+    )
+
+
 def test_run_faithful_end_to_end_produces_trades_all_profiles():
     """Garde-fou non-vacueux : `run_faithful` doit produire au moins un
     trade sur chacun des 4 profils, sur des données réelles (BTC, fenêtre

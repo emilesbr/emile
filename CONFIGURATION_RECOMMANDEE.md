@@ -429,17 +429,21 @@ Conséquence : **10 des 16 combinaisons actif×profil ont un retour total
 INFÉRIEUR** à `faithful.py` seul (moyenne **-9,3 points** — nettement moins
 que les -19,2 points mesurés à tort contre `recommended.py` avant la
 consolidation, une partie de cet ancien écart venait d'une différence de
-règles RANGE, pas seulement du coût de la tendance), drawdown moyen -1,5 pt.
+règles RANGE, pas seulement du coût de la tendance), drawdown moyen **-1,9 pt**
+(régénéré après la correction pyramidalisation-régime ci-dessous, était -1,5 pt avant).
 **Point de vigilance identifié AVANT la correction EXCES-H4 ci-dessous, très largement résolu APRÈS** :
 BNB/TRES_AGRESSIF cumulait 3 effets défavorables (stop D1 large + "+Reverse"
 + campagnes tendance qui n'aboutissent jamais) — retour -42,6%, **drawdown
 -72,5%**. **Chiffres régénérés après la correction EXCES-H4** (le gate ne
 vérifiait plus le régime EXCES du H4 natif, cf. section "Correction EXCES-H4"
-ci-dessous) : retour **+24,5%**, drawdown **-27,1%** — toujours le profil le
-plus faible des 16 combinaisons, mais plus catastrophique. **Approfondi par
+ci-dessous) : retour **+24,5%**, drawdown **-27,1%**. **RE-régénérés après la
+correction pyramidalisation-régime** (cf. section dédiée ci-dessous) : retour
+**+27,9%**, drawdown **-27,0%** — mouvement modeste dans le même sens. Toujours le
+profil le plus faible des 16 combinaisons, mais plus catastrophique. **Approfondi par
 walk-forward (`code/walkforward_unified.py`)**, également régénéré : l'année
-2021, seule responsable du -72,5%/-45,9% agrégé, passe à **+6,2% de retour,
--8,4% de drawdown**. Conclusion actionnable révisée : **l'exclusion de
+2021, seule responsable du -72,5%/-45,9% agrégé, passe à **+6,1% de retour,
+-8,8% de drawdown** (chiffres post pyramidalisation-régime ; +6,2%/-8,4% après
+EXCES-H4 seul). Conclusion actionnable révisée : **l'exclusion de
 BNB/TRES_AGRESSIF n'est plus justifiée** — conservé comme profil à
 surveiller en priorité, pas à exclure.
 
@@ -478,6 +482,35 @@ tableau "2e pattern récurrent". Impact chiffré : cf. BNB/TRES_AGRESSIF
 ci-dessus, résolu par cette correction, pas recherché comme tel — la
 correction suit la fidélité au corpus, l'amélioration du chiffre est une
 conséquence.
+
+**Correction pyramidalisation-régime (mobilisation multi-agents, 2e round,
+audit proactif — cycle suivant)** : `RULES_EXTRACTION.md` §3 (table Money
+Management RANGE) ne contient JAMAIS de cellule "Renfort", à aucune ligne de
+profil — contrairement à §4 (table TENDANCE) qui en a systématiquement.
+`backtest_phase2_v6.py` traduisait déjà correctement ça en code
+(`pyramiding_allowed = regime in ("TENDANCE", "RANGE_TENDANCIEL")`, appliqué
+SEULEMENT au renfort, jamais à l'entrée fraîche) — règle perdue
+silencieusement au même refactor v6→v7 que EXCES-H4 ci-dessus (même
+catégorie de bug : une donnée déjà calculée, `regime_h4`/`feat["regime"]`,
+mais jamais relue pour CETTE règle précise). Preuve littérale : le
+commentaire de `backtest_phase2_v7.py::gate_extra` dit lui-même "Même gate
+pour l'entrée fraîche et le renfort (pas de distinction ici, contrairement à
+v6/fib)". Vérifié empiriquement AVANT correction (script de reproduction
+utilisant la factory réelle `position_engine.make_open_tranche_fn`, pas
+supposé) : sur BTC/ETH/BNB/SOL réels, **25,7% des renforts réellement
+ouverts** par `faithful.py`/`recommended.py` l'étaient en régime
+RANGE_NEUTRE — exactement ce que v6 bloquait. **Corrigé dans les 3 moteurs
+opérationnellement recommandés** (mêmes 3 que EXCES-H4 ci-dessus) — `gate_extra`
+distingue désormais entrée fraîche (inchangée) et renfort (`pyramiding_allowed`
+réutilisant la donnée déjà calculée). **Non corrigé, documenté comme tel**,
+dans les mêmes moteurs superseded que EXCES-H4. Tests dédiés ajoutés (scénario
+synthétique à vérité terrain connue, contrôle positif ET négatif) dans les 3
+fichiers de test concernés. Impact chiffré : mouvement modeste dans le même
+sens que EXCES-H4 sur toutes les métriques déjà citées ci-dessus (BNB/TRES_AGRESSIF,
+walk-forward, canal manuel D1, risque agrégé) — cohérent avec un fix qui
+restreint légèrement le nombre de renforts plutôt qu'un changement de
+direction. Cf. `PLAN.md` tableau "2e pattern récurrent" occurrence #4 pour le
+détail complet.
 
 **Sortie "décision live"** (répond à la demande "lire le jeu de données d'un
 actif pour en tirer les positions à prendre") : `unified_protocol.decide_now(h1_recent, profile_name, capital_eur=None)`
@@ -631,12 +664,16 @@ mesurée seulement sur H4 natif, jamais reconstruite sur D1.
 `_prepare_features`/`_run_core` de `faithful.py` sans modification) construit
 cette alternative. Couverture confirmée : 97,77-99,53% des barres D1 selon
 actif/année (BTC/ETH/BNB/SOL, walk-forward 2020-2026) — la reconstruction
-fonctionne sans adaptation. **Résultat, comparaison directe**
+fonctionne sans adaptation. **Résultat, comparaison directe, RE-régénéré
+après la correction pyramidalisation-régime** (hérité automatiquement via
+`_run_core` de `faithful.py`, cf. tableau "2e pattern récurrent" occurrence
+#4 de `PLAN.md`)
 (`code/backtest_phase2_faithful_manual_channel_walkforward_results.csv`,
-112 lignes actif×année) : canal manuel D1 retour total moyen **10,46%**
-contre **5,31%** pour EMA±ATR D1 (stop actif), mais aussi drawdown moyen
-plus profond, **-6,58%** contre **-4,14%**. Ni l'un ni l'autre strictement
-meilleur. **Décision suivie : ne PAS remplacer le stop actuel** — le corpus
+112 lignes actif×année) : canal manuel D1 retour total moyen **9,91%**
+(était 10,46%) contre **4,02%** (était 5,31%) pour EMA±ATR D1 (stop actif),
+mais aussi drawdown moyen plus profond, **-6,21%** (était -6,58%) contre
+**-3,58%** (était -4,14%). Ni l'un ni l'autre strictement
+meilleur — conclusion inchangée par le fix. **Décision suivie : ne PAS remplacer le stop actuel** — le corpus
 ne tranche pas lequel des deux stops littéraux prime en cas de désaccord,
 et la performance ne doit jamais servir à choisir entre deux lectures
 également fidèles du corpus. Les deux restent documentées comme valides,
@@ -647,12 +684,16 @@ aucun code de production changé.
 simultanément, sur le même actif/historique, `unified_protocol.py`
 (RANGE+TENDANCE) et `diversification.py` (Pattern A + Pattern B), et
 calcule le risque nominal agrégé bougie par bougie — répond à la limite
-laissée ouverte en section 5bis. **Résultat honnête**
+laissée ouverte en section 5bis. Sa réplique interne du gate RANGE a été
+patchée deux fois (EXCES-H4 puis pyramidalisation-régime, cf. `PLAN.md`
+tableau "2e pattern récurrent" occurrence #4) pour rester cohérente avec le
+vrai `_run_core_unified`. **Résultat honnête, RE-régénéré après la 2e correction**
 (`risk_aggregation_full_history.csv` + `risk_aggregation_walkforward.csv`,
 BTC/ETH/BNB/SOL × 4 profils) : risque agrégé maximal observé **17,00%**
-(BTC/TRES_AGRESSIF, 2020-11-28), très au-dessus du plafond global 5%
-documenté (`RULES_EXTRACTION.md` §5) ; 68/112 combinaisons année×actif×profil
-le dépassent en walk-forward. **Root cause** : le pyramidage RANGE seul
+(BTC/TRES_AGRESSIF, 2020-11-28, inchangé — le pic est atteint pendant une
+phase déjà en régime TENDANCE), très au-dessus du plafond global 5%
+documenté (`RULES_EXTRACTION.md` §5) ; 67/112 combinaisons année×actif×profil
+(était 68/112) le dépassent en walk-forward. **Root cause** : le pyramidage RANGE seul
 (3 tranches × 5% = 15% en TRES_AGRESSIF) dépasse déjà le plafond avant toute
 combinaison — ce n'est pas la combinaison de systèmes qui casse le plafond.
 **Volontairement pas comblé par un plafond inventé** : le corpus ne spécifie
@@ -660,6 +701,17 @@ aucun plafond pour cette combinaison précise de systèmes (RANGE+TENDANCE+
 diversification simultanés est une architecture du projet, pas une
 prescription du corpus, cf. choix U5 `unified_protocol.py`) — documenté
 comme limite ouverte, pas silencieuse.
+
+---
+
+## 5quinquies. Deux limites non résolues, priorité P0/P1 (mobilisation multi-agents, Agent C, re-audit de classification)
+
+Un 3e agent de ce round a refait, DE ZÉRO et indépendamment, la classification "règle littérale vs hypothèse d'implémentation" pour tout ce qui est actif dans `faithful.py`/`unified_protocol.py`, contre l'intégralité de `RULES_EXTRACTION.md` et des 17 sources Trading Lessons. Deux trouvailles significatives, **non corrigées ce cycle** — contrairement à EXCES-H4 et pyramidalisation-régime, qui sont des fixes mécaniques (une donnée déjà calculée, simplement jamais relue), celles-ci exigent une décision de conception explicite avant tout code, pas une invention silencieuse :
+
+- **"Conflit Multi-Timeframe" — désignée "erreur numéro un" PAR LE CORPUS LUI-MÊME, jamais implémentée.** `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` (source #5) : *"Conflit Multi-Timeframe (MTF) : L'erreur numéro un. Ne jamais trader une borne de range si un range d'unité de temps supérieure est déjà actif. La structure supérieure prime systématiquement."* — confirmée par sa propre checklist pré-trade. `TRADING_LESSONS_INDEX.md` (ligne 11) avait déjà noté, au moment du traitement initial des sources, que cette règle est DISTINCTE de "UT+2" (déjà implémentée) — jamais reprise depuis dans ce document ni dans `COUVERTURE_ENSEIGNEMENTS.md`. Ni `faithful.py` ni `unified_protocol.py` ne vérifient aujourd'hui si le régime du contexte supérieur (D1/Hebdomadaire) est LUI-MÊME en range avant d'ouvrir une tranche RANGE sur H4 — le gate actuel (score Hebdomadaire ≥2, "UT+2 strict") est une condition de momentum/alignement, logiquement distincte d'une exclusion "le TF supérieur est en range".
+- **Gate Fibonacci RANGE — classification incomplète, pas fausse.** `RULES_EXTRACTION.md` §1 (le manuel PDF lui-même, la source la plus autoritative du corpus) donne des seuils Fibonacci LITTÉRAUX et conditionnés par régime pour l'entrée : Range neutre ≥76,4%, Range tendanciel ≥61,8%, Tendance ≥23%. La classification actuelle du gate Fibonacci RANGE ("hypothèse, réglable par performance", cf. section 5ter ci-dessus) est correcte pour la synthèse tirée des 17 sources vidéo (23-61,8%, déjà implémentée sans condition dans `trend_table.py` pour la table TENDANCE), mais elle n'a jamais comparé ce chiffre à celui du manuel lui-même, qui le donne pourtant explicitement comme condition d'entrée RANGE — une lecture distincte, jamais implémentée ni testée sous cette forme précise pour la table RANGE.
+
+**Pourquoi ce n'est pas corrigé dans la foulée** : pour Conflit MTF, il faut d'abord trancher ce que "un range actif" signifie précisément avec les catégories déjà existantes de `regime_classifier.py` (RANGE_NEUTRE et RANGE_TENDANCIEL sont-ils tous deux visés ?) et sur quel(s) niveau(x) de contexte (D1 seul, Hebdomadaire aussi) — le corpus ne le précise pas explicitement. Pour Fibonacci, il faut définir quel swing de référence rend le retracement comparable au seuil du manuel. Implémenter sans cette décision explicite reproduirait l'erreur de méthode déjà documentée deux fois dans `PLAN.md` ("2e pattern récurrent"). **Traité comme backlog P0/P1** (item 10 de `PLAN.md`), à trancher avant tout code, pas comme un chantier clos.
 
 ---
 

@@ -278,6 +278,50 @@ def _make_synthetic_h1(n_hours, seed=0, start_price=100.0):
     return pd.DataFrame({"date": dates, "open": open_, "high": high, "low": low, "close": close, "volume": volume})
 
 
+# ---------------------------------------------------------------------------
+# CORRECTION PYRAMIDALISATION-RÉGIME (cf. tête de fichier) : côté RANGE, le
+# renfort ne doit s'ouvrir QUE si le régime H4 natif (`feat["regime"]`) est
+# TENDANCE/RANGE_TENDANCIEL -- `RULES_EXTRACTION.md` §3 n'a jamais de
+# cellule "Renfort". Scénario synthétique entièrement favorable au
+# pyramidage (hausse continue, jamais de stop/cible touché sur la fenêtre),
+# aucune condition tendance jamais croisée (accumulation_active resterait
+# fausse), pour isoler l'effet de cette correction.
+# ---------------------------------------------------------------------------
+def _make_pyramid_range_feat(regime_value, n=N):
+    feat = _make_base_feat(n)
+    entry_i = WARMUP + 2
+    j_open = entry_i - 1
+    feat["score"][j_open:] = 2
+    for k in range(0, n - j_open):
+        idx = j_open + k
+        price = 100.0 * (1 + 0.001 * k)
+        feat["open"][idx] = price; feat["high"][idx] = price
+        feat["low"][idx] = price; feat["close"][idx] = price
+        feat["ctx_support_d1"][idx] = price - 5.0
+    feat["regime"][j_open:] = regime_value
+    return feat
+
+
+def test_range_pyramid_renfort_blocked_when_h4_regime_range_neutre():
+    feat = _make_pyramid_range_feat("RANGE_NEUTRE")
+    res = _run_core_unified(feat, "MODERE", record_state=True)
+    n_open = len(res["live_state"]["range_tranches"])
+    assert n_open == 1, (
+        f"{n_open} tranche(s) RANGE ouverte(s) en régime RANGE_NEUTRE, attendu exactement 1 "
+        "(entrée fraîche seule -- le renfort doit être bloqué par pyramiding_allowed)"
+    )
+
+
+def test_range_pyramid_renfort_allowed_when_h4_regime_tendance():
+    feat = _make_pyramid_range_feat("TENDANCE")
+    res = _run_core_unified(feat, "MODERE", record_state=True)
+    n_open = len(res["live_state"]["range_tranches"])
+    assert n_open > 1, (
+        f"{n_open} tranche(s) RANGE ouverte(s) en régime TENDANCE, attendu plusieurs "
+        "(contrôle positif : le renfort doit rester possible quand le corpus l'autorise)"
+    )
+
+
 def test_decide_now_insufficient_data_is_coherent():
     """Historique H1 délibérément trop court (moins que WARMUP+1 bougies H4)
     -> INSUFFICIENT_DATA, avec range/trend/regime à None."""

@@ -88,6 +88,29 @@ campagne -- exactement ce que le côté RANGE ne faisait plus depuis v7.
 contexte Hebdomadaire. Impact chiffré honnête : cf. `PLAN.md`/
 `CONFIGURATION_RECOMMANDEE.md`.
 
+CORRECTION PYRAMIDALISATION-RÉGIME (mobilisation multi-agents, audit
+systématique de fidélité IP, cycle suivant) : `RULES_EXTRACTION.md` §3
+(table Money Management RANGE) ne contient JAMAIS de cellule "Renfort", à
+aucune ligne de profil -- contrairement à §4 (table TENDANCE) qui en a
+systématiquement. `backtest_phase2_v6.py` traduisait déjà correctement ça en
+code (`pyramiding_allowed = regime in ("TENDANCE", "RANGE_TENDANCIEL")`,
+appliqué SEULEMENT au renfort, jamais à l'entrée fraîche) -- règle perdue
+silencieusement au refactor v6->v7 (même catégorie de bug que EXCES-H4 :
+une donnée déjà calculée, `regime_h4`, mais jamais relue pour CETTE règle
+précise). Preuve littérale dans le code lui-même : le commentaire de
+`backtest_phase2_v7.py::gate_extra` dit "Même gate pour l'entrée fraîche et
+le renfort (pas de distinction ici, contrairement à v6/fib)" -- un abandon
+documenté au moment du refactor, jamais remonté jusqu'à PLAN.md/
+COUVERTURE_ENSEIGNEMENTS.md (qui affirmait à tort "Pyramidalisation réservée
+au régime Tendance | v6, v7"). Vérifié empiriquement AVANT correction (pas
+supposé) : sur BTC/ETH/BNB/SOL réels, 25,7% des renforts réellement ouverts
+par ce moteur (avant cette correction) l'étaient en régime RANGE_NEUTRE --
+exactement ce que v6 bloquait. **Corrigé ici** : `gate_extra` distingue
+désormais entrée fraîche (`gate(j)` seul, INCHANGÉ) et renfort (`gate(j) and
+pyramiding_allowed`, `pyramiding_allowed = regime_h4_v[j] in ("TENDANCE",
+"RANGE_TENDANCIEL")`). Impact chiffré honnête : cf. `PLAN.md`/
+`CONFIGURATION_RECOMMANDEE.md`.
+
 HORS PÉRIMÈTRE DE CE FICHIER (traités ailleurs, pas oubliés, déjà corrects) :
   - **Table de tendance** (`trend_table.py`) : déjà toujours active en
     parallèle du moteur RANGE via `unified_protocol.py` (RANGE+TENDANCE
@@ -237,7 +260,12 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
         # (réutilisé à l'identique, pas réinventé).
         abstain = bool(wall_street_v[j])
         g = gate(j) and not abstain
-        return g, g
+        # CORRECTION PYRAMIDALISATION-RÉGIME (cf. tête de fichier) : le
+        # renfort (pas l'entrée fraîche) exige EN PLUS que le régime H4 natif
+        # soit TENDANCE/RANGE_TENDANCIEL -- "Renfort" n'apparaît jamais dans
+        # la table Money Management RANGE (§3), réservé à la table TENDANCE.
+        pyramiding_allowed = regime_h4_v[j] in ("TENDANCE", "RANGE_TENDANCIEL")
+        return g, (g and pyramiding_allowed)
 
     state = {"last_pyramid_high": -np.inf}
     open_tranche_fn = make_open_tranche_fn(

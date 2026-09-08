@@ -72,7 +72,7 @@ def test_mtf_gate_active_matches_attach_multi_context_directly():
         "gate_regime de _prepare_features diverge d'un appel direct à attach_multi_context"
 
 
-def _synthetic_feat(n: int, favorable_from: int = 0) -> dict:
+def _synthetic_feat(n: int, favorable_from: int = 0, regime_h4_value="TENDANCE") -> dict:
     """Tableau synthétique CONTRÔLÉ (pas de proxy_v2/regime réels) pour
     isoler la logique de découpage/warmup de _run_core, indépendamment du
     calcul du signal. Toutes les entrées sont favorables (gate toujours
@@ -95,7 +95,7 @@ def _synthetic_feat(n: int, favorable_from: int = 0) -> dict:
         "n_borders": np.full(n, 3.0),
         "gate_score": np.full(n, 10.0),
         "gate_regime": np.full(n, "TENDANCE", dtype=object),
-        "regime_h4": np.full(n, "TENDANCE", dtype=object),   # jamais EXCES -- cf. CORRECTION EXCES H4
+        "regime_h4": np.full(n, regime_h4_value, dtype=object),   # jamais EXCES par défaut -- cf. CORRECTION EXCES H4
     }
 
 
@@ -159,6 +159,33 @@ def test_slice_deep_past_warmup_opens_on_first_available_bar():
         f"premier trade local ouvert à i={first_open_local}, attendu i=1 "
         f"(aucun warmup ne doit être réappliqué -- start={start} est déjà "
         f"bien après WARMUP={WARMUP} dans l'historique complet)"
+    )
+
+
+def test_pyramid_renfort_blocked_when_h4_regime_range_neutre():
+    """CORRECTION PYRAMIDALISATION-RÉGIME (cf. tête de fichier) :
+    `RULES_EXTRACTION.md` §3 (table RANGE) n'a jamais de cellule "Renfort" --
+    sur le même scénario synthétique entièrement favorable au pyramidage que
+    les tests de warmup ci-dessus, un seul trade doit s'ouvrir (l'entrée
+    fraîche) si le régime H4 natif est RANGE_NEUTRE à chaque bougie -- AUCUN
+    renfort, même si le prix dépasse `last_pyramid_high` à chaque pas."""
+    n = WARMUP + 40
+    feat = _synthetic_feat(n, regime_h4_value="RANGE_NEUTRE")
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) == 1, (
+        f"{len(res['trace'])} tranche(s) ouverte(s) en régime RANGE_NEUTRE, attendu exactement 1"
+    )
+
+
+def test_pyramid_renfort_allowed_when_h4_regime_tendance():
+    """Contrôle positif du test ci-dessus : le MÊME scénario, régime H4
+    TENDANCE (défaut de `_synthetic_feat`), doit produire PLUSIEURS
+    tranches -- le renfort doit rester possible quand le corpus l'autorise."""
+    n = WARMUP + 40
+    feat = _synthetic_feat(n, regime_h4_value="TENDANCE")
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) > 1, (
+        f"{len(res['trace'])} tranche(s) ouverte(s) en régime TENDANCE, attendu plusieurs"
     )
 
 

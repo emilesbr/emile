@@ -81,6 +81,19 @@ CONFIGURATION_RECOMMANDEE.md, qui pointe lui-même vers COUVERTURE_ENSEIGNEMENTS
     (`reverse_at_limit`) laissé disponible pour qui veut l'activer sur ce
     profil précis, en connaissance de cause.
 
+CORRECTIONS DE FIDÉLITÉ (mobilisation multi-agents, audit systématique)
+-------------------------------------------------------------------------
+Deux régressions silencieuses du refactor v6->v7, jamais documentées comme
+telles, corrigées ici par cohérence (moteur toujours activement cité/
+comparé) -- détail complet des deux dans `backtest_phase2_faithful.py` :
+  - **EXCES-H4** : le gate ne vérifiait plus le régime EXCES du H4 natif
+    (timeframe réellement tradé), seulement le contexte Hebdomadaire.
+  - **Pyramidalisation-régime** : `RULES_EXTRACTION.md` §3 (table RANGE)
+    n'a jamais de cellule "Renfort" -- v6 restreignait donc le renfort
+    (pas l'entrée fraîche) au régime TENDANCE/RANGE_TENDANCIEL
+    (`pyramiding_allowed`), restriction perdue depuis v7 (`gate_extra`
+    renvoyait le même booléen pour l'entrée fraîche et le renfort).
+
 HORS PÉRIMÈTRE DE CE MOTEUR (pas un oubli -- justifié)
 -------------------------------------------------------
 La table "trade de tendance" à 5 étapes (`trend_table.py`) n'est PAS
@@ -209,10 +222,13 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
         return bool(gate_score[i] >= 2 and gate_regime[i] != "EXCES" and regime_h4_v[i] != "EXCES")
 
     def gate_extra(j):
-        # Même gate pour l'entrée fraîche et le renfort (config recommandée :
-        # pas de distinction régime/fib comme v6/fib, cf. position_engine.py).
+        # CORRECTION PYRAMIDALISATION-RÉGIME (cf. tête de fichier) : le
+        # renfort (pas l'entrée fraîche) exige EN PLUS que le régime H4 natif
+        # soit TENDANCE/RANGE_TENDANCIEL -- "Renfort" n'apparaît jamais dans
+        # la table Money Management RANGE (§3), réservé à la table TENDANCE.
         g = gate(j)
-        return g, g
+        pyramiding_allowed = regime_h4_v[j] in ("TENDANCE", "RANGE_TENDANCIEL")
+        return g, (g and pyramiding_allowed)
 
     state = {"last_pyramid_high": -np.inf}
 

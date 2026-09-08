@@ -72,6 +72,29 @@ désormais `feat["regime"][i] != "EXCES"` EN PLUS du gate Hebdomadaire.
 Impact chiffré honnête : cf. `PLAN.md`/`CONFIGURATION_RECOMMANDEE.md`.
 
 ================================================================================
+CORRECTION PYRAMIDALISATION-RÉGIME (mobilisation multi-agents, audit
+systématique de fidélité IP, cycle suivant) -- côté RANGE pyramidalisait
+sans restriction de régime
+================================================================================
+`RULES_EXTRACTION.md` §3 (table Money Management RANGE) ne contient JAMAIS
+de cellule "Renfort", à aucune ligne de profil -- contrairement à §4 (table
+TENDANCE) qui en a systématiquement. `backtest_phase2_v6.py` traduisait déjà
+correctement ça en code (`pyramiding_allowed = regime in ("TENDANCE",
+"RANGE_TENDANCIEL")`, appliqué SEULEMENT au renfort, jamais à l'entrée
+fraîche) -- règle perdue silencieusement au refactor v6->v7 (même catégorie
+de bug que EXCES-H4 ci-dessus : une donnée déjà calculée, `feat["regime"]`,
+mais jamais relue pour CETTE règle précise côté RANGE). Vérifié
+empiriquement AVANT correction : sur BTC/ETH/BNB/SOL réels, le côté RANGE de
+ce fichier partage le même schéma de `gate_extra` (même booléen pour
+entrée fraîche et renfort) que `backtest_phase2_faithful.py`, où 25,7% des
+renforts réellement ouverts l'étaient en régime RANGE_NEUTRE avant
+correction. **Corrigé** : `gate_extra` de `_run_core_unified` distingue
+désormais entrée fraîche (`gate(j)` seul, INCHANGÉ) et renfort (`gate(j)
+and pyramiding_allowed`, `pyramiding_allowed = feat["regime"][j] in
+("TENDANCE", "RANGE_TENDANCIEL")`). Impact chiffré honnête : cf. `PLAN.md`/
+`CONFIGURATION_RECOMMANDEE.md`.
+
+================================================================================
 CORRECTION (8 sept. 2026) -- l'exclusivité mutuelle par actif a été RETIRÉE
 ================================================================================
 Version initiale de ce fichier : au plus UN système (RANGE ou TENDANCE)
@@ -476,7 +499,12 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
         # backtest_phase2_faithful.py) : bloque entrée fraîche ET renfort.
         abstain = bool(wall_street_v[j])
         g = gate(j) and not abstain
-        return g, g
+        # CORRECTION PYRAMIDALISATION-RÉGIME (cf. tête de fichier) : le
+        # renfort (pas l'entrée fraîche) exige EN PLUS que le régime H4 natif
+        # soit TENDANCE/RANGE_TENDANCIEL -- "Renfort" n'apparaît jamais dans
+        # la table Money Management RANGE (§3), réservé à la table TENDANCE.
+        pyramiding_allowed = feat["regime"][j] in ("TENDANCE", "RANGE_TENDANCIEL")
+        return g, (g and pyramiding_allowed)
 
     range_state = {"last_pyramid_high": -np.inf}
     open_tranche_fn = make_open_tranche_fn(
