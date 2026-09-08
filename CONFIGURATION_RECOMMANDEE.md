@@ -549,9 +549,9 @@ large que l'ancien stop H4 natif) :
 }
 ```
 
-Moteur : `code/unified_protocol.py` (`run_unified`, `decide_now`), 15e
+Moteur : `code/unified_protocol.py` (`run_unified`, `decide_now`), 14e
 moteur de `code/run_all.py` (alias `unified`), `code/test_unified_protocol.py`
-(6/6 tests). Limites documentées, pas cachées :
+(10/10 tests). Limites documentées, pas cachées :
 - le capital par palier (`capital_eur`) n'est appliqué qu'au risk_pct du
   moteur RANGE, pas au moteur TENDANCE (jamais mesuré pour la table de
   tendance) — cf. docstring du module (choix U3) ;
@@ -656,9 +656,21 @@ par ce projet), Mensuel (13 barres) le gate UT+2 (désactivé — nouveau
 paramètre `use_mtf_gate` ajouté à `run_faithful`/`_prepare_features`,
 STRICTEMENT ADDITIF, défaut `True` préservant exactement le comportement
 existant, 19/19 tests reconfirmés verts après l'ajout, vérifié
-indépendamment). **Résultat honnête, non concluant** : seulement 3 trades
-sur 365 barres, quel que soit le profil — trop peu pour conclure quoi que
-ce soit, ni un échec de méthode ni un résultat forcé.
+indépendamment). **Résultat honnête, non concluant à l'origine (3 trades sur
+365 barres) — RE-régénéré après la correction Conflit MTF (cf. section
+5quinquies), résultat honnêtement DIFFÉRENT, pas juste ajusté** : le rôle
+"D1" de ce moteur (stop UT+1, littéral et inconditionnel) est ici tenu par
+l'Hebdomadaire XRP — Conflit MTF vérifie donc, sans condition (comme le
+stop lui-même, `use_mtf_gate=False` ne le neutralise pas, cohérent avec sa
+portée documentée), si CE niveau est lui-même en range. Sur cette fenêtre
+XRP précise, il l'est suffisamment souvent pour faire passer le résultat de
+3 à **0 trade sur les 4 profils**. Ce n'est pas un échec de méthode ni un
+bug (vérifié indépendamment, causalité confirmée, cf. `PLAN.md`) — c'est la
+conséquence honnête d'une règle littérale appliquée sans exception, même
+quand elle rend un test déjà mince structurellement encore plus mince.
+Conclusion inchangée : cet OOS ne permettait déjà aucune conclusion
+statistique à 3 trades, il n'en permet pas plus à 0 — la limite reste la
+même (échantillon XRP trop court), pas une nouvelle limite.
 
 ---
 
@@ -725,7 +737,7 @@ Un 3e agent avait refait, DE ZÉRO et indépendamment, la classification "règle
 - **Niveau : D1, pas Hebdomadaire.** 3 agents (recherche + second avis indépendant) convergent : caler le gate sur le niveau Hebdomadaire bloquerait ~89% des tranches RANGE actuellement ouvertes (mesuré empiriquement en rejouant `faithful.py` avec `record_trace=True`) — quasi-suppression du système RANGE, incohérent avec le fait que le corpus décrit lui-même RANGE comme le régime dominant (~75% cumulé, §1). Caler sur D1 ne bloque que ~12-19% des tranches actuelles (BTC 13,0%/ETH 7,5%/BNB 19,1%/SOL 3,7%) — effet mesuré, pas disproportionné. Étayé aussi textuellement par `TRADING_LESSONS_TROISIEME_BORNE.md` (source #11 : "Contexte" = UT immédiatement supérieure à l'exécution).
 - **Entrée fraîche ET renfort, uniformément.** Aucune source ne distingue les deux cas pour cette règle (contrairement à pyramidalisation-régime, où l'absence littérale de "Renfort" en §3 permettait de trancher précisément) — appliqué via `gate()`, partagé par les deux, plutôt qu'une distinction inventée.
 
-**Implémenté** dans `backtest_phase2_faithful.py`/`unified_protocol.py` (RANGE) : nouvelle clé `regime_d1` (`ctx["D1"]["regime"]`, déjà calculée pour le stop `ctx_support_d1`, jamais lue pour cette règle — même schéma que EXCES-H4/pyramidalisation-régime), gate bloque désormais aussi quand D1 est RANGE_NEUTRE/RANGE_TENDANCIEL. **Non étendu à `backtest_phase2_recommended.py`** (exige une dépendance D1 qu'il ne charge jamais, hors de son périmètre documenté). Tests dédiés (4 nouveaux, scénario synthétique à vérité terrain connue), 19/19 fichiers verts.
+**Implémenté** dans `backtest_phase2_faithful.py`/`unified_protocol.py` (RANGE) : nouvelle clé `regime_d1` (`ctx["D1"]["regime"]`, déjà calculée pour le stop `ctx_support_d1`, jamais lue pour cette règle — même schéma que EXCES-H4/pyramidalisation-régime), gate bloque désormais aussi quand D1 est RANGE_NEUTRE/RANGE_TENDANCIEL. **Non étendu à `backtest_phase2_recommended.py`** (exige une dépendance D1 qu'il ne charge jamais, hors de son périmètre documenté). Tests dédiés (4 nouveaux, scénario synthétique à vérité terrain connue), 19/19 fichiers verts à l'époque de cette implémentation — 21/21 aujourd'hui après le round de vérification adversariale suivant (`test_risk_aggregation_triple_system.py`, `test_no_execution_automation.py` ajoutés, cf. `PLAN.md`).
 
 **Impact chiffré honnête** (mouvement modeste, cohérent avec les 2 corrections précédentes) : `faithful.py` BNB/TRES_AGRESSIF 373→310 trades, retour 76,5%→68,3%, drawdown -17,6%→-15,6% ; `unified_protocol.py` agrégé retour +27,9%→+22,0%, drawdown -27,0%→-25,2% ; walk-forward 2021 +6,1%/-8,8%→+5,2%/-9,5%, 2024 (pire année) -6,2%/-24,4%→-4,0%/-22,6% (légèrement amélioré) ; canal manuel D1 retour 9,91%→8,78%/EMA±ATR 4,02%→3,42% ; risque agrégé max inchangé 17,00%, 67/112→66/112 dépassements. Aucune combinaison ne devient catastrophique. Détail complet : `PLAN.md` section "Correction Conflit Multi-Timeframe".
 

@@ -52,7 +52,7 @@ sys.path.insert(0, ".")
 from backtest_phase2_v7 import MIN_BORDERS
 from backtest_phase2_recommended import WARMUP
 from backtest_phase2_faithful import _run_core as _run_core_faithful
-from unified_protocol import _run_core_unified, _accumulation_active, decide_now
+from unified_protocol import _run_core_unified, _accumulation_active, decide_now, _aggregate_risk_warning
 
 
 N = WARMUP + 25   # marge suffisante après warmup pour dérouler un scénario complet
@@ -325,6 +325,23 @@ def test_range_pyramid_renfort_allowed_when_h4_regime_tendance():
     )
 
 
+def test_range_entry_blocked_when_h4_regime_is_exces():
+    """CORRECTION EXCES H4 (cf. tête de fichier) : `RULES_EXTRACTION.md` §1
+    ("Bulle/Excès -> NE PAS TRADER") est une règle littérale INCONDITIONNELLE
+    sur le régime H4 natif -- AUCUNE tranche (entrée fraîche NI renfort) ne
+    doit s'ouvrir si `feat["regime"]` est EXCES à chaque bougie. Absent
+    jusqu'ici de ce fichier de test malgré l'impact chiffré le plus
+    significatif des 3 corrections (BNB/TRES_AGRESSIF : -72,5% -> -27,1%
+    de drawdown agrégé)."""
+    feat = _make_pyramid_range_feat("EXCES")
+    res = _run_core_unified(feat, "MODERE", record_state=True)
+    n_open = len(res["live_state"]["range_tranches"])
+    assert n_open == 0, (
+        f"{n_open} tranche(s) RANGE ouverte(s) alors que le régime H4 natif est EXCES, attendu 0 "
+        "(le gate EXCES-H4 doit bloquer TOUTE ouverture, entrée fraîche incluse)"
+    )
+
+
 # ---------------------------------------------------------------------------
 # CORRECTION CONFLIT MTF (cf. tête de fichier) : côté RANGE, aucune tranche
 # (entrée fraîche ou renfort) ne doit s'ouvrir si le régime D1 (`feat
@@ -370,6 +387,48 @@ def test_range_entry_allowed_when_d1_regime_is_tendance():
     )
 
 
+def test_aggregate_risk_warning_matches_hand_computed_value():
+    """AJOUT ce cycle (bilan directeur, cf. tête de fichier) : vérité terrain
+    connue -- construit un `live` dict À LA MAIN (2 tranches RANGE ouvertes,
+    entry/stop connus) et vérifie que `_aggregate_risk_warning` calcule
+    EXACTEMENT le risque nominal attendu (formule R1 : remaining x distance
+    relative au stop), pas une approximation."""
+    live = {
+        "range_tranches": [
+            {"entry": 100.0, "stop": 95.0, "remaining": 0.5},   # risque = 0.5 * 5% = 2.5%
+            {"entry": 110.0, "stop": 108.0, "remaining": 0.3},  # risque = 0.3 * (2/110) = 0.5455%
+        ],
+        "range_reverses": [
+            {"entry": 90.0, "stop": 90.0, "remaining": 0.2},    # stop == entry -> risque nul
+        ],
+        "trend_active": False,
+    }
+    warning = _aggregate_risk_warning(live)
+    expected_pct = 0.5 * 5.0 + 0.3 * (2.0 / 110.0) * 100
+    assert abs(warning["range_nominal_risk_pct"] - round(expected_pct, 2)) < 1e-9, (
+        f"{warning['range_nominal_risk_pct']} != {round(expected_pct, 2)} attendu (calcul à la main)"
+    )
+    assert warning["exceeds_5pct_global_cap"] is False   # ~2,95%, sous le plafond 5%
+    assert warning["trend_also_active"] is False
+
+
+def test_aggregate_risk_warning_flags_cap_exceeded_and_trend_active():
+    """Contrôle positif : un risque RANGE au-dessus de 5% doit lever
+    `exceeds_5pct_global_cap`, et une campagne TENDANCE active doit être
+    signalée (`trend_also_active`) même si son risque n'est pas chiffré ici."""
+    live = {
+        "range_tranches": [
+            {"entry": 100.0, "stop": 90.0, "remaining": 1.0},   # risque = 1.0 * 10% = 10%
+        ],
+        "range_reverses": [],
+        "trend_active": True,
+    }
+    warning = _aggregate_risk_warning(live)
+    assert warning["range_nominal_risk_pct"] == 10.0
+    assert warning["exceeds_5pct_global_cap"] is True
+    assert warning["trend_also_active"] is True
+
+
 def test_decide_now_insufficient_data_is_coherent():
     """Historique H1 délibérément trop court (moins que WARMUP+1 bougies H4)
     -> INSUFFICIENT_DATA, avec range/trend/regime à None."""
@@ -377,6 +436,7 @@ def test_decide_now_insufficient_data_is_coherent():
     d = decide_now(h1, "MODERE")
     assert d["action"] == "INSUFFICIENT_DATA"
     assert d["range"] is None and d["trend"] is None and d["regime"] is None
+    assert d["aggregate_risk_warning"] is None
     assert "bougies H4" in d["reason"]
 
 
@@ -401,8 +461,15 @@ def test_decide_now_structured_output_is_coherent():
     h1 = _make_synthetic_h1(n_hours=24 * 400, seed=42)   # ~400 jours, ~90 bougies hebdo
     d = decide_now(h1, "AGRESSIF")
 
-    for key in ("range", "trend", "regime", "weekly_gate_reliable", "n_h4_bars", "n_weekly_bars"):
+    for key in ("range", "trend", "regime", "weekly_gate_reliable", "n_h4_bars", "n_weekly_bars",
+                "aggregate_risk_warning"):
         assert key in d, f"champ manquant dans la sortie de decide_now : {key}"
+
+    for key in ("range_nominal_risk_pct", "exceeds_5pct_global_cap", "trend_also_active", "note"):
+        assert key in d["aggregate_risk_warning"], f"champ manquant dans aggregate_risk_warning : {key}"
+    assert d["aggregate_risk_warning"]["range_nominal_risk_pct"] >= 0.0
+    assert isinstance(d["aggregate_risk_warning"]["exceeds_5pct_global_cap"], bool)
+    assert isinstance(d["aggregate_risk_warning"]["trend_also_active"], bool)
 
     assert isinstance(d["weekly_gate_reliable"], bool)
     assert d["n_h4_bars"] == len(h1) // 4  # resample('4h') sur un H1 sans trou

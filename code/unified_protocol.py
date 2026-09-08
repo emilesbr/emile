@@ -110,7 +110,12 @@ CONFLIT MTF" en tête de `backtest_phase2_faithful.py`. Résumé ici : `regime_d
 jamais lu pour cette règle) ajouté à `feat`, `gate()` de `_run_core_unified`
 bloque désormais aussi quand `regime_d1` est RANGE_NEUTRE ou
 RANGE_TENDANCIEL. Impact chiffré honnête : cf. `PLAN.md`/
-`CONFIGURATION_RECOMMANDEE.md`.
+`CONFIGURATION_RECOMMANDEE.md`. **Portée réelle (vérifiée par un round de
+vérification adversariale dédié)** : `gate()` alimente aussi
+`gated_long_signal`, qui pilote la sortie "flip de signal" -- une tranche
+déjà ouverte mais pas encore Validée (`val_done=False`) est donc FERMÉE, pas
+seulement bloquée à l'ouverture, si `regime_d1` bascule en range en cours de
+vie -- cf. détail complet dans `backtest_phase2_faithful.py`.
 
 ================================================================================
 CORRECTION (8 sept. 2026) -- l'exclusivité mutuelle par actif a été RETIRÉE
@@ -783,6 +788,66 @@ def _describe_trend_open(live2: dict, last_date: str) -> dict:
             "reason": f"Aucune campagne tendance ouverte et accumulation_active faux au {last_date}."}
 
 
+def _position_risk_pct(pos: dict) -> float:
+    """Risque nominal RÉEL d'une position long ouverte SI son stop ACTUEL
+    est touché maintenant, avec la taille RESTANTE actuelle -- MÊME formule
+    R1 que `risk_aggregation_triple_system.py::_long_risk` (pas réimportée
+    ici pour éviter une dépendance circulaire, ce module étant lui-même
+    importé par ce fichier -- formule à 2 lignes, dupliquée à l'identique,
+    pas réinventée). `pos` : dict avec au moins `entry`/`stop`/`remaining`."""
+    if pos is None:
+        return 0.0
+    remaining = pos.get("remaining", 0.0)
+    entry = pos.get("entry", 0.0)
+    stop = pos.get("stop", 0.0)
+    if remaining <= 0 or entry <= 0:
+        return 0.0
+    return remaining * max(0.0, (entry - stop) / entry) * 100
+
+
+def _aggregate_risk_warning(live: dict) -> dict:
+    """AJOUTÉ ce cycle (mobilisation multi-agents, bilan directeur "regard
+    neuf") : `decide_now()` est l'interface opérationnelle réelle de la
+    Phase 3, mais ne signalait jusqu'ici AUCUNE information sur le risque
+    agrégé -- alors que ce projet a lui-même quantifié (`risk_aggregation_
+    triple_system.py`, backlog item 8 de PLAN.md) un risque nominal agrégé
+    pouvant atteindre 17,00% quand RANGE+TENDANCE+diversification sont
+    ouverts simultanément, très au-dessus du plafond global 5% documenté
+    (`RULES_EXTRACTION.md` §5). Ceci est un WARNING INFORMATIF -- un pur
+    report d'un fait déjà mesuré par le projet -- PAS un plafond normatif
+    inventé : `decide_now()` ne bloque ni ne modifie AUCUNE décision, cf.
+    principe déjà établi (choix U5) que le corpus ne spécifie aucun plafond
+    pour cette combinaison précise de systèmes.
+
+    Chiffre seulement le risque RANGE (tranches + jambes "+Reverse" range),
+    dont la formule (R1) est simple et déjà éprouvée -- le risque d'une
+    campagne TENDANCE en cours n'est PAS inclus ici (calcul non trivial sur
+    une campagne à plusieurs jambes déjà en progression ; la quantification
+    complète existe dans `risk_aggregation_triple_system.py`, pas reproduite
+    à l'identique ici pour ne pas dupliquer un calcul plus complexe sans le
+    même niveau de test). Si une campagne TENDANCE est ACTIVE en plus des
+    tranches RANGE, le risque réel total est PLUS ÉLEVÉ que le chiffre
+    rapporté ici -- signalé explicitement via `trend_also_active`, jamais
+    caché."""
+    range_pct = sum(_position_risk_pct(tr) for tr in live["range_tranches"])
+    range_pct += sum(_position_risk_pct(rp) for rp in live["range_reverses"])
+    return {
+        "range_nominal_risk_pct": round(range_pct, 2),
+        "exceeds_5pct_global_cap": range_pct > 5.0,
+        "trend_also_active": bool(live["trend_active"]),
+        "note": (
+            "range_nominal_risk_pct = risque RANGE réellement engagé (tranches + reverses "
+            "ouverts, formule R1). N'inclut PAS le risque d'une campagne TENDANCE en cours "
+            "(cf. trend_also_active) -- si vrai, le risque réel total est plus élevé. "
+            "Plafond global RULES_EXTRACTION.md §5 = 5%. Quantification complète (jusqu'à "
+            "17,00% mesuré historiquement RANGE+TENDANCE+diversification) : "
+            "risk_aggregation_triple_system.py, PLAN.md backlog item 8. "
+            "Ceci est un avertissement informatif, pas un plafond appliqué -- aucune décision "
+            "n'est bloquée par ce champ."
+        ),
+    }
+
+
 def decide_now(h1_recent: pd.DataFrame, profile_name: str, capital_eur: float = None) -> dict:
     """LA fonction "décision live" (PLAN.md, décision d'architecture #4).
     Prend l'historique H1 le plus RÉCENT d'un actif (colonnes date/open/
@@ -839,6 +904,12 @@ def decide_now(h1_recent: pd.DataFrame, profile_name: str, capital_eur: float = 
       - `n_h4_bars`, `n_weekly_bars` : tailles des historiques resamplés,
         pour que l'appelant puisse juger lui-même de la marge par rapport
         aux seuils ci-dessus.
+      - `aggregate_risk_warning` (ajouté ce cycle, cf. `_aggregate_risk_warning`) :
+        dict `{"range_nominal_risk_pct", "exceeds_5pct_global_cap",
+        "trend_also_active", "note"}` -- avertissement INFORMATIF sur le
+        risque RANGE réellement engagé (tranches+reverses ouverts), jamais
+        un plafond appliqué (aucune décision n'est bloquée par ce champ).
+        Absent (`None`) dans le cas `INSUFFICIENT_DATA` ci-dessous.
     """
     if "volume" not in h1_recent.columns:
         raise ValueError("h1_recent doit contenir une colonne 'volume' (cf. U1 -- "
@@ -853,6 +924,7 @@ def decide_now(h1_recent: pd.DataFrame, profile_name: str, capital_eur: float = 
     if n_h4 <= WARMUP + 1:
         return {
             "action": "INSUFFICIENT_DATA", "range": None, "trend": None, "regime": None,
+            "aggregate_risk_warning": None,
             "reason": (
                 f"{n_h4} bougies H4 disponibles, {WARMUP + 1} minimum requises "
                 f"(WARMUP={WARMUP}=EMA_SLOW+20 bougies H4) avant toute tentative "
@@ -867,6 +939,7 @@ def decide_now(h1_recent: pd.DataFrame, profile_name: str, capital_eur: float = 
 
     range_desc = _describe_range_hold(live) if live["range_active"] else None
     trend_desc = _describe_trend_hold(live) if live["trend_active"] else None
+    risk_warning = _aggregate_risk_warning(live)
 
     if range_desc is None or trend_desc is None:
         # Au moins un système est FLAT sur l'historique réel -- bougie
@@ -889,7 +962,8 @@ def decide_now(h1_recent: pd.DataFrame, profile_name: str, capital_eur: float = 
         if trend_desc is None:
             trend_desc = _describe_trend_open(live2, live["last_date"])
 
-    return {"range": range_desc, "trend": trend_desc, "regime": live["regime_h4"], **base}
+    return {"range": range_desc, "trend": trend_desc, "regime": live["regime_h4"],
+            "aggregate_risk_warning": risk_warning, **base}
 
 
 def main():

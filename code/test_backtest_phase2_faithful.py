@@ -231,6 +231,39 @@ def test_pyramid_renfort_allowed_when_h4_regime_tendance():
     )
 
 
+def test_entry_blocked_when_h4_regime_is_exces():
+    """CORRECTION EXCES H4 (cf. tête de fichier) : `RULES_EXTRACTION.md` §1
+    ("Bulle/Excès -> NE PAS TRADER") est une règle littérale INCONDITIONNELLE
+    sur le régime du marché réellement tradé (H4 natif) -- sur un scénario
+    synthétique par ailleurs entièrement favorable, AUCUN trade (entrée
+    fraîche NI renfort) ne doit s'ouvrir si le régime H4 natif est EXCES à
+    chaque bougie. Absent jusqu'ici du fichier de test malgré l'impact
+    chiffré le plus significatif des 3 corrections (BNB/TRES_AGRESSIF :
+    -72,5% -> -27,1% de drawdown agrégé côté unified_protocol.py)."""
+    n = WARMUP + 40
+    feat = _synthetic_pyramid_feat(n, regime_h4_value="EXCES")
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) == 0, (
+        f"{len(res['trace'])} tranche(s) ouverte(s) alors que le régime H4 natif est EXCES partout, "
+        "attendu 0 (le gate EXCES-H4 doit bloquer TOUTE ouverture, entrée fraîche incluse)"
+    )
+
+
+def test_entry_allowed_when_h4_regime_is_not_exces():
+    """Contrôle positif du test ci-dessus (sinon il pourrait passer
+    trivialement sur un moteur qui ne trade jamais) : le MÊME scénario,
+    régime H4 RANGE_TENDANCIEL (ni EXCES, ni ce qui bloquerait la
+    pyramidalisation-régime pour l'entrée fraîche), doit produire au moins
+    un trade."""
+    n = WARMUP + 40
+    feat = _synthetic_pyramid_feat(n, regime_h4_value="RANGE_TENDANCIEL")
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) >= 1, (
+        "aucun trade ouvert alors que le régime H4 est RANGE_TENDANCIEL (scénario par ailleurs "
+        "entièrement favorable) -- le gate EXCES-H4 bloque aussi le cas où il ne devrait pas"
+    )
+
+
 def test_entry_blocked_when_d1_regime_is_range():
     """CORRECTION CONFLIT MTF (cf. tête de fichier) : `TRADING_LESSONS_
     MAITRISE_GRADIENT_RISQUE.md` désigne "ne jamais trader une borne de

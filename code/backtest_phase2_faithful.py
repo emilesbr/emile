@@ -159,6 +159,20 @@ bloque désormais aussi quand `regime_d1` est RANGE_NEUTRE ou
 RANGE_TENDANCIEL. Impact chiffré honnête : cf. `PLAN.md`/
 `CONFIGURATION_RECOMMANDEE.md`.
 
+**Portée réelle, vérifiée par un round de vérification adversariale
+dédié** : `gate()` alimente aussi `gated_long_signal`, qui pilote la sortie
+"flip de signal" de `process_tranche` -- ce mécanisme préexistait déjà pour
+EXCES-H4/UT+2, pas une nouveauté de cette correction, mais Conflit MTF en
+hérite silencieusement. Conséquence RÉELLE, testée et confirmée : si
+`regime_d1` bascule en range PENDANT qu'une tranche est déjà ouverte et n'a
+PAS encore atteint l'étape Validation (`val_done=False`), cette tranche est
+FERMÉE au pas suivant -- pas seulement "bloquée à l'ouverture" comme décrit
+plus haut. Une fois `val_done=True`, la tranche est immunisée (le flip de
+signal ne la referme plus). Arguably plus fidèle à la lettre de la source
+#11 ("toute borne... devient inexistante", pas "toute NOUVELLE borne"),
+mais un comportement à connaître explicitement plutôt qu'à découvrir en
+production -- documenté ici pour cette raison précise.
+
 **Non implémenté ce cycle, volontairement, dans `backtest_phase2_recommended.py`**
 (contrairement à EXCES-H4/pyramidalisation-régime, qui n'ajoutaient aucune
 dépendance nouvelle) : cette correction exige le contexte D1, que
