@@ -34,7 +34,9 @@ import sys
 sys.path.insert(0, ".")
 from fibonacci import (
     compute_swing_highs_lows, compute_retracement, classify_retracement,
+    compute_context_position, classify_regle_50,
     add_fibonacci_columns, FAVORABLE_MIN, FAVORABLE_OPTIMAL_MAX, FAVORABLE_MAX,
+    REGLE_50_CONTEXT_MIN,
 )
 
 
@@ -48,7 +50,11 @@ def _synthetic_swing_df():
     lows = [c - 0.5 for c in closes]
     lows[7] = 90     # force la valeur exacte du swing low attendu
     highs[13] = 190  # force la valeur exacte du swing high attendu
-    return pd.DataFrame({"high": highs, "low": lows, "close": closes})
+    # Colonne `date` ajoutée (requise par compute_context_position, cf.
+    # MISE À JOUR fibonacci.py) -- une bougie/jour, suffisant pour ce test
+    # synthétique où seul l'ORDRE relatif des bougies importe.
+    dates = pd.date_range("2024-01-01", periods=len(closes), freq="1D")
+    return pd.DataFrame({"date": dates, "high": highs, "low": lows, "close": closes})
 
 
 def test_swing_detection_finds_hand_placed_low_and_high():
@@ -134,12 +140,13 @@ def test_classify_retracement_boundaries_hand_calculated():
 
 
 def test_add_fibonacci_columns_integration():
-    """Vérifie que add_fibonacci_columns ajoute les 3 colonnes attendues et
+    """Vérifie que add_fibonacci_columns ajoute les colonnes attendues et
     qu'elles sont cohérentes avec compute_retracement/classify_retracement
     appelés séparément (pas de logique dupliquée/divergente)."""
     df = _synthetic_swing_df()
     out = add_fibonacci_columns(df)
-    assert {"fib_retracement_pct", "fib_favorable", "fib_optimal"} <= set(out.columns)
+    assert {"fib_retracement_pct", "fib_favorable", "fib_optimal",
+             "fib_context_position", "fib_regle_50"} <= set(out.columns)
 
     ret_direct = compute_retracement(df)
     fav_direct, opt_direct = classify_retracement(ret_direct)
@@ -149,6 +156,61 @@ def test_add_fibonacci_columns_integration():
     # idx 16 (152, 38 % de retracement) doit être marqué favorable dans le dataframe
     assert bool(out["fib_favorable"].iloc[16])
 
+    ctx_direct = compute_context_position(df)
+    regle_50_direct = classify_regle_50(ret_direct, ctx_direct)
+    assert np.allclose(out["fib_context_position"].values, ctx_direct, equal_nan=True)
+    assert np.array_equal(out["fib_regle_50"].values, regle_50_direct)
+
+
+def _context_position_df():
+    """Canal de contexte constant (high=200, low=100 sur toute la série) pour
+    isoler le calcul de `compute_context_position` de tout effet de bord de
+    fenêtre glissante -- seul le `close`, qui varie, détermine la position.
+    ctx_high/ctx_low valent alors 200/100 dès que la fenêtre contient au
+    moins une bougie antérieure (`shift(1)`), quelle que soit sa profondeur
+    réelle (comportement PARTIEL de `.rolling("15D")`, cf. docstring de
+    `compute_context_position`)."""
+    n = 20
+    dates = pd.date_range("2024-01-01", periods=n, freq="1D")
+    high = [200.0] * n
+    low = [100.0] * n
+    close = [150.0] * n
+    close[18] = 130.0  # -> position = (200-130)/100 = 0.70 (moitié basse)
+    close[19] = 175.0  # -> position = (200-175)/100 = 0.25 (moitié haute)
+    return pd.DataFrame({"date": dates, "high": high, "low": low, "close": close})
+
+
+def test_context_position_matches_hand_calculated_values():
+    """Vérifie compute_context_position palier par palier : position =
+    (ctx_high - close) / (ctx_high - ctx_low), avec un canal constant
+    [100, 200] (span = 100) pour isoler le calcul du close lui-même."""
+    df = _context_position_df()
+    position = compute_context_position(df)
+
+    # idx 0 : NaN, pas d'historique antérieur pour le shift(1)
+    assert np.isnan(position[0])
+    # idx 18 : close=130 -> (200-130)/100 = 0.70 (pénétration dans la moitié basse)
+    assert np.isclose(position[18], 0.70, atol=1e-9)
+    # idx 19 : close=175 -> (200-175)/100 = 0.25 (moitié haute, pas de pénétration)
+    assert np.isclose(position[19], 0.25, atol=1e-9)
+
+
+def test_classify_regle_50_requires_both_cumulative_conditions():
+    """"Règle des 50%" (#13) : les DEUX conditions (retracement >= 23% ET
+    context_position >= 50%) doivent être vraies simultanément -- vérifie
+    chaque combinaison des 4 cas (vrai/vrai, vrai/faux, faux/vrai,
+    faux/faux) plus les NaN, indépendamment de tout calcul de prix réel."""
+    retracement = np.array([0.30, 0.30, 0.10, 0.10, np.nan, 0.30])
+    context_pos = np.array([0.70, 0.20, 0.70, 0.20, 0.70, np.nan])
+    result = classify_regle_50(retracement, context_pos)
+
+    assert result[0]      # retracement>=23% ET context>=50% -> validé
+    assert not result[1]  # retracement OK mais context en moitié haute -> refusé
+    assert not result[2]  # context OK mais retracement < 23% -> refusé
+    assert not result[3]  # aucune des deux -> refusé
+    assert not result[4]  # retracement NaN -> refusé
+    assert not result[5]  # context NaN -> refusé
+
 
 if __name__ == "__main__":
     test_swing_detection_finds_hand_placed_low_and_high()
@@ -156,4 +218,6 @@ if __name__ == "__main__":
     test_no_retracement_before_first_confirmed_up_move()
     test_classify_retracement_boundaries_hand_calculated()
     test_add_fibonacci_columns_integration()
-    print("Tous les tests fibonacci passent (5/5).")
+    test_context_position_matches_hand_calculated_values()
+    test_classify_regle_50_requires_both_cumulative_conditions()
+    print("Tous les tests fibonacci passent (7/7).")

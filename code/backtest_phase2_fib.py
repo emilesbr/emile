@@ -46,11 +46,12 @@ MAX_TRANCHES = 3
 
 
 def prepare_fib(df: pd.DataFrame) -> pd.DataFrame:
-    """Comme prepare() (backtest_phase2_v7.py), avec en plus les 3 colonnes
-    Fibonacci (fib_retracement_pct/fib_favorable/fib_optimal, cf.
-    code/fibonacci.py). Appliqué au H4 (timeframe d'exécution) seulement —
-    le D1 (contexte/référence) n'a pas besoin du retracement, il sert
-    uniquement au score/régime/support déjà transmis par attach_higher_context."""
+    """Comme prepare() (backtest_phase2_v7.py), avec en plus les 5 colonnes
+    Fibonacci (fib_retracement_pct/fib_favorable/fib_optimal/
+    fib_context_position/fib_regle_50, cf. code/fibonacci.py). Appliqué au
+    H4 (timeframe d'exécution) seulement — le D1 (contexte/référence) n'a
+    pas besoin du retracement, il sert uniquement au score/régime/support
+    déjà transmis par attach_higher_context."""
     df = prepare(df)
     df = add_fibonacci_columns(df)
     return df
@@ -58,7 +59,7 @@ def prepare_fib(df: pd.DataFrame) -> pd.DataFrame:
 
 def run_v7_fib(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: bool = True,
                use_mtf_stop: bool = False, use_fib_gate: bool = False, use_fib_optimal: bool = False,
-               fib_gate_pyramid: bool = False) -> dict:
+               use_fib_regle_50: bool = False, fib_gate_pyramid: bool = False) -> dict:
     """Duplique le corps de run_v7 (backtest_phase2_v7.py) à l'identique,
     seules différences : `prepare_fib()` au lieu de `prepare()` pour le H4,
     et la condition Fibonacci ajoutée à `open_tranche_fn` (cf. docstring de
@@ -73,6 +74,15 @@ def run_v7_fib(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_ga
     `use_fib_optimal` (défaut False) : si True (et use_fib_gate=True),
     resserre la condition à la sous-zone optimale [23 %, 50 %]
     (`fib_optimal`) plutôt que la zone favorable large.
+    `use_fib_regle_50` (défaut False) : si True (et use_fib_gate=True,
+    prioritaire sur `use_fib_optimal` s'ils sont combinés par erreur — cf.
+    ci-dessous), utilise à la place la "Règle des 50%" COMPLÈTE de #13
+    (`fib_regle_50`, code/fibonacci.py) : les DEUX conditions cumulatives du
+    corpus (retracement >= 23 % ET pénétration dans les 50 % inférieurs du
+    canal de contexte), plutôt que la seule zone de retracement
+    (`fib_favorable`/`fib_optimal` ne testent que le retracement, jamais la
+    position dans le contexte — gap comblé dans `fibonacci.py`, cf. sa
+    MISE À JOUR de tête, ce chantier).
 
     `fib_gate_pyramid` (défaut False) : si True, applique EN PLUS le même
     filtre aux renforts/pyramidalisation. Défaut False délibéré, découvert
@@ -111,7 +121,12 @@ def run_v7_fib(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_ga
     local_range_v = h4["local_range"].values
     context_range_v = h4["context_range"].values
     n_borders_v = h4["n_borders"].values
-    fib_favorable_v = h4["fib_optimal"].values if use_fib_optimal else h4["fib_favorable"].values
+    if use_fib_regle_50:
+        fib_favorable_v = h4["fib_regle_50"].values
+    elif use_fib_optimal:
+        fib_favorable_v = h4["fib_optimal"].values
+    else:
+        fib_favorable_v = h4["fib_favorable"].values
     high, low, o, c = h4["high"].values, h4["low"].values, h4["open"].values, h4["close"].values
     n = len(h4)
     warmup = EMA_SLOW + 20
@@ -180,6 +195,12 @@ def main():
             # Variante resserrée à la sous-zone optimale [23%,50%], renforts non gatés
             fib_optimal = run_v7_fib(h4.copy(), d1.copy(), profile, use_mtf_gate=True, use_mtf_stop=False,
                                       use_fib_gate=True, use_fib_optimal=True, fib_gate_pyramid=False)
+            # Variante "Règle des 50%" complète (#13, 2 conditions cumulatives :
+            # retracement >= 23% ET pénétration dans les 50% inférieurs du
+            # canal de contexte, cf. fibonacci.py MISE À JOUR de tête) — pas
+            # mesurée jusqu'ici (gap comblé ce chantier), renforts non gatés
+            fib_regle_50 = run_v7_fib(h4.copy(), d1.copy(), profile, use_mtf_gate=True, use_mtf_stop=False,
+                                       use_fib_gate=True, use_fib_regle_50=True, fib_gate_pyramid=False)
             # Variante "filtre appliqué aussi aux renforts" — mesurée et
             # rapportée pour transparence (cf. docstring run_v7_fib), pas
             # cachée parce que le résultat est mauvais
@@ -189,6 +210,7 @@ def main():
             rows.append({"symbol": symbol, "profile": profile, "variant": "baseline_v7 (sans_fibonacci)", **baseline})
             rows.append({"symbol": symbol, "profile": profile, "variant": "fib_favorable [23%,61.8%] (entree_fraiche_seule)", **fib_favorable})
             rows.append({"symbol": symbol, "profile": profile, "variant": "fib_optimal [23%,50%] (entree_fraiche_seule)", **fib_optimal})
+            rows.append({"symbol": symbol, "profile": profile, "variant": "fib_regle_50 [retr>=23%_ET_contexte<=50%] (entree_fraiche_seule)", **fib_regle_50})
             rows.append({"symbol": symbol, "profile": profile, "variant": "fib_favorable_incl_pyramide [23%,61.8%]", **fib_favorable_incl_pyramide})
     result = pd.DataFrame(rows)
     pd.set_option("display.width", 220)

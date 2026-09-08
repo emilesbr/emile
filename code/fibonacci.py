@@ -69,6 +69,45 @@ forcer un faux consensus à 5/5) :
   - Au-delà de 61,8% (> FAVORABLE_MAX) = défavorable / invalidé (Red Flag
     explicite de #10).
 
+MISE À JOUR (5e round de mobilisation multi-agents, audit exhaustif du
+corpus — `COUVERTURE_ENSEIGNEMENTS.md` section "Audit exhaustif du corpus
+complet", catégorie B) : la "Règle des 50%" de #13 citée ci-dessus est une
+règle à DEUX conditions cumulatives ("pas une seule") — jusqu'ici seule la
+première (retracement >= 23%, `FAVORABLE_MIN`) était codée
+(`classify_retracement`/`fib_favorable`/`fib_optimal`). La seconde
+("pénétration dans les 50% inférieurs DU CONTEXTE") ne l'était pas — gap
+honnêtement documenté puis comblé dans ce même cycle par
+`compute_context_position`/`classify_regle_50`/`fib_regle_50` ci-dessous.
+
+Point de vigilance résolu au passage, pour éviter une confusion future avec
+un hypothèse voisine mais DISTINCTE : `trend_table.py` a sa propre
+hypothèse H7 sur la phrase "retour min 50% contexte" (RULES_EXTRACTION.md
+§1, séquence compressée de la table de tendance à 5 étapes), interprétée
+LÀ-BAS comme "recovery_frac >= 0.50" (fraction du retracement regagnée
+depuis le creux). C'est une phrase différente, dans un module différent,
+pour un usage différent (l'étape Pull-Back de la table TENDANCE à 5
+étapes, pas le filtre de qualité d'entrée générique de ce fichier) — H7
+n'est PAS modifiée ici, et la "Règle des 50%" ci-dessous n'est PAS
+réconciliée avec elle : ce sont deux lectures de deux phrases distinctes du
+corpus, chacune scopée à son propre module (cohérent avec H6 ci-dessous :
+ce fichier reste délibérément séparé de trend_table.py).
+
+"Le contexte" dans la règle de #13 est interprété comme LE MÊME canal de
+contexte déjà établi ailleurs dans le projet (`ctx_high`/`ctx_low`, fenêtre
+`CONTEXT_DURATION` = "15D", `backtest_phase2_v7.py::prepare`/
+`trend_table.py::add_trend_context`) — pas une nouvelle définition
+inventée ici, la même réutilisée à l'identique (même fenêtre, même
+construction causale `shift(1)`). Lecture alternative explicitement
+écartée mais envisagée : "le contexte" = le mouvement de retracement
+lui-même (auquel cas "50% inférieurs" désignerait un retracement >= 50%) —
+écartée parce qu'elle contredirait la propre description de #13 du niveau
+50% comme "exceptionnel, rare" (un plancher à 50% rendrait le seuil
+minimal de 23% sans objet). Ce fichier reste néanmoins volontairement
+séparé de `trend_table.py` (H6) : `compute_context_position` ci-dessous
+RECALCULE le canal de contexte plutôt que d'importer les colonnes déjà
+calculées par `backtest_phase2_v7.py`/`trend_table.py`, pour ne pas rendre
+ce module dépendant d'eux.
+
 Pivot de mesure — quel haut/bas sert de référence : le DERNIER mouvement
 directionnel haussier complet détecté (dernier swing low, suivi
 chronologiquement du dernier swing high) — cohérent avec un projet
@@ -104,6 +143,15 @@ SWING_ORDER = 3
 FAVORABLE_MIN = 0.23
 FAVORABLE_OPTIMAL_MAX = 0.50
 FAVORABLE_MAX = 0.618
+
+# Canal de "contexte" pour la 2e condition de la Règle des 50% (#13, cf.
+# MISE À JOUR en tête de fichier) — MÊME fenêtre que
+# backtest_phase2_v7.py::CONTEXT_DURATION/trend_table.py::add_trend_context,
+# réutilisée à l'identique (pas une nouvelle définition de "contexte").
+CONTEXT_DURATION = "15D"
+# "pénétration dans les 50% inférieurs du contexte" (#13) : le close doit se
+# situer dans la moitié basse du canal [ctx_low, ctx_high].
+REGLE_50_CONTEXT_MIN = 0.50
 
 
 def compute_swing_highs_lows(df: pd.DataFrame, order: int = SWING_ORDER) -> tuple:
@@ -180,20 +228,69 @@ def classify_retracement(retracement_pct) -> tuple:
     return favorable, optimal
 
 
+def compute_context_position(df: pd.DataFrame, duration: str = CONTEXT_DURATION) -> np.ndarray:
+    """Position du close dans le canal de "contexte" [ctx_low, ctx_high]
+    (rolling `duration`, MÊME construction que
+    `backtest_phase2_v7.py::prepare`/`trend_table.py::add_trend_context` —
+    cf. MISE À JOUR en tête de fichier) : 0.0 = close au sommet du canal,
+    1.0 = close au bas du canal.
+
+    CAUSAL comme le reste du fichier : `.shift(1)` avant lecture, la
+    bougie courante n'entre jamais dans son propre canal de référence (même
+    construction que `trend_table.py::ctx_high`/`ctx_low`).
+
+    Nécessite une colonne `date` (utilisée pour le rolling calendaire,
+    comme partout ailleurs où `CONTEXT_DURATION` est utilisé dans le
+    projet). NaN pour la toute première bougie (`shift(1)` sans historique
+    antérieur) ou si `ctx_high == ctx_low` (canal de largeur nulle, division
+    évitée) ; en-deçà de 15 jours calendaires de profondeur, la fenêtre
+    reste PARTIELLE (pas NaN) — même comportement par défaut de
+    `.rolling(<offset>)` que `context_range`/`ctx_high`/`ctx_low` ailleurs
+    dans le projet (`backtest_phase2_v7.py`/`trend_table.py`), pas un choix
+    nouveau introduit ici."""
+    ts = df.set_index("date")
+    ctx_high = ts["high"].rolling(duration).max().shift(1)
+    ctx_low = ts["low"].rolling(duration).min().shift(1)
+    span = (ctx_high - ctx_low).replace(0, np.nan)
+    position = (ctx_high - ts["close"]) / span
+    return position.values
+
+
+def classify_regle_50(retracement_pct, context_position) -> np.ndarray:
+    """"Règle des 50%" (#13, citée en tête de fichier) : condition CUMULATIVE
+    (ET, pas OU, contrairement à `classify_retracement` ci-dessus qui teste
+    une seule condition) — retracement >= 23% (`FAVORABLE_MIN`, même seuil
+    que la classification favorable/optimale) ET pénétration du close dans
+    les 50% inférieurs du canal de contexte (`context_position >=
+    REGLE_50_CONTEXT_MIN`). NaN sur l'une ou l'autre entrée -> False (toute
+    comparaison avec NaN vaut False), comme `classify_retracement`."""
+    r = np.asarray(retracement_pct, dtype=float)
+    p = np.asarray(context_position, dtype=float)
+    return (r >= FAVORABLE_MIN) & (p >= REGLE_50_CONTEXT_MIN)
+
+
 def add_fibonacci_columns(df: pd.DataFrame, order: int = SWING_ORDER) -> pd.DataFrame:
     """Ajoute `fib_retracement_pct` (fraction, NaN si pas de mouvement
-    confirmé), `fib_favorable` (bool, zone [23%, 61,8%]) et `fib_optimal`
-    (bool, sous-zone [23%, 50%]) à `df`. N'utilise QUE des données connues
-    à l'instant de chaque bougie — causal (réserve P0-bis traitée, cf.
-    `compute_swing_highs_lows`) : un swing low/high n'entre dans le calcul
-    de retracement qu'une fois réellement confirmé (`order` bougies après
-    le creux/sommet lui-même), jamais avant."""
+    confirmé), `fib_favorable` (bool, zone [23%, 61,8%]), `fib_optimal`
+    (bool, sous-zone [23%, 50%]), `fib_context_position` (fraction, cf.
+    `compute_context_position`) et `fib_regle_50` (bool, "Règle des 50%"
+    complète à 2 conditions cumulatives, cf. `classify_regle_50`) à `df`.
+    N'utilise QUE des données connues à l'instant de chaque bougie — causal
+    (réserve P0-bis traitée, cf. `compute_swing_highs_lows`) : un swing
+    low/high n'entre dans le calcul de retracement qu'une fois réellement
+    confirmé (`order` bougies après le creux/sommet lui-même), jamais
+    avant ; le canal de contexte est lu avec `.shift(1)` (cf.
+    `compute_context_position`)."""
     df = df.copy()
     retracement = compute_retracement(df, order=order)
     favorable, optimal = classify_retracement(retracement)
+    context_position = compute_context_position(df)
+    regle_50 = classify_regle_50(retracement, context_position)
     df["fib_retracement_pct"] = retracement
     df["fib_favorable"] = favorable
     df["fib_optimal"] = optimal
+    df["fib_context_position"] = context_position
+    df["fib_regle_50"] = regle_50
     return df
 
 
@@ -204,8 +301,10 @@ if __name__ == "__main__":
 
     df = resample(load_h1("BTCUSDT"), "1D")
     scored = add_fibonacci_columns(df)
-    print(scored[["date", "close", "fib_retracement_pct", "fib_favorable", "fib_optimal"]].tail(40).to_string(index=False))
+    print(scored[["date", "close", "fib_retracement_pct", "fib_favorable", "fib_optimal",
+                  "fib_context_position", "fib_regle_50"]].tail(40).to_string(index=False))
     print("\nRépartition (BTC D1) :")
     print("favorable :", scored["fib_favorable"].mean().round(3))
     print("optimal   :", scored["fib_optimal"].mean().round(3))
+    print("regle_50  :", scored["fib_regle_50"].mean().round(3))
     print("NaN (pas encore de mouvement confirmé) :", scored["fib_retracement_pct"].isna().mean().round(3))
