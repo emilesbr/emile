@@ -34,6 +34,24 @@ moteur de `code/run_all.py` (alias `recommended`). Ce document pointe vers
 `COUVERTURE_ENSEIGNEMENTS.md`/`PLAN.md` plutôt que de dupliquer leur
 contenu — il ne remplace ni l'un ni l'autre, il choisit.
 
+**Limite explicitement non résolue par ce document** (trouvée en répondant à la question directe de l'utilisateur "avons-nous unifié tous les moteurs de décision dans un même protocole de trading ?", réponse honnête : non) : la table "trade de tendance" à 5 étapes (`code/trend_table.py`) N'EST PAS intégrée à la config recommandée — deux moteurs séparés, jamais aiguillés entre eux, alors que le principe le plus fondamental du manuel est "TOUJOURS TRADER DANS UN CONTEXTE" (table différente selon le régime). Voir section "Protocole unifié" ci-dessous, chantier ouvert en réponse directe à ce constat.
+
+---
+
+## Protocole unifié — routeur de régime range ↔ tendance (chantier ouvert)
+
+**Constat qui motive ce chantier** : le moteur range (`recommended.py`, lignée v4→v7) trade aussi en régime TENDANCE (pyramidalisation autorisée), le moteur tendance (`trend_table.py`) ne trade QUE quand son propre déclencheur d'Accumulation est actif (régime TENDANCE + range mature + rejet canal + retracement 38-61%, plus étroit que "régime==TENDANCE" seul). Les deux peuvent aujourd'hui vouloir agir sur le même actif en même temps — jamais arbitré, parce qu'ils tournent dans des scripts complètement séparés. Objectif du chantier, formulé directement par l'utilisateur : pouvoir lire le jeu de données d'un actif (OHLCV) et en tirer UNE décision de position, pas deux avis potentiellement contradictoires.
+
+**Décisions d'architecture tranchées avant de coder** (mode ingénieur senior — ne pas laisser un agent délégué inventer l'architecture en cours de route) :
+
+1. **Priorité de régime** : quand le déclencheur d'Accumulation du moteur tendance (`trend_table.py::try_open_campaign`, paramètre `accumulation_active`) est vrai, le moteur TENDANCE a la priorité — lecture la plus fidèle du corpus, et Accumulation est une condition strictement plus spécifique que "régime==TENDANCE" tout court. Le moteur RANGE ne tente aucune nouvelle tranche tant qu'une campagne tendance est active sur cet actif. Dans tous les autres cas (RANGE_NEUTRE, RANGE_TENDANCIEL, ou TENDANCE sans déclencheur d'accumulation actif), le moteur RANGE garde le comportement déjà validé de `recommended.py`.
+2. **Exclusivité mutuelle par actif** : à tout instant, au plus UN système (RANGE ou TENDANCE) a une position ouverte sur un actif donné — jamais les deux simultanément (évite le double comptage d'exposition, respecte "un seul contexte à la fois"). État à tracker : `active_system ∈ {None, "range", "trend"}`.
+3. **Aucune réimplémentation de logique métier** : réutiliser tel quel `position_engine.py::process_tranche`/`make_open_tranche_fn` (côté range, déjà des fonctions PAR BOUGIE, pas des boucles complètes) et `trend_table.py::step_campaign`/`try_open_campaign`/`step_reverse` (côté tendance, idem). Le seul code nouveau est la boucle d'orchestration bar-par-bar qui route vers l'un ou l'autre selon l'état — pas une nouvelle mécanique de position.
+4. **Sortie "décision live"**, pas seulement un backtest agrégé — répond directement à la demande formulée ("lire chaque jeu de données qui définit un actif afin d'identifier les positions à prendre afin de réaliser des profits") : une fonction séparée qui prend l'historique le plus récent d'un actif et retourne l'état/la décision actuelle en sortie structurée (action, système actif, niveaux stop/cible, régime, raison) — pas juste des statistiques agrégées sur tout l'historique.
+5. **Mesure honnête, sans présupposer que l'unification améliore le résultat** : backtest le protocole unifié vs le moteur range seul (`recommended.py`) sur BTC/ETH/BNB/SOL, 4 profils. Le principe du projet s'applique sans exception : le résultat est rapporté tel quel, meilleur ou pire — ce n'est pas parce que c'est "la version finale" qu'elle doit gagner.
+
+**Ce que ce chantier NE fait PAS** (hors périmètre explicite, pour ne pas dériver) : pas de diversification/Cluster Technique dans le routeur (reste un sleeve séparé, effet marginal déjà mesuré comme quasi nul) ; pas d'automatisation d'exécution (toujours Phase 1, signal + décision humaine) ; pas de nouvelle donnée OOS (limite déjà documentée comme structurelle, cf. `CONFIGURATION_RECOMMANDEE.md` section 4bis).
+
 ---
 
 ## Document maître de couverture des enseignements
