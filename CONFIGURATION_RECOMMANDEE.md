@@ -434,7 +434,13 @@ règles RANGE, pas seulement du coût de la tendance), drawdown moyen -1,5 pt.
 BNB/TRES_AGRESSIF cumule maintenant 3 effets défavorables (stop D1 large +
 "+Reverse" + campagnes tendance qui n'aboutissent jamais) — retour -42,6%,
 **drawdown -72,5%** — à éviter en usage réel sur ce couple actif/profil
-précis. Rapporté tel quel, pas maquillé en amélioration.
+précis. Rapporté tel quel, pas maquillé en amélioration. **Approfondi par
+walk-forward (`code/walkforward_unified.py`)** : ce -72,5% agrégé sur 6 ans
+n'est PAS étalé — il vient d'**UNE SEULE année, 2021** (-45,9% de retour,
+-63,5% de drawdown sur cette seule année ; 6/7 années négatives au total
+pour ce couple). Conclusion actionnable, pas un simple chiffre à surveiller :
+**exclure BNB/TRES_AGRESSIF d'un usage réel** — le risque s'est déjà
+matérialisé une fois dans l'historique testé.
 
 **Sortie "décision live"** (répond à la demande "lire le jeu de données d'un
 actif pour en tirer les positions à prendre") : `unified_protocol.decide_now(h1_recent, profile_name, capital_eur=None)`

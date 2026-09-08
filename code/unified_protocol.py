@@ -391,7 +391,7 @@ def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profil
 
 
 def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
-                       record_state: bool = False) -> dict:
+                       record_state: bool = False, start: int = 0, end: int = None) -> dict:
     """La boucle d'orchestration elle-même, séparée de `run_unified` sur le
     modèle `_prepare_features`/`_run_core` de `backtest_phase2_recommended.py`
     -- pour pouvoir être testée unitairement (`test_unified_protocol.py`) sur
@@ -414,7 +414,20 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
     `backtest_phase2_faithful.py` (CONSOLIDATION, cf. tête de fichier) :
     stop D1 (`ctx_support_d1`, pas le canal H4 natif), abstention Wall
     Street (bloque entrée fraîche ET renfort), +Reverse (`reverse_at_limit`)
-    UNIQUEMENT pour le profil TRES_AGRESSIF."""
+    UNIQUEMENT pour le profil TRES_AGRESSIF.
+
+    `start`/`end` (défaut : historique complet) : même principe que
+    `backtest_phase2_faithful.py::_run_core` -- permet à `walkforward_unified.py`
+    de découper l'équité par année SANS recalculer `feat` (déjà préparé une
+    fois sur l'historique complet par `_prepare_unified`). Contrairement à
+    `_run_core` (RANGE seul), les tableaux de `feat` ne sont PAS re-tranchés
+    ici : `_accumulation_active`/`_campaign_ev`/`try_open_campaign` indexent
+    `feat` par position ABSOLUE (le gate `i > WARMUP` de la table de tendance
+    compare à l'index absolu dans l'historique complet, pas à un warmup
+    relatif à la fenêtre) -- seule la boucle et la courbe d'équité sont
+    bornées à `[start, end)`, l'équité repartant à 1.0 à `start` (même
+    objectif "année catastrophique ?" que `walkforward_recommended.py`/
+    `walkforward_faithful.py`, pas une performance cumulée réaliste)."""
     p_range = PROFILES_V4[profile_name]
     p_trend = PROFILES_TREND[profile_name]
     if risk_pct is None:
@@ -424,7 +437,8 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
     o, high, low, c = feat["open"], feat["high"], feat["low"], feat["close"]
     score = feat["score"]
     wall_street_v = feat["wall_street_active"]
-    n = len(o)
+    n_total = len(o)
+    end = n_total if end is None else end
 
     def gate(i: int) -> bool:
         return bool(feat["gate_score"][i] >= 2 and feat["gate_regime"][i] != "EXCES")
@@ -443,11 +457,11 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
         RULE3_STREAK, RULE3_SIZE_MULT, risk_pct, range_state, extra_gate_fn=gate_extra,
     )
     gated_long_signal = np.array([
-        (score[i] >= 2) and gate(i) and not bool(wall_street_v[i]) for i in range(n)
+        (score[i] >= 2) and gate(i) and not bool(wall_street_v[i]) for i in range(n_total)
     ])
 
     equity = 1.0
-    equity_curve = np.empty(n)
+    equity_curve = np.empty(end - start)
     equity_curve[0] = equity
 
     tranches: list = []
@@ -459,7 +473,7 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
     n_trend_campaigns_opened = 0
     n_range_fresh_entries = 0
 
-    for i in range(1, n):
+    for i in range(max(1, start + 1), end):
         # ---- 0) "+Reverse" TENDANCE (H10, trend_table.py) en cours ----
         if trend_reverse is not None:
             closed_r, fee_r, pnl_r = step_reverse(trend_reverse, i, high, low, c)
@@ -562,7 +576,7 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
             mtm += (c[i] - campaign["entry"]) / campaign["entry"] * campaign["remaining"]
         if trend_reverse is not None:
             mtm += (trend_reverse["entry"] - c[i]) / trend_reverse["entry"] * trend_reverse["frac"]
-        equity_curve[i] = equity * (1 + mtm)
+        equity_curve[i - start] = equity * (1 + mtm)
 
     trades_arr = np.array(trades) if trades else np.array([])
     eq_series = pd.Series(equity_curve)
@@ -581,7 +595,7 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
 
     if record_state:
         result["live_state"] = _build_live_state(
-            feat, i=n - 1, tranches=tranches,
+            feat, i=end - 1, tranches=tranches,
             range_reverses=range_reverses, campaign=campaign, trend_reverse=trend_reverse,
         )
     return result
