@@ -17,16 +17,43 @@ il pointe vers eux et tranche.
 `COUVERTURE_ENSEIGNEMENTS.md`, redit ici car c'est le pivot de cette tâche
 précise) : la performance du proxy ne sert **jamais** à décider si un élément
 documenté du corpus doit être implémenté — c'est acté, ce n'est pas le sujet
-ici. Cette synthèse répond à une question **différente et plus étroite** :
-parmi ce qui est **déjà implémenté et déjà mesuré**, quel réglage par défaut
-recommander pour un usage futur (Phase 3) ? Choisir un défaut par
-performance mesurée n'est pas la même chose que rejeter un élément du corpus
-— exactement la distinction déjà appliquée par ce projet à `use_mtf_stop`,
-`use_fib_gate`, etc. (gardés optionnels, jamais supprimés).
+ici.
+
+**CORRECTION (8 sept. 2026, rappel direct de l'utilisateur en tant que
+directeur)** : *"nous ne nous fions pas aux résultats du Proxy pour décider
+d'utiliser ou non la propriété intellectuelle de Philippe, nous l'utilisons
+dans tous les cas."* Ce document appliquait jusqu'ici une distinction
+("choisir un défaut par performance mesurée n'est pas la même chose que
+rejeter un élément du corpus") qui semblait légitime pour de VRAIES
+hypothèses d'implémentation (le corpus est silencieux sur le "comment"),
+mais qui a été appliquée À TORT à des **règles littérales du corpus** dans
+4 des 10 décisions ci-dessous (items 3, 6, 8, 10 — vérifié source par
+source, pas supposé, cf. `PLAN.md` pour le détail complet des citations) :
+désactivées par défaut sur la seule base d'une contre-performance mesurée
+sur le proxy, exactement le raisonnement interdit. **`code/backtest_phase2_faithful.py`**
+(nouveau moteur, `run_faithful`) active ces règles SANS CONDITION — c'est
+CE moteur, pas `recommended.py` seul, qui doit être considéré comme le
+protocole RANGE à utiliser opérationnellement. `recommended.py` reste décrit
+ci-dessous tel quel (son propre chiffre de référence n'est pas invalidé, il
+documente une combinaison différente, toujours utile comme point de
+comparaison), mais **n'est plus "la config à déployer"** — cf. section 5ter
+plus bas pour le détail complet de la correction et le résultat honnête
+mesuré.
+
+Cette synthèse répond par ailleurs à une question **différente et plus
+étroite**, qui elle reste valide : parmi les éléments **génuinement
+ambigus** (le corpus ne précise pas comment les appliquer, pas seulement
+"ça marche moins bien" — items 4/5 ci-dessous, gate Fibonacci et gate
+Andrews Pitchfork), quel réglage par défaut recommander pour un usage futur
+(Phase 3) ? Choisir un défaut par performance mesurée reste légitime pour
+CES deux-là — exactement la distinction que ce projet continue d'appliquer,
+mais restreinte à ce qui est vraiment une hypothèse à nous.
 
 Le moteur qui implémente cette configuration : `code/backtest_phase2_recommended.py`
 (+ `code/walkforward_recommended.py`, `code/oos_xrp_recommended.py`,
-`code/test_backtest_phase2_recommended.py`, 7/7 tests).
+`code/test_backtest_phase2_recommended.py`, 7/7 tests). Le moteur à utiliser
+opérationnellement : `code/backtest_phase2_faithful.py` (cf. CORRECTION
+ci-dessus et section 5ter).
 
 ---
 
@@ -36,29 +63,29 @@ Le moteur qui implémente cette configuration : `code/backtest_phase2_recommende
 |---|---|---|---|
 | 1 | Cycle causal + structure causale (P0/P0-bis) | **ON, non négociable** | Déjà la seule version en production (`proxy_v2.py::add_proxy_v2_score`, `compute_swing_low_confirmed`) — aucune alternative batch n'est proposée par ce document |
 | 2 | Gate MTF | **Hebdomadaire seul ("UT+2 strict"), D1 sauté comme gate de tendance** | `phase2_ut2_results.csv` : D1 seul WR 42,4%/PF 1,81/retour moyen +85,2% (446 trades) vs **UT+2 strict WR 42,1%/PF 2,14/retour moyen +133,2%** (428 trades) — meilleur retour ET profit factor que D1 seul, sans réduire l'échantillon autant que "D1 ET Hebdo" (193 trades, PF 2,43 mais retour +64,9% seulement — pas la règle littérale du corpus, cf. `backtest_phase2_ut2.py`) |
-| 3 | Stop cross-timeframe réel (`use_mtf_stop`) | **OFF** | `MTF_CROSS_VALIDATION_H4_D1.md` : dégrade le ratio retour/drawdown dans **13/16** combinaisons actif×profil, malgré une réduction de drawdown absolu dans 16/16 (sizing à risque fixe, position mécaniquement plus petite) |
-| 4 | Fibonacci gate | **OFF** | `phase2_fib_results.csv` : dégrade **32/32** configurations (retour moyen -13,8% vs +107,8% baseline) |
-| 5 | Andrews Pitchfork gate | **OFF** | `phase2_patterns_results.csv` : dégrade nettement (retour médian 18% vs 212% référence, négatif sur ETH -9,5% à -21,9%) — **hypothèse de gating retenue ici qui est en cause** (le corpus documente le rôle/le chiffre de l'outil, pas comment l'utiliser comme filtre d'entrée), pas une conclusion sur le pattern géométrique lui-même — piste ouverte, non refermée |
-| 6 | Wall Street (abstention élargissement) | **OFF** | `phase2_patterns_results.csv` : effet quasi neutre (WR 38,2% vs 38,9%, PF 1,57 vs 1,53) — coût d'implémentation faible mais bénéfice net nul ; argument retenu : ne pas ajouter de surface de code sans bénéfice démontré, cohérent avec "le moteur le plus simple compte tenu des choix" |
-| 7 | Canal manuel comme stop | **OFF** | `phase2_patterns_results.csv` : change le profil risque/récompense (WR -9,5 pt, retour médian plus élevé) sans être strictement meilleur — alternative de style, pas un remplacement validé ; le comportement le plus simple/le plus testé (canal EMA±ATR natif) reste la référence |
-| 8 | Diversification / Cluster Technique | **OFF** | `phase2_diversification_results.csv` : effet marginal isolé (pyramidalisation neutralisée des deux côtés) proche de zéro et mixte (+0,2/+0,3/-0,2/-0,1 pt BTC/ETH/BNB/SOL) — pas de bénéfice net démontré |
+| 3 | Stop cross-timeframe réel (`use_mtf_stop`) | **OFF dans CE moteur (`recommended.py`) — ON sans condition dans `backtest_phase2_faithful.py`** | Règle LITTÉRALE (`TRADING_LESSONS_BREAKOUT_RATIO11.md` #12 : *"Stop-loss = clôture la plus basse du canal de tendance de l'UT+1"*), pas une hypothèse — `MTF_CROSS_VALIDATION_H4_D1.md` (dégrade le ratio retour/drawdown dans 13/16 combinaisons, malgré une réduction de drawdown absolu dans 16/16) documentait une contre-performance mesurée, jamais un motif légitime pour ne pas l'utiliser. Cf. CORRECTION ci-dessus/section 5ter |
+| 4 | Fibonacci gate | **OFF** | `phase2_fib_results.csv` : dégrade **32/32** configurations (retour moyen -13,8% vs +107,8% baseline) — **hypothèse d'implémentation À NOUS, pas une règle littérale pour CE protocole** : la règle Fibonacci existe bien dans le corpus (23-38%/38-61%) mais pour valider un pullback de TENDANCE, déjà implémentée sans condition dans `trend_table.py` ; l'appliquer EN PLUS comme filtre d'entrée sur la table RANGE est une extrapolation à nous, légitimement réglable par performance mesurée |
+| 5 | Andrews Pitchfork gate | **OFF** | `phase2_patterns_results.csv` : dégrade nettement (retour médian 18% vs 212% référence, négatif sur ETH -9,5% à -21,9%) — **hypothèse de gating retenue ici qui est en cause** (le corpus documente le rôle/le chiffre de l'outil, pas comment l'utiliser comme filtre d'entrée), pas une conclusion sur le pattern géométrique lui-même — piste ouverte, non refermée. Légitimement réglable, contrairement aux items 3/6/8/10 |
+| 6 | Wall Street (abstention élargissement) | **OFF dans CE moteur — ON sans condition dans `backtest_phase2_faithful.py`** | Règle LITTÉRALE (#3/#4 : *"aucun outil ne fonctionne, arrêter tout"*, abstention TOTALE prescrite, pas une prudence optionnelle — seule la définition NUMÉRIQUE du pattern est une hypothèse, pas le comportement une fois détecté). `phase2_patterns_results.csv` (effet quasi neutre, WR 38,2% vs 38,9%) documentait juste l'absence d'effet mesuré, jamais un motif légitime de ne pas l'activer. Cf. CORRECTION ci-dessus/section 5ter |
+| 7 | Canal manuel comme stop | **OUVERT, non combiné pour une raison différente des items 3/6/8/10** | Règle LITTÉRALE elle aussi (construction géométrique Supports→Apex→Tangente, #3), mais mesurée jusqu'ici SEULEMENT sur le timeframe natif H4 (`phase2_patterns_results.csv`) — alors que le stop UT+1 (item 3) exige le canal du timeframe SUPÉRIEUR (D1). Combiner proprement les deux exigerait de reconstruire le canal manuel SUR D1 (jamais fait) et de trancher lequel des deux stops prime en cas de désaccord, ce que le corpus ne précise pas — non résolu ici pour ne pas inventer cette résolution silencieusement (cf. tête de fichier `backtest_phase2_faithful.py`), PAS parce que le backtest le juge "pas strictement meilleur" |
+| 8 | Diversification / Cluster Technique | **OFF dans CE moteur — sleeve PARALLÈLE toujours actif par ailleurs (`diversification.py`)** | Règle LITTÉRALE (`TRADING_LESSONS_CLUSTERS_PRIX.md` #16 : *"1% sur la pattern breakout/pullback + 1% sur la pattern de moyenne mobile... jouer les deux"*), pas une hypothèse. `phase2_diversification_results.csv` (effet marginal isolé mesuré) documentait juste un résultat de backtest, jamais un motif légitime de ne pas l'utiliser — ce sleeve tourne de façon indépendante (risque fixe 1%+1%, jamais fusionné dans `recommended.py`/`faithful.py`), cf. `diversification.py` |
 | 9 | Capital par palier | **Paramètre, pas une décision ON/OFF de signal** | `capital_tiers.py::effective_sizing`, exposé via `run_recommended(..., capital_eur=...)`. Absent (`None`) → risk_pct du profil choisi, inchangé |
-| 10 | +Reverse (table range, TRES_AGRESSIF) | **OFF par défaut** (paramètre disponible) | `phase2_v7_reverse_results.csv` : mixte (3/4 actifs améliorés +2,2 à +18,7 pts, BNB dégradé -6,1 pts) et spécifique au seul profil TRES_AGRESSIF selon le corpus (RULES_EXTRACTION §3) — pas un défaut applicable aux 4 profils. Exposé via `reverse_at_limit=True` pour qui veut l'activer sur ce profil précis |
+| 10 | +Reverse (table range, TRES_AGRESSIF) | **OFF dans CE moteur — ON sans condition (profil TRES_AGRESSIF uniquement) dans `backtest_phase2_faithful.py`** | Règle LITTÉRALE et SCOPÉE (`RULES_EXTRACTION.md` §3, ligne "Très agressif" uniquement : *"TP100%+Reverse"*). `phase2_v7_reverse_results.csv` (résultat mixte, 3/4 actifs améliorés, BNB dégradé -6,1 pts) documentait une performance mesurée, jamais un motif légitime de ne pas l'utiliser pour ce profil précis. Cf. CORRECTION ci-dessus/section 5ter |
 
 **Hors périmètre DE CE MOTEUR précis (`backtest_phase2_recommended.py`),
-mais désormais routé ailleurs** : la table "trade de tendance" à 5 étapes
-(`trend_table.py`) n'est toujours pas intégrée À CE FICHIER — reste
-structurellement incompatible avec `position_engine.py` (justifié en tête
-de `trend_table.py`), et son propre résultat mesuré montre que 100% des
-campagnes se referment en étape Accumulation sur ce jeu de données
-(`phase2_trend_table_results.csv`) — les étapes 2-5 jamais exercées
-empiriquement. L'intégrer ICI ajouterait un second moteur parallèle sans
-preuve d'apport, contraire au principe "un chiffre de référence unique" de
-cette synthèse précise. **Ceci ne veut plus dire que les deux moteurs
-restent jamais aiguillés entre eux** : cf. section 5bis ci-dessous
-(`code/unified_protocol.py`), qui répond à la question "les moteurs
-sont-ils unifiés ?" — ce fichier (`backtest_phase2_recommended.py`) reste
-inchangé et continue de documenter le moteur RANGE seul.
+mais toujours utilisé ailleurs, sans condition** : la table "trade de
+tendance" à 5 étapes (`trend_table.py`) n'est toujours pas intégrée À CE
+FICHIER précis — reste structurellement incompatible avec
+`position_engine.py` (justifié en tête de `trend_table.py`, une machine à
+états différente, pas une question de performance). **Ce n'est PAS parce
+que son propre résultat mesuré (100% des campagnes closes en étape
+Accumulation, `phase2_trend_table_results.csv`) serait un motif de ne pas
+l'utiliser** — cf. correction de tête de document : la table de tendance
+EST utilisée, sans condition, via `code/unified_protocol.py` (section 5bis
+ci-dessous), qui répond "oui" à la question "les moteurs sont-ils unifiés ?"
+— ce fichier (`backtest_phase2_recommended.py`) reste inchangé et continue
+de documenter le moteur RANGE seul, pour comparaison, pas parce que la
+table de tendance serait optionnelle.
 
 ---
 
@@ -457,6 +484,79 @@ leur exclusivité). Limites documentées, pas cachées :
   patterns différente (diversification statistique, cf. correction
   ci-dessus) ; l'étendre tel quel ici serait une extrapolation non mesurée
   (choix U5).
+
+---
+
+## 5ter. Config FIDÈLE — les règles littérales du corpus, activées sans condition
+
+Corrige une erreur de conception présente dans ce document depuis sa
+rédaction initiale (cf. "CORRECTION" en tête de document) : 4 des 10
+décisions ON/OFF ci-dessus (items 3, 6, 8, 10) désactivaient par défaut des
+**règles littérales du corpus** sur la seule base d'une contre-performance
+mesurée sur le proxy — le principe fondateur du projet ("la performance du
+proxy ne décide jamais d'utiliser ou non l'IP de Philippe") s'applique à
+elles aussi, pas seulement à la table de tendance/diversification déjà
+traitées en section 5bis/ailleurs.
+
+**`code/backtest_phase2_faithful.py`** (`run_faithful`) active SANS
+CONDITION les 3 règles littérales concernant CE moteur précis (moteur
+RANGE) :
+1. **Stop cross-timeframe réel UT+1** — le stop utilisé est TOUJOURS celui
+   du canal D1 (`ctx_support` D1, jamais le canal H4 natif).
+2. **Abstention Wall Street** — bloque TOUJOURS toute entrée fraîche ET
+   tout renfort dès que la structure en élargissement est détectée, aucun
+   paramètre pour la désactiver.
+3. **+Reverse** — activé SANS CONDITION mais UNIQUEMENT pour le profil
+   TRES_AGRESSIF (scope littéral du corpus, `RULES_EXTRACTION.md` §3) ; les
+   3 autres profils n'ont pas cette mention, donc pas ce comportement.
+
+(La diversification/Cluster Technique — item 8 — reste un sleeve PARALLÈLE
+indépendant, cf. `diversification.py`, toujours utilisable sans condition en
+plus de ce moteur ; la table de tendance — item "hors périmètre" — est
+utilisée sans condition via `code/unified_protocol.py`, section 5bis. Le
+canal manuel — item 7 — reste une piste ouverte non résolue, cf. tableau
+ci-dessus et tête de fichier `backtest_phase2_faithful.py`, pour une raison
+d'ambiguïté d'implémentation non résolue par le corpus, PAS une question de
+performance.)
+
+**Résultat mesuré, honnête, comparé côte à côte à `recommended.py`**
+(BTC/ETH/BNB/SOL × 4 profils, `code/backtest_phase2_faithful_results.csv`) :
+
+| Métrique (delta faithful − recommended) | Moyenne sur 16 combinaisons |
+|---|---|
+| Retour total | **-77,3 points** (15/16 combinaisons dégradées) |
+| Max drawdown | **+7,5 points** (15/16 combinaisons AMÉLIORÉES — drawdown moins profond) |
+| Profit factor | +0,32 (globalement stable/légèrement amélioré) |
+| Win rate | +0,08 pt (quasi inchangé) |
+
+Lecture honnête, pas maquillée : le stop UT+1 (D1) est mécaniquement plus
+large que le canal H4 natif sur la plupart des configurations — à
+`risk_pct` fixe, un stop plus large impose une position plus petite
+(distance au stop × taille = risque constant), donc un retour cumulé plus
+faible ET un drawdown moins profond. Cohérent avec `MTF_CROSS_VALIDATION_H4_D1.md`
+(déjà mesuré isolément : "réduction de drawdown absolu dans 16/16"). Ce
+n'est PAS un résultat qui remet en cause la décision d'activer ces règles
+(actées comme littérales, pas comme un choix de performance) — c'est le
+prix mesuré, honnêtement rapporté, de suivre le corpus à la lettre plutôt
+que l'optimum local du proxy.
+
+**Une combinaison a été vérifiée, pas seulement rapportée** : BNB/TRES_AGRESSIF
+dégrade fortement retour (-122,9 pts) ET drawdown (-27,9 pts) simultanément —
+ablation ciblée (chaque règle isolée, puis combinaisons deux à deux)
+confirme que c'est l'INTERACTION entre le stop D1 (plus large) et le
+mécanisme +Reverse (dont le stop/la cible se calibrent sur la distance au
+stop de la tranche qui vient de se fermer) qui produit ce résultat
+spécifique sur ce couple actif/profil — chaque règle isolée se comporte
+comme attendu (Wall Street seul : quasi neutre, -36,7%→-38,4% dd,
+102,0%→105,3% retour ; D1 seul : dd et retour tous deux réduits, cohérent
+avec le reste du tableau). Pas un bug, un effet d'interaction réel et
+défavorable sur cette combinaison précise, rapporté tel quel plutôt que
+masqué dans une moyenne.
+
+Moteur : `code/backtest_phase2_faithful.py`, `code/test_backtest_phase2_faithful.py`
+(5/5 tests), 15e moteur de `code/run_all.py` (alias `faithful`).
+
+---
 
 ## 6. Pour aller plus loin (documents à consulter, pas à dupliquer)
 

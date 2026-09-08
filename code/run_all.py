@@ -31,8 +31,8 @@ CE QUE CE SCRIPT N'EST PAS
   données historiques déjà téléchargées (principe acté, PLAN.md en tête de
   document).
 
-MOTEURS COUVERTS (13 scripts `backtest_phase2_*.py` + `unified_protocol.py`
-de `code/`, 14 moteurs au total)
+MOTEURS COUVERTS (14 scripts `backtest_phase2_*.py` + `unified_protocol.py`
+de `code/`, 15 moteurs au total)
 ----------------------------------------------------------------
 Alias utilisable avec --only, module, description, CSV produit :
 
@@ -106,6 +106,17 @@ Alias utilisable avec --only, module, description, CSV produit :
                                         recommended.py seul (colonnes côte à
                                         côte). H4 x 4 profils x 4 symboles.
                                         -> backtest_phase2_unified_results.csv
+  faithful       backtest_phase2_faithful  Config FIDÈLE (moteur RANGE) :
+                                        active SANS CONDITION 3 règles
+                                        littérales du corpus jusqu'ici
+                                        désactivées par erreur sur la base de
+                                        la performance du proxy (stop
+                                        cross-timeframe réel UT+1, abstention
+                                        Wall Street, +Reverse scopé au profil
+                                        TRES_AGRESSIF). Compare à recommended.py
+                                        seul (colonnes côte à côte). H4 x 4
+                                        profils x 4 symboles.
+                                        -> backtest_phase2_faithful_results.csv
 
 Volontairement HORS PÉRIMÈTRE de ce script (pas des moteurs de backtest
 indépendants, mais des analyses dérivées qui lisent/comparent des CSV déjà
@@ -150,7 +161,7 @@ sur cette machine, pas une estimation)
   TOTAL des 12 moteurs pré-existants : 158.8s (~2,6 min) -- BTC/ETH/BNB/SOL,
   plusieurs années de H1 rééchantillonné en H4/D1/Hebdo (~50-57k bougies H1
   par actif). +7.0s pour "recommended" (mesuré séparément, cf. ci-dessus),
-  +12.9s pour "unified", soit ~179s (~3,0 min) pour les 14 moteurs.
+  +12.9s pour "unified" (+durée de "faithful"), soit ~15 moteurs au total.
 
 Nettement plus rapide qu'on ne le craignait a priori : ces moteurs sont tous
 vectorisés (pandas/numpy), pas de boucle Python coûteuse par bougie. Les
@@ -259,6 +270,13 @@ ENGINES: list[Engine] = [
            "d'exclusivite mutuelle, retiree car non justifiee par le corpus). "
            "Compare aussi a recommended.py seul cote a cote. H4 x 4 profils x 4 symboles",
            "backtest_phase2_unified_results.csv"),
+    Engine("faithful", "backtest_phase2_faithful",
+           "Config FIDELE (moteur RANGE) : active SANS CONDITION 3 regles "
+           "litterales du corpus jusqu'ici desactivees a tort sur la base de "
+           "la performance du proxy (stop cross-timeframe reel UT+1, "
+           "abstention Wall Street, +Reverse scope au profil TRES_AGRESSIF). "
+           "Compare a recommended.py seul cote a cote. H4 x 4 profils x 4 symboles",
+           "backtest_phase2_faithful_results.csv"),
 ]
 
 ENGINES_BY_ALIAS = {e.alias: e for e in ENGINES}
@@ -269,7 +287,7 @@ ENGINES_BY_ALIAS = {e.alias: e for e in ENGINES}
 FAST_FIRST_ORDER = [
     "base", "v4", "v5", "v6", "v7", "v7_reverse",
     "capital_tiers", "diversification", "fib", "trend", "ut2", "patterns",
-    "recommended", "unified",
+    "recommended", "faithful", "unified",
 ]
 
 
