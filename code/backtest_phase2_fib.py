@@ -36,7 +36,7 @@ import sys
 sys.path.insert(0, ".")
 from backtest_phase2 import FEE, load_h1, resample, EMA_SLOW
 from backtest_phase2_v7 import prepare, attach_higher_context, run_v7, PROFILES_V4
-from position_engine import run_position_engine
+from position_engine import run_position_engine, make_open_tranche_fn
 from fibonacci import add_fibonacci_columns
 
 MIN_BORDERS = 3
@@ -119,51 +119,26 @@ def run_v7_fib(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_ga
 
     state = {"last_pyramid_high": -np.inf}
 
-    def open_tranche_fn(i, tranches, win_streak):
-        long_signal_prev = score[i - 1] >= 2
-        mature = (not np.isnan(n_borders_v[i - 1])) and n_borders_v[i - 1] >= MIN_BORDERS
+    def gate_extra(j):
         # Validation croisée D1 : le contexte (référence) doit être aligné,
         # et ni le H4 ni le D1 ne doivent être en régime EXCES
-        d1_aligned = (ctx_score[i - 1] >= 2) if use_mtf_gate else True
-        d1_not_excess = (ctx_regime[i - 1] != "EXCES") if use_mtf_gate else True
-        # Filtre Fibonacci (nouveau, cf. docstring de tête) : entrée UNIQUEMENT
-        # si le retracement de la bougie précédente est en zone favorable —
-        # condition d'ENTRÉE seulement, jamais de sortie (cf. justification en tête de fichier)
-        fib_ok = bool(fib_favorable_v[i - 1]) if use_fib_gate else True
+        d1_aligned = (ctx_score[j] >= 2) if use_mtf_gate else True
+        d1_not_excess = (ctx_regime[j] != "EXCES") if use_mtf_gate else True
+        # Filtre Fibonacci (cf. docstring de tête) : condition d'ENTRÉE
+        # seulement, jamais de sortie. Asymétrique entrée fraîche/renfort
+        # (contrairement à v6, mais pour une raison différente) :
+        # `fib_gate_pyramid` décide si le renfort y est aussi soumis.
+        fib_ok = bool(fib_favorable_v[j]) if use_fib_gate else True
+        base = d1_aligned and d1_not_excess
+        fresh_extra = base and fib_ok
+        pyramid_extra = base and (fib_ok if fib_gate_pyramid else True)
+        return fresh_extra, pyramid_extra
 
-        valid_inputs = (
-            not np.isnan(atr_v[i - 1]) and not np.isnan(ctx_support_v[i - 1])
-            and not np.isnan(local_range_v[i - 1]) and local_range_v[i - 1] > 0
-            and not np.isnan(context_range_v[i - 1]) and context_range_v[i - 1] > 0
-        )
-        gated_signal = long_signal_prev and d1_aligned and d1_not_excess
-        fresh_gated = gated_signal and fib_ok
-        pyramid_gated = gated_signal and (fib_ok if fib_gate_pyramid else True)
-        is_fresh_entry = (i > warmup and len(tranches) == 0 and fresh_gated and mature and valid_inputs)
-        is_pyramid_add = (
-            i > warmup and 0 < len(tranches) < MAX_TRANCHES and pyramid_gated and valid_inputs
-            and high[i - 1] > state["last_pyramid_high"]
-        )
-        if not (is_fresh_entry or is_pyramid_add):
-            return None
-
-        entry_price = o[i]
-        stop_price = min(ctx_support_v[i - 1], entry_price * 0.999)
-        stop_pct = (entry_price - stop_price) / entry_price
-        risk_pct = p["risk_pct"]
-        if win_streak >= RULE3_STREAK:
-            risk_pct *= RULE3_SIZE_MULT
-        size_frac = min(1.0 / MAX_TRANCHES, risk_pct / stop_pct) if stop_pct > 0 else 0.0
-        if size_frac <= 0:
-            return None
-        state["last_pyramid_high"] = max(state["last_pyramid_high"], high[i - 1]) if is_pyramid_add else high[i - 1]
-        return {
-            "entry": entry_price, "stop": stop_price, "remaining": size_frac,
-            "val_done": False, "conf_done": False, "pnl_accum": 0.0,
-            "val_px": entry_price + local_range_v[i - 1],
-            "conf_px": entry_price + context_range_v[i - 1],
-            "lim_px": entry_price + 1.5 * context_range_v[i - 1],
-        }
+    open_tranche_fn = make_open_tranche_fn(
+        atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v, high, o, score,
+        warmup, MIN_BORDERS, MAX_TRANCHES, RULE3_STREAK, RULE3_SIZE_MULT, p["risk_pct"], state,
+        extra_gate_fn=gate_extra,
+    )
 
     # NB : PAS de fib_ok ici (cf. docstring de tête) — seul le gate MTF est
     # répercuté sur le signal de sortie, comme dans v7 ; le gate Fibonacci ne
