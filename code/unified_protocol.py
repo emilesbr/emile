@@ -95,6 +95,24 @@ and pyramiding_allowed`, `pyramiding_allowed = feat["regime"][j] in
 `CONFIGURATION_RECOMMANDEE.md`.
 
 ================================================================================
+CORRECTION CONFLIT MTF (mobilisation multi-agents, 3e round -- design puis
+implémentation, audit systématique de fidélité IP) -- côté RANGE ne
+vérifiait jamais si le contexte D1 était lui-même en range
+================================================================================
+`TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` (source #5) désigne, dans son
+propre texte, une règle comme *"l'erreur numéro un"* : *"Ne jamais trader
+une borne de range si un range d'unité de temps supérieure est déjà actif."*
+Détail complet du raisonnement (niveau D1 retenu plutôt qu'Hebdomadaire,
+application uniforme entrée+renfort faute de distinction textuelle, gate
+Fibonacci littéral délibérément PAS implémenté ce cycle) : cf. "CORRECTION
+CONFLIT MTF" en tête de `backtest_phase2_faithful.py`. Résumé ici : `regime_d1`
+(`ctx["D1"]["regime"]`, déjà calculé pour le stop `ctx_support_d1` ci-dessus,
+jamais lu pour cette règle) ajouté à `feat`, `gate()` de `_run_core_unified`
+bloque désormais aussi quand `regime_d1` est RANGE_NEUTRE ou
+RANGE_TENDANCIEL. Impact chiffré honnête : cf. `PLAN.md`/
+`CONFIGURATION_RECOMMANDEE.md`.
+
+================================================================================
 CORRECTION (8 sept. 2026) -- l'exclusivité mutuelle par actif a été RETIRÉE
 ================================================================================
 Version initiale de ce fichier : au plus UN système (RANGE ou TENDANCE)
@@ -325,6 +343,7 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
     feat = dict(range_feat)
     feat.update({
         "ctx_support_d1": ctx_support_d1,
+        "regime_d1": ctx["D1"]["regime"],   # cf. CORRECTION CONFLIT MTF en tête de fichier
         "wall_street_active": wall_street_active,
         "regime": trend_df["regime"].values,
         "ctx_resistance": trend_df["ctx_resistance"].values,
@@ -489,9 +508,14 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
         # bloquer côté RANGE -- "Bulle/Excès -> NE PAS TRADER"
         # (RULES_EXTRACTION.md §1) porte sur le marché qu'on trade, pas
         # seulement sur son contexte Hebdomadaire.
+        # CORRECTION CONFLIT MTF (cf. tête de fichier) : ne jamais ouvrir une
+        # tranche RANGE H4 si le contexte immédiatement supérieur (D1) est
+        # LUI-MÊME en régime range (Neutre ou Tendanciel) -- source #5,
+        # "L'erreur numéro un".
+        d1_not_range = feat["regime_d1"][i] not in ("RANGE_NEUTRE", "RANGE_TENDANCIEL")
         return bool(
             feat["gate_score"][i] >= 2 and feat["gate_regime"][i] != "EXCES"
-            and feat["regime"][i] != "EXCES"
+            and feat["regime"][i] != "EXCES" and d1_not_range
         )
 
     def gate_extra(j):

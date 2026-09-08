@@ -192,6 +192,7 @@ def _synthetic_pyramid_feat(n: int, regime_h4_value) -> dict:
         "gate_score": np.full(n, 10.0),
         "gate_regime": np.full(n, "TENDANCE", dtype=object),
         "regime_h4": np.full(n, regime_h4_value, dtype=object),
+        "regime_d1": np.full(n, "TENDANCE", dtype=object),   # jamais en range -- isole le test du gate CONFLIT MTF
         "wall_street_active": np.zeros(n, dtype=bool),
     }
 
@@ -227,6 +228,37 @@ def test_pyramid_renfort_allowed_when_h4_regime_tendance():
         f"{len(res['trace'])} tranche(s) ouverte(s) en régime TENDANCE, attendu plusieurs "
         "(le scénario synthétique est construit pour pyramider à chaque pas -- si un seul "
         "trade s'ouvre, la correction bloque aussi le renfort légitime, pas seulement l'illégitime)"
+    )
+
+
+def test_entry_blocked_when_d1_regime_is_range():
+    """CORRECTION CONFLIT MTF (cf. tête de fichier) : `TRADING_LESSONS_
+    MAITRISE_GRADIENT_RISQUE.md` désigne "ne jamais trader une borne de
+    range si un range d'unité de temps supérieure est déjà actif" comme
+    "l'erreur numéro un" -- sur un scénario synthétique par ailleurs
+    entièrement favorable (score/gate/maturité toujours vrais), AUCUN trade
+    ne doit s'ouvrir si le régime D1 est RANGE_NEUTRE à chaque bougie."""
+    n = WARMUP + 40
+    feat = _synthetic_pyramid_feat(n, regime_h4_value="TENDANCE")
+    feat["regime_d1"] = np.full(n, "RANGE_NEUTRE", dtype=object)
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) == 0, (
+        f"{len(res['trace'])} tranche(s) ouverte(s) alors que le régime D1 est RANGE_NEUTRE partout, "
+        "attendu 0 (le gate Conflit MTF doit bloquer TOUTE ouverture, entrée fraîche incluse)"
+    )
+
+
+def test_entry_allowed_when_d1_regime_is_tendance():
+    """Contrôle positif du test ci-dessus (sinon il pourrait passer
+    trivialement sur un moteur qui ne trade jamais) : le MÊME scénario,
+    régime D1 TENDANCE à chaque bougie, doit produire au moins un trade."""
+    n = WARMUP + 40
+    feat = _synthetic_pyramid_feat(n, regime_h4_value="TENDANCE")
+    feat["regime_d1"] = np.full(n, "TENDANCE", dtype=object)
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) >= 1, (
+        "aucun trade ouvert alors que le régime D1 est TENDANCE partout (scénario par ailleurs "
+        "entièrement favorable) -- le gate Conflit MTF bloque aussi le cas où il ne devrait pas"
     )
 
 

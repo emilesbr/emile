@@ -81,6 +81,7 @@ def _make_base_feat(n=N):
         "gate_score": np.full(n, np.inf),
         "gate_regime": np.full(n, "RANGE_NEUTRE", dtype=object),
         "regime": np.full(n, "RANGE_NEUTRE", dtype=object),
+        "regime_d1": np.full(n, "TENDANCE", dtype=object),   # jamais en range par défaut -- isole les tests du gate CONFLIT MTF (cf. tête de unified_protocol.py), overridé explicitement par les tests dédiés
         "ctx_resistance": np.full(n, 110.0),
         "ctx_high": np.full(n, 105.0),
         "local_high": np.full(n, 102.0),
@@ -237,8 +238,10 @@ def test_pure_range_sequence_matches_faithful_engine():
     feat_range_only = {k: feat[k] for k in range_keys}
     # "regime" (unified) et "regime_h4" (faithful) désignent la MÊME grandeur
     # (régime H4 natif) sous deux noms différents -- cf. CORRECTION EXCES H4
-    # dans les deux fichiers.
+    # dans les deux fichiers. "regime_d1" porte le même nom dans les deux
+    # fichiers (cf. CORRECTION CONFLIT MTF) -- copié tel quel.
     feat_range_only["regime_h4"] = feat["regime"]
+    feat_range_only["regime_d1"] = feat["regime_d1"]
 
     for profile in ("FAIBLE", "MODERE", "AGRESSIF", "TRES_AGRESSIF"):
         res_unified = _run_core_unified(feat, profile)
@@ -319,6 +322,51 @@ def test_range_pyramid_renfort_allowed_when_h4_regime_tendance():
     assert n_open > 1, (
         f"{n_open} tranche(s) RANGE ouverte(s) en régime TENDANCE, attendu plusieurs "
         "(contrôle positif : le renfort doit rester possible quand le corpus l'autorise)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# CORRECTION CONFLIT MTF (cf. tête de fichier) : côté RANGE, aucune tranche
+# (entrée fraîche ou renfort) ne doit s'ouvrir si le régime D1 (`feat
+# ["regime_d1"]`) est lui-même RANGE_NEUTRE/RANGE_TENDANCIEL -- source #5,
+# "l'erreur numéro un". Même scénario synthétique que la pyramidalisation-
+# régime (favorable à l'ouverture), régime H4 natif toujours TENDANCE (pour
+# isoler l'effet du D1 spécifiquement, indépendamment de EXCES-H4/
+# pyramidalisation-régime).
+# ---------------------------------------------------------------------------
+def _make_conflict_mtf_range_feat(regime_d1_value, n=N):
+    feat = _make_base_feat(n)
+    entry_i = WARMUP + 2
+    j_open = entry_i - 1
+    feat["score"][j_open:] = 2
+    for k in range(0, n - j_open):
+        idx = j_open + k
+        price = 100.0 * (1 + 0.001 * k)
+        feat["open"][idx] = price; feat["high"][idx] = price
+        feat["low"][idx] = price; feat["close"][idx] = price
+        feat["ctx_support_d1"][idx] = price - 5.0
+    feat["regime"][j_open:] = "TENDANCE"   # H4 natif jamais EXCES/RANGE_NEUTRE -- isole le test
+    feat["regime_d1"][j_open:] = regime_d1_value
+    return feat
+
+
+def test_range_entry_blocked_when_d1_regime_is_range():
+    feat = _make_conflict_mtf_range_feat("RANGE_NEUTRE")
+    res = _run_core_unified(feat, "MODERE", record_state=True)
+    n_open = len(res["live_state"]["range_tranches"])
+    assert n_open == 0, (
+        f"{n_open} tranche(s) RANGE ouverte(s) alors que le régime D1 est RANGE_NEUTRE, attendu 0 "
+        "(le gate Conflit MTF doit bloquer TOUTE ouverture, entrée fraîche incluse)"
+    )
+
+
+def test_range_entry_allowed_when_d1_regime_is_tendance():
+    feat = _make_conflict_mtf_range_feat("TENDANCE")
+    res = _run_core_unified(feat, "MODERE", record_state=True)
+    n_open = len(res["live_state"]["range_tranches"])
+    assert n_open >= 1, (
+        "aucune tranche RANGE ouverte alors que le régime D1 est TENDANCE (scénario par ailleurs "
+        "entièrement favorable) -- le gate Conflit MTF bloque aussi le cas où il ne devrait pas"
     )
 
 

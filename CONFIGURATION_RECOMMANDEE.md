@@ -438,12 +438,14 @@ BNB/TRES_AGRESSIF cumulait 3 effets défavorables (stop D1 large + "+Reverse"
 vérifiait plus le régime EXCES du H4 natif, cf. section "Correction EXCES-H4"
 ci-dessous) : retour **+24,5%**, drawdown **-27,1%**. **RE-régénérés après la
 correction pyramidalisation-régime** (cf. section dédiée ci-dessous) : retour
-**+27,9%**, drawdown **-27,0%** — mouvement modeste dans le même sens. Toujours le
+**+27,9%**, drawdown **-27,0%**. **RE-régénérés une 3e fois après la correction
+Conflit MTF** (cf. section 5quinquies) : retour **+22,0%**, drawdown **-25,2%**
+— mouvement modeste dans le même sens à chaque fois. Toujours le
 profil le plus faible des 16 combinaisons, mais plus catastrophique. **Approfondi par
 walk-forward (`code/walkforward_unified.py`)**, également régénéré : l'année
-2021, seule responsable du -72,5%/-45,9% agrégé, passe à **+6,1% de retour,
--8,8% de drawdown** (chiffres post pyramidalisation-régime ; +6,2%/-8,4% après
-EXCES-H4 seul). Conclusion actionnable révisée : **l'exclusion de
+2021, seule responsable du -72,5%/-45,9% agrégé, passe à **+5,2% de retour,
+-9,5% de drawdown** (chiffres post Conflit MTF ; +6,1%/-8,8% après
+pyramidalisation-régime seule, +6,2%/-8,4% après EXCES-H4 seul). Conclusion actionnable révisée : **l'exclusion de
 BNB/TRES_AGRESSIF n'est plus justifiée** — conservé comme profil à
 surveiller en priorité, pas à exclure.
 
@@ -595,15 +597,18 @@ section 5quater ci-dessous ; les deux lectures restent valides, aucun
 défaut changé, pour une raison d'ambiguïté d'implémentation non résolue par
 le corpus, PAS une question de performance.)
 
-**Résultat mesuré, honnête, comparé côte à côte à `recommended.py`**
+**Résultat mesuré, honnête, comparé côte à côte à `recommended.py`, RE-régénéré
+après les 3 corrections successives (EXCES-H4, pyramidalisation-régime, Conflit
+MTF — `recommended.py` lui-même inchangé par ces 3 corrections, cf. sections
+dédiées ci-dessus)**
 (BTC/ETH/BNB/SOL × 4 profils, `code/backtest_phase2_faithful_results.csv`) :
 
 | Métrique (delta faithful − recommended) | Moyenne sur 16 combinaisons |
 |---|---|
-| Retour total | **-77,3 points** (15/16 combinaisons dégradées) |
-| Max drawdown | **+7,5 points** (15/16 combinaisons AMÉLIORÉES — drawdown moins profond) |
-| Profit factor | +0,32 (globalement stable/légèrement amélioré) |
-| Win rate | +0,08 pt (quasi inchangé) |
+| Retour total | **-37,2 points** (15/16 combinaisons dégradées ; 1/16 — BNB/AGRESSIF — légèrement meilleure) |
+| Max drawdown | **+11,5 points** (16/16 combinaisons AMÉLIORÉES — drawdown moins profond) |
+| Profit factor | +0,09 (globalement stable) |
+| Win rate | -0,44 pt (quasi inchangé) |
 
 Lecture honnête, pas maquillée : le stop UT+1 (D1) est mécaniquement plus
 large que le canal H4 natif sur la plupart des configurations — à
@@ -616,18 +621,19 @@ n'est PAS un résultat qui remet en cause la décision d'activer ces règles
 prix mesuré, honnêtement rapporté, de suivre le corpus à la lettre plutôt
 que l'optimum local du proxy.
 
-**Une combinaison a été vérifiée, pas seulement rapportée** : BNB/TRES_AGRESSIF
-dégrade fortement retour (-122,9 pts) ET drawdown (-27,9 pts) simultanément —
-ablation ciblée (chaque règle isolée, puis combinaisons deux à deux)
-confirme que c'est l'INTERACTION entre le stop D1 (plus large) et le
-mécanisme +Reverse (dont le stop/la cible se calibrent sur la distance au
-stop de la tranche qui vient de se fermer) qui produit ce résultat
-spécifique sur ce couple actif/profil — chaque règle isolée se comporte
-comme attendu (Wall Street seul : quasi neutre, -36,7%→-38,4% dd,
-102,0%→105,3% retour ; D1 seul : dd et retour tous deux réduits, cohérent
-avec le reste du tableau). Pas un bug, un effet d'interaction réel et
-défavorable sur cette combinaison précise, rapporté tel quel plutôt que
-masqué dans une moyenne.
+**Note historique, pour ne pas induire en erreur** : la version initiale de
+ce document (avant les 3 corrections ci-dessus) rapportait ici une moyenne
+de -77,3 points de retour et signalait BNB/TRES_AGRESSIF comme une
+combinaison sortant fortement du lot (-122,9 pts de retour, interaction
+stop D1 × +Reverse confirmée par ablation à l'époque). **Ce chiffre n'est
+plus d'actualité** : BNB/TRES_AGRESSIF (68,3% de retour vs 77,0% pour
+`recommended.py`, soit -8,7 pts, et un drawdown MEILLEUR de +13,5 pts)
+n'est aujourd'hui plus un cas hors norme — les 3 corrections successives
+(en particulier EXCES-H4, qui bloquait auparavant beaucoup moins de
+tranches sur ce couple actif/profil précis) ont changé la composition des
+trades qui s'ouvrent au point de dissoudre cette interaction. Conservé ici
+par souci de traçabilité de la méthode (l'ablation d'alors était correcte
+sur les données d'alors), pas comme un résultat encore valide aujourd'hui.
 
 Moteur : `code/backtest_phase2_faithful.py`, `code/test_backtest_phase2_faithful.py`
 (5/5 tests), 15e moteur de `code/run_all.py` (alias `faithful`).
@@ -635,8 +641,10 @@ Moteur : `code/backtest_phase2_faithful.py`, `code/test_backtest_phase2_faithful
 **Walk-forward, fait ce cycle** (`code/walkforward_faithful.py`, sur le même
 modèle que `walkforward_recommended.py`, jamais fait jusqu'ici sur ce moteur) :
 résultat rassurant et STRICTEMENT MEILLEUR que l'ancien walk-forward de
-`recommended.py` sur chaque métrique — pire drawdown annuel **-8,1%**
-(contre -24,8%), pire retour annuel **-2,8%** (contre -14,5%), moins
+`recommended.py` sur chaque métrique — pire drawdown annuel **-8,2%**
+(régénéré après les 3 corrections successives, était -8,1% avant, contre -24,8%
+pour `recommended.py`), pire retour annuel **-3,7%** (était -3,3% puis -2,8%,
+contre -14,5%), moins
 d'années négatives sur BNB (1/7 contre 3/7). Aucune année catastrophique sur
 BTC/ETH/BNB/SOL (2020-2026). Cohérent avec le profil "retour réduit mais
 drawdown nettement réduit" déjà documenté en agrégé ci-dessus. **OOS XRP, fait (cycle suivant, mobilisation multi-agents)** : `code/oos_xrp_faithful.py`.
@@ -665,15 +673,15 @@ mesurée seulement sur H4 natif, jamais reconstruite sur D1.
 cette alternative. Couverture confirmée : 97,77-99,53% des barres D1 selon
 actif/année (BTC/ETH/BNB/SOL, walk-forward 2020-2026) — la reconstruction
 fonctionne sans adaptation. **Résultat, comparaison directe, RE-régénéré
-après la correction pyramidalisation-régime** (hérité automatiquement via
-`_run_core` de `faithful.py`, cf. tableau "2e pattern récurrent" occurrence
-#4 de `PLAN.md`)
+après les corrections pyramidalisation-régime PUIS Conflit MTF** (hérité
+automatiquement via `_run_core` de `faithful.py`, cf. `PLAN.md`)
 (`code/backtest_phase2_faithful_manual_channel_walkforward_results.csv`,
-112 lignes actif×année) : canal manuel D1 retour total moyen **9,91%**
-(était 10,46%) contre **4,02%** (était 5,31%) pour EMA±ATR D1 (stop actif),
-mais aussi drawdown moyen plus profond, **-6,21%** (était -6,58%) contre
-**-3,58%** (était -4,14%). Ni l'un ni l'autre strictement
-meilleur — conclusion inchangée par le fix. **Décision suivie : ne PAS remplacer le stop actuel** — le corpus
+112 lignes actif×année) : canal manuel D1 retour total moyen **8,78%**
+(9,91% après pyramidalisation-régime, 10,46% avant toute correction) contre
+**3,42%** (4,02% puis 5,31%) pour EMA±ATR D1 (stop actif),
+mais aussi drawdown moyen plus profond, **-6,05%** (-6,21% puis -6,58%) contre
+**-3,24%** (-3,58% puis -4,14%). Ni l'un ni l'autre strictement
+meilleur — conclusion inchangée par ces 2 corrections. **Décision suivie : ne PAS remplacer le stop actuel** — le corpus
 ne tranche pas lequel des deux stops littéraux prime en cas de désaccord,
 et la performance ne doit jamais servir à choisir entre deux lectures
 également fidèles du corpus. Les deux restent documentées comme valides,
@@ -685,15 +693,16 @@ simultanément, sur le même actif/historique, `unified_protocol.py`
 (RANGE+TENDANCE) et `diversification.py` (Pattern A + Pattern B), et
 calcule le risque nominal agrégé bougie par bougie — répond à la limite
 laissée ouverte en section 5bis. Sa réplique interne du gate RANGE a été
-patchée deux fois (EXCES-H4 puis pyramidalisation-régime, cf. `PLAN.md`
-tableau "2e pattern récurrent" occurrence #4) pour rester cohérente avec le
-vrai `_run_core_unified`. **Résultat honnête, RE-régénéré après la 2e correction**
+patchée trois fois (EXCES-H4, pyramidalisation-régime, Conflit MTF, cf.
+`PLAN.md`) pour rester cohérente avec le
+vrai `_run_core_unified`. **Résultat honnête, RE-régénéré après la 3e correction**
 (`risk_aggregation_full_history.csv` + `risk_aggregation_walkforward.csv`,
 BTC/ETH/BNB/SOL × 4 profils) : risque agrégé maximal observé **17,00%**
-(BTC/TRES_AGRESSIF, 2020-11-28, inchangé — le pic est atteint pendant une
-phase déjà en régime TENDANCE), très au-dessus du plafond global 5%
-documenté (`RULES_EXTRACTION.md` §5) ; 67/112 combinaisons année×actif×profil
-(était 68/112) le dépassent en walk-forward. **Root cause** : le pyramidage RANGE seul
+(BTC/TRES_AGRESSIF, 2020-11-28, inchangé à travers les 3 corrections — le pic
+est atteint pendant une phase déjà en régime TENDANCE), très au-dessus du plafond global 5%
+documenté (`RULES_EXTRACTION.md` §5) ; 66/112 combinaisons année×actif×profil
+(68/112 avant toute correction, 67/112 après pyramidalisation-régime seule)
+le dépassent en walk-forward. **Root cause** : le pyramidage RANGE seul
 (3 tranches × 5% = 15% en TRES_AGRESSIF) dépasse déjà le plafond avant toute
 combinaison — ce n'est pas la combinaison de systèmes qui casse le plafond.
 **Volontairement pas comblé par un plafond inventé** : le corpus ne spécifie
@@ -704,14 +713,25 @@ comme limite ouverte, pas silencieuse.
 
 ---
 
-## 5quinquies. Deux limites non résolues, priorité P0/P1 (mobilisation multi-agents, Agent C, re-audit de classification)
+## 5quinquies. Conflit Multi-Timeframe — implémenté ; gate Fibonacci RANGE littéral — toujours backlog P0/P1
 
-Un 3e agent de ce round a refait, DE ZÉRO et indépendamment, la classification "règle littérale vs hypothèse d'implémentation" pour tout ce qui est actif dans `faithful.py`/`unified_protocol.py`, contre l'intégralité de `RULES_EXTRACTION.md` et des 17 sources Trading Lessons. Deux trouvailles significatives, **non corrigées ce cycle** — contrairement à EXCES-H4 et pyramidalisation-régime, qui sont des fixes mécaniques (une donnée déjà calculée, simplement jamais relue), celles-ci exigent une décision de conception explicite avant tout code, pas une invention silencieuse :
+Un 3e agent avait refait, DE ZÉRO et indépendamment, la classification "règle littérale vs hypothèse d'implémentation" pour tout ce qui est actif dans `faithful.py`/`unified_protocol.py`, contre l'intégralité de `RULES_EXTRACTION.md` et des 17 sources Trading Lessons — 2 trouvailles significatives. **Un round de mobilisation multi-agents suivant (design puis décision puis implémentation) a depuis traité la première.**
 
-- **"Conflit Multi-Timeframe" — désignée "erreur numéro un" PAR LE CORPUS LUI-MÊME, jamais implémentée.** `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` (source #5) : *"Conflit Multi-Timeframe (MTF) : L'erreur numéro un. Ne jamais trader une borne de range si un range d'unité de temps supérieure est déjà actif. La structure supérieure prime systématiquement."* — confirmée par sa propre checklist pré-trade. `TRADING_LESSONS_INDEX.md` (ligne 11) avait déjà noté, au moment du traitement initial des sources, que cette règle est DISTINCTE de "UT+2" (déjà implémentée) — jamais reprise depuis dans ce document ni dans `COUVERTURE_ENSEIGNEMENTS.md`. Ni `faithful.py` ni `unified_protocol.py` ne vérifient aujourd'hui si le régime du contexte supérieur (D1/Hebdomadaire) est LUI-MÊME en range avant d'ouvrir une tranche RANGE sur H4 — le gate actuel (score Hebdomadaire ≥2, "UT+2 strict") est une condition de momentum/alignement, logiquement distincte d'une exclusion "le TF supérieur est en range".
-- **Gate Fibonacci RANGE — classification incomplète, pas fausse.** `RULES_EXTRACTION.md` §1 (le manuel PDF lui-même, la source la plus autoritative du corpus) donne des seuils Fibonacci LITTÉRAUX et conditionnés par régime pour l'entrée : Range neutre ≥76,4%, Range tendanciel ≥61,8%, Tendance ≥23%. La classification actuelle du gate Fibonacci RANGE ("hypothèse, réglable par performance", cf. section 5ter ci-dessus) est correcte pour la synthèse tirée des 17 sources vidéo (23-61,8%, déjà implémentée sans condition dans `trend_table.py` pour la table TENDANCE), mais elle n'a jamais comparé ce chiffre à celui du manuel lui-même, qui le donne pourtant explicitement comme condition d'entrée RANGE — une lecture distincte, jamais implémentée ni testée sous cette forme précise pour la table RANGE.
+### Conflit Multi-Timeframe — implémenté
 
-**Pourquoi ce n'est pas corrigé dans la foulée** : pour Conflit MTF, il faut d'abord trancher ce que "un range actif" signifie précisément avec les catégories déjà existantes de `regime_classifier.py` (RANGE_NEUTRE et RANGE_TENDANCIEL sont-ils tous deux visés ?) et sur quel(s) niveau(x) de contexte (D1 seul, Hebdomadaire aussi) — le corpus ne le précise pas explicitement. Pour Fibonacci, il faut définir quel swing de référence rend le retracement comparable au seuil du manuel. Implémenter sans cette décision explicite reproduirait l'erreur de méthode déjà documentée deux fois dans `PLAN.md` ("2e pattern récurrent"). **Traité comme backlog P0/P1** (item 10 de `PLAN.md`), à trancher avant tout code, pas comme un chantier clos.
+`TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` (source #5) : *"Conflit Multi-Timeframe (MTF) : L'erreur numéro un. Ne jamais trader une borne de range si un range d'unité de temps supérieure est déjà actif. La structure supérieure prime systématiquement."* — confirmée par sa propre checklist pré-trade, distincte de UT+2 (`TRADING_LESSONS_INDEX.md` ligne 11).
+
+**Décision de conception, 2 points non tranchés littéralement par le corpus, résolus avant code** :
+- **Niveau : D1, pas Hebdomadaire.** 3 agents (recherche + second avis indépendant) convergent : caler le gate sur le niveau Hebdomadaire bloquerait ~89% des tranches RANGE actuellement ouvertes (mesuré empiriquement en rejouant `faithful.py` avec `record_trace=True`) — quasi-suppression du système RANGE, incohérent avec le fait que le corpus décrit lui-même RANGE comme le régime dominant (~75% cumulé, §1). Caler sur D1 ne bloque que ~12-19% des tranches actuelles (BTC 13,0%/ETH 7,5%/BNB 19,1%/SOL 3,7%) — effet mesuré, pas disproportionné. Étayé aussi textuellement par `TRADING_LESSONS_TROISIEME_BORNE.md` (source #11 : "Contexte" = UT immédiatement supérieure à l'exécution).
+- **Entrée fraîche ET renfort, uniformément.** Aucune source ne distingue les deux cas pour cette règle (contrairement à pyramidalisation-régime, où l'absence littérale de "Renfort" en §3 permettait de trancher précisément) — appliqué via `gate()`, partagé par les deux, plutôt qu'une distinction inventée.
+
+**Implémenté** dans `backtest_phase2_faithful.py`/`unified_protocol.py` (RANGE) : nouvelle clé `regime_d1` (`ctx["D1"]["regime"]`, déjà calculée pour le stop `ctx_support_d1`, jamais lue pour cette règle — même schéma que EXCES-H4/pyramidalisation-régime), gate bloque désormais aussi quand D1 est RANGE_NEUTRE/RANGE_TENDANCIEL. **Non étendu à `backtest_phase2_recommended.py`** (exige une dépendance D1 qu'il ne charge jamais, hors de son périmètre documenté). Tests dédiés (4 nouveaux, scénario synthétique à vérité terrain connue), 19/19 fichiers verts.
+
+**Impact chiffré honnête** (mouvement modeste, cohérent avec les 2 corrections précédentes) : `faithful.py` BNB/TRES_AGRESSIF 373→310 trades, retour 76,5%→68,3%, drawdown -17,6%→-15,6% ; `unified_protocol.py` agrégé retour +27,9%→+22,0%, drawdown -27,0%→-25,2% ; walk-forward 2021 +6,1%/-8,8%→+5,2%/-9,5%, 2024 (pire année) -6,2%/-24,4%→-4,0%/-22,6% (légèrement amélioré) ; canal manuel D1 retour 9,91%→8,78%/EMA±ATR 4,02%→3,42% ; risque agrégé max inchangé 17,00%, 67/112→66/112 dépassements. Aucune combinaison ne devient catastrophique. Détail complet : `PLAN.md` section "Correction Conflit Multi-Timeframe".
+
+### Gate Fibonacci RANGE littéral — toujours backlog P0/P1, raison désormais plus précise
+
+`RULES_EXTRACTION.md` §1 donne des seuils Fibonacci LITTÉRAUX conditionnés par régime : Range neutre ≥76,4% + "débordement du contexte" + "signal & triangle de confirmation" ; Range tendanciel ≥61,8% ; Tendance ≥23%. **Vérifié par 3 agents convergents (relecture exhaustive des 17 sources)** : ce n'est pas un simple seuil à faire varier par régime (ce que disait ce document jusqu'ici) — c'est une condition COMPOSITE à 3 volets, dont 2 des 3 n'ont AUCUNE définition utilisable ailleurs dans le corpus. "Triangle" n'a qu'UNE seule mention dans tout le corpus (`TRADING_LESSONS_ZONE_ACCUMULATION.md`, jamais reliée à cette règle), et aucun code du projet ne le détecte. "Débordement" n'est défini que pour un usage DIFFÉRENT (`TRADING_LESSONS_PULLBACK_MATURITE.md` : cible de SORTIE en Excès Final, pas condition d'ENTRÉE). **Risque de confusion supplémentaire identifié** : `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` §5 utilise le même chiffre "76%" mais comme cible de sortie ("Range Neutre = 76% Fibonacci de la vague précédente") — pas comme seuil d'entrée. Implémenter cette règle exigerait d'inventer 2 définitions sans citation, exactement le risque que ce projet refuse. **Décision : ne PAS implémenter ce cycle**, backlog P0/P1 (item 10 de `PLAN.md`), documenté avec sa raison précise plutôt qu'un simple "à ajuster".
 
 ---
 

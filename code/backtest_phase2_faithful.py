@@ -111,6 +111,78 @@ pyramiding_allowed`, `pyramiding_allowed = regime_h4_v[j] in ("TENDANCE",
 "RANGE_TENDANCIEL")`). Impact chiffré honnête : cf. `PLAN.md`/
 `CONFIGURATION_RECOMMANDEE.md`.
 
+CORRECTION CONFLIT MTF (mobilisation multi-agents, 3e round -- design puis
+implémentation -- audit systématique de fidélité IP) : `TRADING_LESSONS_
+MAITRISE_GRADIENT_RISQUE.md` (source #5) désigne, dans son propre texte,
+une règle comme *"l'erreur numéro un"* : *"Ne jamais trader une borne de
+range si un range d'unité de temps supérieure est déjà actif. La structure
+supérieure prime systématiquement."* -- confirmée par sa checklist
+pré-trade. `TRADING_LESSONS_INDEX.md` (ligne 11) note déjà cette règle comme
+DISTINCTE de "UT+2" (gate Hebdomadaire déjà actif ici) -- jamais implémentée
+nulle part dans ce projet avant cette correction.
+
+Deux points laissés par le corpus SANS réponse littérale, tranchés ici par
+la décision la mieux étayée plutôt que laissés en attente indéfiniment :
+  - **Niveau de contexte visé (D1 ou Hebdomadaire ?)** : source #5 ne nomme
+    aucun niveau absolu, seulement "TF supérieur". `TRADING_LESSONS_
+    TROISIEME_BORNE.md` (source #11) précise que le mécanisme opère entre
+    l'UT "Contexte" (immédiatement supérieure à l'UT tradée) et l'UT
+    "Tendance" (exécution) -- cohérent avec le vocabulaire "UT+1" déjà
+    utilisé dans ce projet pour le stop D1 ci-dessus. **D1 retenu**, pas
+    Hebdomadaire : vérifié empiriquement (mobilisation multi-agents) que
+    caler ce gate sur le niveau Hebdomadaire bloquerait ~89% des tranches
+    RANGE actuellement ouvertes (quasi-suppression du système RANGE entier,
+    incohérent avec le fait que le corpus décrit lui-même RANGE comme le
+    régime dominant, ~75% du temps cumulé §1) -- signal fort que Hebdo
+    n'est pas la lecture visée. Caler sur D1 ne bloque que ~12-19% des
+    tranches actuellement ouvertes (BTC 13,0%/ETH 7,5%/BNB 19,1%/SOL 3,7%)
+    -- un effet significatif mais mesuré, cohérent avec l'ampleur des
+    autres corrections de ce cycle.
+  - **Entrée fraîche seulement, ou aussi renfort ?** Ni source #5 ("aucune
+    borne de range") ni source #11 ("toute borne... devient inexistante")
+    ne distinguent explicitement -- contrairement au cas pyramidalisation-
+    régime ci-dessus, où l'absence littérale de la cellule "Renfort" dans
+    §3 permettait de trancher précisément. Ici, rien d'équivalent : la
+    table RANGE n'a d'ailleurs pas de mécanique "renfort" distincte d'une
+    "entrée" dans l'architecture de ce projet (chaque tranche, fraîche ou
+    additionnelle, s'ouvre par le même `open_tranche_fn`). **Appliqué
+    uniformément aux deux** (via `gate()`, déjà utilisé pour les deux cas,
+    plutôt qu'une distinction inventée dans `gate_extra`) -- lecture la
+    plus conservatrice, cohérente avec le traitement déjà fait d'EXCES-H4
+    (bloque aussi les deux cas, sans distinction).
+
+Donnée réutilisée, pas recalculée : `ctx["D1"]["regime"]`
+(`attach_multi_context`, déjà causal, déjà joint pour le stop `ctx_support_d1`
+ci-dessus) -- exactement le même schéma "donnée déjà calculée, jamais lue
+pour cette règle précise" que EXCES-H4/pyramidalisation-régime. `gate()`
+bloque désormais aussi quand `regime_d1` est RANGE_NEUTRE ou
+RANGE_TENDANCIEL. Impact chiffré honnête : cf. `PLAN.md`/
+`CONFIGURATION_RECOMMANDEE.md`.
+
+**Non implémenté ce cycle, volontairement, dans `backtest_phase2_recommended.py`**
+(contrairement à EXCES-H4/pyramidalisation-régime, qui n'ajoutaient aucune
+dépendance nouvelle) : cette correction exige le contexte D1, que
+`recommended.py` ne charge jamais (sa fonction documentée est justement de
+mesurer l'effet de l'ABSENCE des règles littérales de ce fichier, cf.
+`CONFIGURATION_RECOMMANDEE.md` -- lui ajouter D1 élargirait son périmètre
+au lieu de le laisser comme référence de comparaison stable).
+
+**Gate Fibonacci RANGE (manuel, seuils par régime) -- délibérément PAS
+implémenté ce cycle**, cf. re-audit dédié (mobilisation multi-agents) :
+`RULES_EXTRACTION.md` §1 conditionne le retracement à 2 AUTRES composantes
+("débordement du contexte", "signal & triangle de confirmation") qui
+n'existent NULLE PART ailleurs dans les 17 sources sous une forme
+utilisable ("triangle" n'a qu'une seule mention corpus, jamais reliée à
+cette règle ; "débordement" n'est défini que pour un usage DIFFÉRENT --
+cible de sortie en Excès Final). Les implémenter exigerait d'inventer ces
+2 définitions sans citation -- exactement le risque que ce projet refuse de
+prendre. Risque de confusion supplémentaire identifié : le même chiffre
+"76%" désigne ICI un seuil d'ENTRÉE (§1) et, ailleurs dans le corpus
+(`TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` §5), une cible de SORTIE --
+deux règles distinctes à ne jamais confondre. Laissé backlog P0/P1,
+documenté, pas comblé silencieusement -- cf. `CONFIGURATION_RECOMMANDEE.md`
+section 5quinquies.
+
 HORS PÉRIMÈTRE DE CE FICHIER (traités ailleurs, pas oubliés, déjà corrects) :
   - **Table de tendance** (`trend_table.py`) : déjà toujours active en
     parallèle du moteur RANGE via `unified_protocol.py` (RANGE+TENDANCE
@@ -211,6 +283,7 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         "gate_score": gate_score,
         "gate_regime": gate_regime,
         "regime_h4": h4["regime"].values,   # cf. CORRECTION EXCES H4 en tête de fichier
+        "regime_d1": ctx["D1"]["regime"],   # cf. CORRECTION CONFLIT MTF en tête de fichier
         "wall_street_active": h4["wall_street_active"].values,
     }
 
@@ -240,6 +313,7 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
     gate_score = feat["gate_score"][start_:end]
     gate_regime = feat["gate_regime"][start_:end]
     regime_h4_v = feat["regime_h4"][start_:end]
+    regime_d1_v = feat["regime_d1"][start_:end]
     wall_street_v = feat["wall_street_active"][start_:end]
     n = end - start_
 
@@ -251,7 +325,15 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
         # contexte Hebdomadaire -- "Bulle/Excès -> NE PAS TRADER"
         # (RULES_EXTRACTION.md §1) porte sur le marché qu'on trade, pas
         # seulement sur son contexte supérieur.
-        return bool(gate_score[i] >= 2 and gate_regime[i] != "EXCES" and regime_h4_v[i] != "EXCES")
+        # CORRECTION CONFLIT MTF (cf. tête de fichier) : ne jamais ouvrir une
+        # tranche RANGE H4 si le contexte immédiatement supérieur (D1) est
+        # LUI-MÊME en régime range (Neutre ou Tendanciel) -- source #5,
+        # "L'erreur numéro un".
+        d1_not_range = regime_d1_v[i] not in ("RANGE_NEUTRE", "RANGE_TENDANCIEL")
+        return bool(
+            gate_score[i] >= 2 and gate_regime[i] != "EXCES"
+            and regime_h4_v[i] != "EXCES" and d1_not_range
+        )
 
     def gate_extra(j):
         # Abstention Wall Street NON CONDITIONNELLE (littérale, cf. tête de
