@@ -1,5 +1,9 @@
 __pycache__/
 *.pyc
+# Infrastructure locale de Claude Code (copies de travail isolées pour les
+# agents délégués via isolation "worktree") -- pas du contenu du projet,
+# jamais à committer (ce sont des clones jetables du dépôt lui-même).
+.claude/
 # Sortie de code/run_all.py -- jamais la référence committée (voir sa
 # docstring : "ne remplace pas les CSV commités, qui restent la référence
 # tant que ce script n'a pas été relancé et ses sorties comparées à la main").
