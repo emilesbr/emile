@@ -442,6 +442,20 @@ pour ce couple). Conclusion actionnable, pas un simple chiffre à surveiller :
 **exclure BNB/TRES_AGRESSIF d'un usage réel** — le risque s'est déjà
 matérialisé une fois dans l'historique testé.
 
+**Recherche systématique d'autres combinaisons dangereuses, faite (mobilisation
+multi-agents)** : `code/cross_stress_test_faithful_gates.py` (faithful.py +
+gate Fibonacci/Andrews) et `code/cross_stress_test_unified_capital_tiers.py`
+(unified.py × 3 paliers de capital), walk-forward annuel BTC/ETH/BNB/SOL ×
+4 profils. **Aucune nouvelle combinaison catastrophique trouvée** — BNB/TRES_AGRESSIF/2021
+reste le seul cas. Deux résultats notables : **le capital par palier ne
+résout pas ce cas** (le palier >100k€, plafond 2%, donne un résultat
+légèrement PIRE malgré un risque effectif 2,5× plus faible — effet de
+chemin de l'équity, cas isolé vérifié 1/112 combinaisons testées) ; **le
+gate Fibonacci neutralise incidemment ce cas précis** (dd -60,2%→-5,3%) mais
+reste une hypothèse d'implémentation à nous, pas une règle littérale pour la
+table RANGE — un effet favorable incident ne le rend pas littéral, aucun
+défaut changé.
+
 **Sortie "décision live"** (répond à la demande "lire le jeu de données d'un
 actif pour en tirer les positions à prendre") : `unified_protocol.decide_now(h1_recent, profile_name, capital_eur=None)`
 prend un historique H1 récent (avec `volume`), le resample en interne
@@ -569,13 +583,18 @@ résultat rassurant et STRICTEMENT MEILLEUR que l'ancien walk-forward de
 (contre -24,8%), pire retour annuel **-2,8%** (contre -14,5%), moins
 d'années négatives sur BNB (1/7 contre 3/7). Aucune année catastrophique sur
 BTC/ETH/BNB/SOL (2020-2026). Cohérent avec le profil "retour réduit mais
-drawdown nettement réduit" déjà documenté en agrégé ci-dessus. **Reste
-ouvert** : OOS XRP de ce moteur pas encore tenté — plus complexe que pour
-`recommended.py` (ce moteur a besoin de 3 niveaux de timeframe distincts —
-exécution/D1-stop/Hebdo-gate — alors que XRP n'a que du D1 disponible dans
-cet environnement, ce qui exigerait Hebdo comme source de stop et Mensuel
-comme gate, ce dernier bien trop court pour converger sur 365 barres) ; pas
-tenté à la hâte plutôt que de produire un résultat mal posé.
+drawdown nettement réduit" déjà documenté en agrégé ci-dessus. **OOS XRP, fait (cycle suivant, mobilisation multi-agents)** : `code/oos_xrp_faithful.py`.
+Procédure décidée AVANT tout résultat (même discipline que
+`oos_xrp_recommended.py`) : XRP D1 (365 barres) devient l'exécution,
+Hebdomadaire (53 barres) le stop UT+1 (gardé ACTIF SANS CONDITION —
+règle littérale, la désactiver aurait reproduit le raisonnement interdit
+par ce projet), Mensuel (13 barres) le gate UT+2 (désactivé — nouveau
+paramètre `use_mtf_gate` ajouté à `run_faithful`/`_prepare_features`,
+STRICTEMENT ADDITIF, défaut `True` préservant exactement le comportement
+existant, 19/19 tests reconfirmés verts après l'ajout, vérifié
+indépendamment). **Résultat honnête, non concluant** : seulement 3 trades
+sur 365 barres, quel que soit le profil — trop peu pour conclure quoi que
+ce soit, ni un échec de méthode ni un résultat forcé.
 
 ---
 

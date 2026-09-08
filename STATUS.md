@@ -52,6 +52,8 @@ Le projet formalise, à partir du manuel officiel PRO Indicators (Philippe Roux)
 | `code/backtest_phase2_faithful.py`, `code/test_backtest_phase2_faithful.py` | Config FIDÈLE (moteur RANGE seul) — active sans condition 3 règles littérales du corpus désactivées à tort dans `recommended.py` (stop UT+1, abstention Wall Street, +Reverse scopé TRES_AGRESSIF) — cf. `CONFIGURATION_RECOMMANDEE.md` section 5ter, `PLAN.md`. 15e moteur de `code/run_all.py` (alias `faithful`), 5/5 tests |
 | `code/walkforward_faithful.py` | Walk-forward annuel de `faithful.py` (BTC/ETH/BNB/SOL, profil MODERE) — aucune année catastrophique, strictement meilleur que l'ancien walk-forward de `recommended.py` sur chaque métrique — cf. `CONFIGURATION_RECOMMANDEE.md` section 5ter |
 | `code/walkforward_unified.py` | Walk-forward annuel de `unified_protocol.py` (BTC/ETH/BNB/SOL MODERE + BNB TRES_AGRESSIF) — révèle que le -72,5% de drawdown agrégé de BNB/TRES_AGRESSIF vient d'une seule année (2021) — cf. `CONFIGURATION_RECOMMANDEE.md` section 5bis, `PLAN.md` |
+| `code/oos_xrp_faithful.py` | OOS XRP de `faithful.py` (mobilisation multi-agents) — résultat honnête non concluant (3 trades) — cf. `CONFIGURATION_RECOMMANDEE.md` section 5ter |
+| `code/cross_stress_test_faithful_gates.py`, `code/cross_stress_test_unified_capital_tiers.py` | Recherche systématique d'autres combinaisons dangereuses (mobilisation multi-agents) — aucune nouvelle trouvée ; capital par palier ne résout pas BNB/TRES_AGRESSIF, gate Fibonacci le neutralise incidemment sans changer aucun défaut — cf. `CONFIGURATION_RECOMMANDEE.md` section 5bis |
 
 ### Historique / supersédé (pour archive — ne pas utiliser comme source de vérité)
 

@@ -86,6 +86,15 @@ Ne réimplémente RIEN : réutilise `backtest_phase2_v7.py::prepare`/
 `position_engine.py::make_open_tranche_fn`/`run_position_engine`,
 `capital_tiers.py::effective_sizing` tels quels -- même discipline que
 `backtest_phase2_recommended.py`/`backtest_phase2_patterns.py`.
+
+AJOUT CE CYCLE (OOS XRP, `code/oos_xrp_faithful.py`) : `run_faithful`/
+`_prepare_features` acceptent désormais un paramètre optionnel
+`use_mtf_gate: bool = True` qui neutralise UNIQUEMENT le gate Hebdomadaire
+(jamais le stop D1 UT+1, littéral et inconditionnel dans tous les cas) --
+STRICTEMENT ADDITIF : défaut `True` préserve EXACTEMENT le comportement
+existant de tous les appelants déjà en place (dont `unified_protocol.py`,
+qui n'utilise pas ce mot-clé). Raison d'être et procédure décidée AVANT
+tout résultat : cf. tête de `code/oos_xrp_faithful.py`.
 """
 import pandas as pd
 import numpy as np
@@ -109,19 +118,42 @@ from capital_tiers import effective_sizing
 REVERSE_SCOPED_PROFILE = "TRES_AGRESSIF"
 
 
-def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame) -> dict:
+def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
+                       use_mtf_gate: bool = True) -> dict:
     """Calcule toutes les colonnes une seule fois sur l'historique complet.
     `d1` : fournit le VRAI stop cross-timeframe UT+1 (littéral, cf. tête de
     fichier) -- rôle DIFFÉRENT du D1 dans `backtest_phase2_ut2.py` (qui s'en
     sert comme GATE optionnel, jamais comme stop). Ici D1 n'intervient QUE
     comme source du stop ; le gate reste Hebdomadaire seul ("UT+2 strict",
     décision #2 de `recommended.py`, inchangée -- déjà la lecture la plus
-    littérale ET la plus performante mesurée, rien à revoir ici)."""
+    littérale ET la plus performante mesurée, rien à revoir ici).
+
+    `use_mtf_gate` (AJOUTÉ ce cycle -- STRICTEMENT ADDITIF : défaut `True`,
+    préserve EXACTEMENT le comportement existant de tous les appelants déjà
+    en place, dont `unified_protocol.py` qui appelle `run_faithful` sans ce
+    mot-clé). Neutralise UNIQUEMENT le gate Hebdomadaire (score `+inf`,
+    régime `RANGE_NEUTRE`, jamais NaN -- même convention que `use_mtf_gate`
+    dans `backtest_phase2_recommended.py`, pour ne jamais se comparer
+    silencieusement à NaN) -- le stop D1 (UT+1, règle littérale) N'EST PAS
+    concerné et reste inconditionnel dans les deux cas, cf. tête de fichier.
+    Raison d'être : `code/oos_xrp_faithful.py` (donnée disponible trop
+    courte pour faire converger un niveau de gate placé DEUX crans au-dessus
+    du niveau d'exécution)."""
     h4 = prepare(h4)
     h4 = add_wall_street_column(h4)
     d1 = prepare(d1)
-    weekly = prepare(weekly)
-    ctx = attach_multi_context(h4, [("D1", d1), ("W", weekly)], closure_delay=CLOSURE_DELAY)
+    ctx_levels = [("D1", d1)]
+    if use_mtf_gate:
+        weekly = prepare(weekly)
+        ctx_levels.append(("W", weekly))
+    ctx = attach_multi_context(h4, ctx_levels, closure_delay=CLOSURE_DELAY)
+
+    if use_mtf_gate:
+        gate_score = ctx["W"]["score"]
+        gate_regime = ctx["W"]["regime"]
+    else:
+        gate_score = np.full(len(h4), np.inf)
+        gate_regime = np.full(len(h4), "RANGE_NEUTRE", dtype=object)
 
     return {
         "date": h4["date"].values,
@@ -133,8 +165,8 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame) 
         "local_range": h4["local_range"].values,
         "context_range": h4["context_range"].values,
         "n_borders": h4["n_borders"].values,
-        "gate_score": ctx["W"]["score"],
-        "gate_regime": ctx["W"]["regime"],
+        "gate_score": gate_score,
+        "gate_regime": gate_regime,
         "wall_street_active": h4["wall_street_active"].values,
     }
 
@@ -212,12 +244,15 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
 
 
 def run_faithful(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profile_name: str,
-                  capital_eur: float = None, record_trace: bool = False) -> dict:
+                  capital_eur: float = None, record_trace: bool = False,
+                  use_mtf_gate: bool = True) -> dict:
     """Point d'entrée principal -- moteur RANGE avec les 3 règles littérales
     du corpus activées SANS CONDITION (cf. tête de fichier). `capital_eur`
     (optionnel) : même paramètre de sizing que `recommended.py`, décision #9,
-    inchangée."""
-    feat = _prepare_features(h4, d1, weekly)
+    inchangée. `use_mtf_gate` (AJOUTÉ ce cycle, additif, défaut `True` =
+    comportement inchangé) : cf. docstring de `_prepare_features` --
+    neutralise SEULEMENT le gate Hebdomadaire, jamais le stop D1 littéral."""
+    feat = _prepare_features(h4, d1, weekly, use_mtf_gate=use_mtf_gate)
     risk_pct = None
     if capital_eur is not None:
         sizing = effective_sizing(capital_eur, profile_name, PROFILES_V4, MAX_TRANCHES)
