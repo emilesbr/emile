@@ -23,7 +23,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, ".")
 from backtest_phase2 import FEE, load_h1, resample, atr, EMA_FAST, EMA_MID, EMA_SLOW, ATR_LEN
-from position_engine import run_position_engine
+from position_engine import run_position_engine, make_open_tranche_fn
 from proxy_v2 import compute_swing_low_confirmed
 
 LOCAL_DURATION = "5D"      # amplitude "range local" : fenêtre en JOURS réels (pas en bougies)
@@ -92,39 +92,12 @@ def run_v4(df: pd.DataFrame, profile_name: str) -> dict:
 
     state = {"last_pyramid_high": -np.inf}
 
-    def open_tranche_fn(i, tranches, win_streak):
-        long_signal_prev = score[i - 1] >= 2
-        mature = (not np.isnan(n_borders_v[i - 1])) and n_borders_v[i - 1] >= MIN_BORDERS
-        valid_inputs = (
-            not np.isnan(atr_v[i - 1]) and not np.isnan(ctx_support_v[i - 1])
-            and not np.isnan(local_range_v[i - 1]) and local_range_v[i - 1] > 0
-            and not np.isnan(context_range_v[i - 1]) and context_range_v[i - 1] > 0
-        )
-        is_fresh_entry = (i > warmup and len(tranches) == 0 and long_signal_prev and mature and valid_inputs)
-        is_pyramid_add = (
-            i > warmup and 0 < len(tranches) < MAX_TRANCHES and long_signal_prev and valid_inputs
-            and high[i - 1] > state["last_pyramid_high"]  # renfort seulement sur nouveau plus haut validé
-        )
-        if not (is_fresh_entry or is_pyramid_add):
-            return None
-
-        entry_price = o[i]
-        stop_price = min(ctx_support_v[i - 1], entry_price * 0.999)
-        stop_pct = (entry_price - stop_price) / entry_price
-        risk_pct = p["risk_pct"]
-        if win_streak >= RULE3_STREAK:
-            risk_pct *= RULE3_SIZE_MULT
-        size_frac = min(1.0 / MAX_TRANCHES, risk_pct / stop_pct) if stop_pct > 0 else 0.0
-        if size_frac <= 0:
-            return None
-        state["last_pyramid_high"] = max(state["last_pyramid_high"], high[i - 1]) if is_pyramid_add else high[i - 1]
-        return {
-            "entry": entry_price, "stop": stop_price, "remaining": size_frac,
-            "val_done": False, "conf_done": False, "pnl_accum": 0.0,
-            "val_px": entry_price + local_range_v[i - 1],
-            "conf_px": entry_price + context_range_v[i - 1],
-            "lim_px": entry_price + 1.5 * context_range_v[i - 1],
-        }
+    # Aucun gate additionnel dans ce moteur (contrairement à v6/v7/ut2/...) :
+    # extra_gate_fn=None -> (True, True), comportement d'origine inchangé.
+    open_tranche_fn = make_open_tranche_fn(
+        atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v, high, o, score,
+        warmup, MIN_BORDERS, MAX_TRANCHES, RULE3_STREAK, RULE3_SIZE_MULT, p["risk_pct"], state,
+    )
 
     raw = run_position_engine(
         n, o, high, low, c, long_signal, open_tranche_fn,
