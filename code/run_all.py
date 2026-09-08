@@ -31,7 +31,8 @@ CE QUE CE SCRIPT N'EST PAS
   données historiques déjà téléchargées (principe acté, PLAN.md en tête de
   document).
 
-MOTEURS COUVERTS (13 scripts `backtest_phase2_*.py` de `code/`)
+MOTEURS COUVERTS (13 scripts `backtest_phase2_*.py` + `unified_protocol.py`
+de `code/`, 14 moteurs au total)
 ----------------------------------------------------------------
 Alias utilisable avec --only, module, description, CSV produit :
 
@@ -92,6 +93,15 @@ Alias utilisable avec --only, module, description, CSV produit :
                                         Wall Street/canal manuel/diversification/
                                         reverse. H4 x 4 profils x 4 symboles.
                                         -> phase2_recommended_results.csv
+  unified        unified_protocol      Protocole UNIFIÉ (PLAN.md "Protocole
+                                        unifié -- routeur range <-> tendance") :
+                                        routeur bar-par-bar entre recommended.py
+                                        (RANGE) et trend_table.py (TENDANCE),
+                                        priorité tendance si accumulation_active,
+                                        exclusivité mutuelle par actif. Compare
+                                        aussi à recommended.py seul (colonnes
+                                        côte à côte). H4 x 4 profils x 4 symboles.
+                                        -> backtest_phase2_unified_results.csv
 
 Volontairement HORS PÉRIMÈTRE de ce script (pas des moteurs de backtest
 indépendants, mais des analyses dérivées qui lisent/comparent des CSV déjà
@@ -129,11 +139,14 @@ sur cette machine, pas une estimation)
 
   recommended       7.0s (ajouté après ce chronométrage initial -- moteur
                     le plus simple des 13 : H4+Hebdo seulement, pas de D1)
+  unified          12.9s (mesuré réellement, `run_all.py --only unified` --
+                    rejoue recommended.py EN PLUS du routeur unifié pour la
+                    comparaison côte à côte dans son propre CSV)
 
   TOTAL des 12 moteurs pré-existants : 158.8s (~2,6 min) -- BTC/ETH/BNB/SOL,
   plusieurs années de H1 rééchantillonné en H4/D1/Hebdo (~50-57k bougies H1
   par actif). +7.0s pour "recommended" (mesuré séparément, cf. ci-dessus),
-  soit ~166s (~2,8 min) pour les 13 moteurs.
+  +12.9s pour "unified", soit ~179s (~3,0 min) pour les 14 moteurs.
 
 Nettement plus rapide qu'on ne le craignait a priori : ces moteurs sont tous
 vectorisés (pandas/numpy), pas de boucle Python coûteuse par bougie. Les
@@ -235,6 +248,13 @@ ENGINES: list[Engine] = [
            "Street/canal manuel/diversification/reverse. "
            "H4 x 4 profils x 4 symboles",
            "phase2_recommended_results.csv"),
+    Engine("unified", "unified_protocol",
+           "Protocole unifie (PLAN.md 'Protocole unifie -- routeur range <-> "
+           "tendance') : routeur bar-par-bar recommended.py (RANGE) / "
+           "trend_table.py (TENDANCE), priorite tendance si "
+           "accumulation_active, exclusivite mutuelle par actif. Compare "
+           "aussi a recommended.py seul cote a cote. H4 x 4 profils x 4 symboles",
+           "backtest_phase2_unified_results.csv"),
 ]
 
 ENGINES_BY_ALIAS = {e.alias: e for e in ENGINES}
@@ -245,7 +265,7 @@ ENGINES_BY_ALIAS = {e.alias: e for e in ENGINES}
 FAST_FIRST_ORDER = [
     "base", "v4", "v5", "v6", "v7", "v7_reverse",
     "capital_tiers", "diversification", "fib", "trend", "ut2", "patterns",
-    "recommended",
+    "recommended", "unified",
 ]
 
 
