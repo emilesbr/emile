@@ -107,6 +107,106 @@ import numpy as np
 import pandas as pd
 
 
+def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v,
+                          high, o, score, warmup, min_borders, max_tranches,
+                          rule3_streak, rule3_size_mult, risk_pct, state,
+                          extra_gate_fn=None):
+    """Factory pour `open_tranche_fn`, dette de duplication réelle relevée
+    dans la rétrospective (PLAN.md) : 9 moteurs `backtest_phase2_*.py`
+    (v4/v5/v6/v7/ut2/patterns/capital_tiers/fib/recommended) portaient
+    chacun leur propre copie quasi-identique (~40 lignes) de cette fonction.
+
+    Comparaison ligne à ligne des 9 copies (faite avant d'écrire cette
+    factory, pas supposée) : le SQUELETTE est identique partout --
+    `long_signal_prev`/`mature`/`valid_inputs`, `is_fresh_entry`/
+    `is_pyramid_add` (mature ne gate JAMAIS le pyramidage, dans aucune des
+    9 copies), calcul de `stop_pct`/Règle de Trois/`size_frac`, le dict
+    retourné (entry/stop/remaining/val_px/conf_px/lim_px), et la mise à jour
+    de `state["last_pyramid_high"]`. La SEULE vraie variation d'un moteur à
+    l'autre est la condition de gate additionnelle appliquée par-dessus
+    `long_signal_prev` (gate MTF différent selon le moteur, gate régime,
+    gate Fibonacci, gate patterns géométriques, ou aucun gate -- v4/v5).
+
+    Une seconde variation, plus fine mais réelle (v6 et fib) : le gate
+    additionnel n'est PAS toujours le même pour une entrée fraîche que pour
+    un renfort (pyramidalisation) -- v6 ajoute `pyramiding_allowed` (régime)
+    uniquement au renfort ; fib applique `fib_ok` au renfort seulement si
+    `fib_gate_pyramid=True`. D'où `extra_gate_fn(j)` qui retourne un COUPLE
+    `(fresh_extra, pyramid_extra)` plutôt qu'un bool unique -- couvre les 9
+    moteurs sans distinguer leur cas dans cette factory : un moteur à gate
+    unique renvoie simplement `(g, g)`.
+
+    Paramètres (tous des arrays numpy indexés comme dans les moteurs
+    d'origine, sauf `risk_pct`/`state` qui sont scalaires/dict) :
+      - `score` : signal brut (ex. `score >= 2` déjà appliqué par l'appelant
+        -- NON, ce paramètre reçoit le score BRUT, cette factory calcule
+        elle-même `long_signal_prev = score[j] >= 2`, comme les 9 copies
+        d'origine (jamais un signal déjà booléen).
+      - `warmup` : comparé à `i` avec `i > warmup` (index ABSOLU dans le
+        moteur appelant -- `recommended.py` passe un `local_warmup` déjà
+        ajusté pour un découpage, cf. sa propre docstring).
+      - `risk_pct` : valeur scalaire RÉSOLUE par l'appelant (profil fixe,
+        ou `capital_tiers.effective_sizing(...).risk_pct`) -- cette factory
+        ne connaît pas la source, elle applique juste la Règle de Trois
+        dessus, exactement comme faisaient les 9 copies (`risk_pct = ...`
+        recalculé identique à chaque appel, jamais muté entre appels).
+      - `state` : dict partagé avec la clé `"last_pyramid_high"`, MUTÉ par
+        cette fonction exactement comme dans les 9 copies (même sémantique
+        : `-np.inf` au départ, mis à jour au plus haut de renfort validé).
+      - `extra_gate_fn(j)` : callback optionnel (défaut `None` -> `(True,
+        True)`, comportement v4/v5, sans aucun gate additionnel), appelé
+        avec `j = i - 1` (déjà décalé, comme `ctx_score[i-1]` etc. dans les
+        moteurs d'origine) -- DOIT retourner un tuple `(fresh_extra,
+        pyramid_extra)` de bool.
+
+    Retourne `open_tranche_fn(i, tranches, win_streak)`, prêt à passer tel
+    quel à `run_position_engine`.
+    """
+    def open_tranche_fn(i, tranches, win_streak):
+        j = i - 1
+        long_signal_prev = score[j] >= 2
+        mature = (not np.isnan(n_borders_v[j])) and n_borders_v[j] >= min_borders
+        if extra_gate_fn is not None:
+            fresh_extra, pyramid_extra = extra_gate_fn(j)
+        else:
+            fresh_extra, pyramid_extra = True, True
+
+        valid_inputs = (
+            not np.isnan(atr_v[j]) and not np.isnan(ctx_support_v[j])
+            and not np.isnan(local_range_v[j]) and local_range_v[j] > 0
+            and not np.isnan(context_range_v[j]) and context_range_v[j] > 0
+        )
+        fresh_gated = long_signal_prev and fresh_extra
+        pyramid_gated = long_signal_prev and pyramid_extra
+        is_fresh_entry = (i > warmup and len(tranches) == 0 and fresh_gated and mature and valid_inputs)
+        is_pyramid_add = (
+            i > warmup and 0 < len(tranches) < max_tranches and pyramid_gated and valid_inputs
+            and high[j] > state["last_pyramid_high"]
+        )
+        if not (is_fresh_entry or is_pyramid_add):
+            return None
+
+        entry_price = o[i]
+        stop_price = min(ctx_support_v[j], entry_price * 0.999)
+        stop_pct = (entry_price - stop_price) / entry_price
+        eff_risk = risk_pct
+        if win_streak >= rule3_streak:
+            eff_risk *= rule3_size_mult
+        size_frac = min(1.0 / max_tranches, eff_risk / stop_pct) if stop_pct > 0 else 0.0
+        if size_frac <= 0:
+            return None
+        state["last_pyramid_high"] = max(state["last_pyramid_high"], high[j]) if is_pyramid_add else high[j]
+        return {
+            "entry": entry_price, "stop": stop_price, "remaining": size_frac,
+            "val_done": False, "conf_done": False, "pnl_accum": 0.0,
+            "val_px": entry_price + local_range_v[j],
+            "conf_px": entry_price + context_range_v[j],
+            "lim_px": entry_price + 1.5 * context_range_v[j],
+        }
+
+    return open_tranche_fn
+
+
 def process_tranche(tr, i, o, low, c, long_signal_prev, val_close_frac, conf_close_frac, conf_to_be,
                      reverse_at_limit=False):
     """Fait progresser une tranche ouverte d'un pas de temps `i`. Mute `tr` en place.

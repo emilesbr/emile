@@ -17,7 +17,7 @@ import sys
 sys.path.insert(0, ".")
 from backtest_phase2 import FEE, load_h1, resample, atr, EMA_SLOW, ATR_LEN
 from proxy_v2 import add_proxy_v2_score, compute_swing_low_confirmed
-from position_engine import run_position_engine
+from position_engine import run_position_engine, make_open_tranche_fn
 from regime_classifier import add_regime
 
 LOCAL_DURATION = "5D"
@@ -107,45 +107,21 @@ def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: 
 
     state = {"last_pyramid_high": -np.inf}
 
-    def open_tranche_fn(i, tranches, win_streak):
-        long_signal_prev = score[i - 1] >= 2
-        mature = (not np.isnan(n_borders_v[i - 1])) and n_borders_v[i - 1] >= MIN_BORDERS
+    def gate_extra(j):
         # Validation croisée D1 : le contexte (référence) doit être aligné,
-        # et ni le H4 ni le D1 ne doivent être en régime EXCES
-        d1_aligned = (ctx_score[i - 1] >= 2) if use_mtf_gate else True
-        d1_not_excess = (ctx_regime[i - 1] != "EXCES") if use_mtf_gate else True
+        # et ni le H4 ni le D1 ne doivent être en régime EXCES. Même gate
+        # pour l'entrée fraîche et le renfort (pas de distinction ici,
+        # contrairement à v6/fib).
+        d1_aligned = (ctx_score[j] >= 2) if use_mtf_gate else True
+        d1_not_excess = (ctx_regime[j] != "EXCES") if use_mtf_gate else True
+        g = d1_aligned and d1_not_excess
+        return g, g
 
-        valid_inputs = (
-            not np.isnan(atr_v[i - 1]) and not np.isnan(ctx_support_v[i - 1])
-            and not np.isnan(local_range_v[i - 1]) and local_range_v[i - 1] > 0
-            and not np.isnan(context_range_v[i - 1]) and context_range_v[i - 1] > 0
-        )
-        gated_signal = long_signal_prev and d1_aligned and d1_not_excess
-        is_fresh_entry = (i > warmup and len(tranches) == 0 and gated_signal and mature and valid_inputs)
-        is_pyramid_add = (
-            i > warmup and 0 < len(tranches) < MAX_TRANCHES and gated_signal and valid_inputs
-            and high[i - 1] > state["last_pyramid_high"]
-        )
-        if not (is_fresh_entry or is_pyramid_add):
-            return None
-
-        entry_price = o[i]
-        stop_price = min(ctx_support_v[i - 1], entry_price * 0.999)
-        stop_pct = (entry_price - stop_price) / entry_price
-        risk_pct = p["risk_pct"]
-        if win_streak >= RULE3_STREAK:
-            risk_pct *= RULE3_SIZE_MULT
-        size_frac = min(1.0 / MAX_TRANCHES, risk_pct / stop_pct) if stop_pct > 0 else 0.0
-        if size_frac <= 0:
-            return None
-        state["last_pyramid_high"] = max(state["last_pyramid_high"], high[i - 1]) if is_pyramid_add else high[i - 1]
-        return {
-            "entry": entry_price, "stop": stop_price, "remaining": size_frac,
-            "val_done": False, "conf_done": False, "pnl_accum": 0.0,
-            "val_px": entry_price + local_range_v[i - 1],
-            "conf_px": entry_price + context_range_v[i - 1],
-            "lim_px": entry_price + 1.5 * context_range_v[i - 1],
-        }
+    open_tranche_fn = make_open_tranche_fn(
+        atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v, high, o, score,
+        warmup, MIN_BORDERS, MAX_TRANCHES, RULE3_STREAK, RULE3_SIZE_MULT, p["risk_pct"], state,
+        extra_gate_fn=gate_extra,
+    )
 
     # NB : la sortie de signal (flip) doit aussi respecter le gate MTF pour
     # être cohérente -> on passe le signal déjà gated à run_position_engine
