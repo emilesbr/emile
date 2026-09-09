@@ -75,6 +75,101 @@ vérifié bit-à-bit sur BTC réel (`test_ut2.py`) et sur série synthétique
 contrôlée. Utiliser `pd.Timedelta(weeks=1)` aurait été une erreur par excès
 de prudence (pas un risque de lookahead, mais un retard artificiel de 6
 jours dans la disponibilité du signal).
+
+"UT+2 réservé aux trades de RENVERSEMENT, pas de CONTINUATION" — INVESTIGUÉ
+(10e mobilisation multi-agents), DÉLIBÉRÉMENT PAS IMPLÉMENTÉ
+=============================================================================
+Bloc purement documentaire (ZÉRO comportement), placé ici parce que c'est CE
+fichier qui possède le gate UT+2 ; même discipline que la note "Red Flags" en
+tête de `position_engine.py` (9e application) et que la note H7 de
+`trend_table.py`. Détail complet + mesures : `PLAN.md` section "10e
+application" et `COUVERTURE_ENSEIGNEMENTS.md`.
+
+Citation exacte, vérifiée mot pour mot (`TRADING_LESSONS_ZONE_ACCUMULATION.md`
+ligne 7, la même que celle déjà résumée ligne 28 ci-dessus) : *"Typologies
+d'accumulation : Continuation (2/3 des cas, sort dans le sens de la tendance
+précédente) vs Renversement/Revers (1/3 des cas). Pour le trade en 'Revers',
+une règle de prudence s'impose : il est obligatoire de vérifier la tendance sur
+une unité de temps située deux degrés au-dessus..."* — et sa glose ligne 9 :
+*"un trade de continuation est déjà aligné avec le TF supérieur (pas de
+vérification supplémentaire nécessaire)"*. #9 va dans le même sens (la clause
+de transgression ne concerne qu'un trade *"contre le flux"*). La citation est
+donc EXACTE et le scope est bien la table RANGE (#10 gère son trade avec le
+vocabulaire §3 : 4 bornes, Validation / Confirmation / Break-Even) — donc bien
+le gate de CE fichier, pas une confusion d'UT comme au 7e round. Ce qui bloque
+est ailleurs, en 4 points, chacun MESURÉ :
+
+1. **Aucun état BAISSIER n'existe dans le projet.** Un "renversement" long =
+   un long pris alors que la tendance précédente est baissière. Or
+   `regime_classifier.add_regime` est structurellement asymétrique :
+   `TENDANCE`/`RANGE_TENDANCIEL` exigent `slope_pct > 0`, si bien qu'une
+   tendance baissière tombe dans le `else` = `RANGE_NEUTRE`, indiscernable
+   d'un range plat. Mesuré (BTC/ETH/BNB/SOL, H4/D1/W, tout l'historique) :
+   32-50% des barres ont `slope_pct < -1,5%` et **80-100% d'entre elles sont
+   étiquetées RANGE_NEUTRE** (100% en Hebdomadaire). Verrouillé par
+   `test_ut2.py::test_downtrend_and_flat_range_get_the_same_regime_label`
+   (vérité terrain synthétique). Coder la distinction exige donc d'INVENTER un
+   5e régime baissier — même risque de méthode que le gate Fibonacci RANGE, et
+   avec un blast radius caché : 134 sites de comparaison de chaînes `regime`
+   hors tests, dans 22 fichiers de production (30 fichiers `code/*.py` en
+   comptant les 8 fichiers de tests concernés), dont `d1_not_range` de
+   `backtest_phase2_faithful.py`
+   (`not in ("RANGE_NEUTRE","RANGE_TENDANCIEL")`) qui laisserait PASSER un
+   nouveau label baissier, ouvrant silencieusement des trades aujourd'hui
+   bloqués.
+2. **C'est la DÉFINITION, pas la règle, qui déciderait du résultat** — même
+   schéma décisif que le choix du niveau pour Conflit MTF (89% vs 12-19%). 4
+   définitions candidates, toutes construites sur des briques déjà en place,
+   mesurées sur `faithful.py` (MODERE) : `regime_W != TENDANCE` = no-op exact
+   (SOL 192 trades, 18,30%, bit-à-bit la référence) ; `regime_d1 != TENDANCE`
+   = +48-58% de trades ; `close_H4 <= EMA55` (le propre filtre de tendance de
+   fond de `proxy_v2.structure_favorable`) = gate encore actif sur **17-45
+   barres seulement** sur 1051-1408 candidates, soit une quasi-suppression
+   (SOL : 357 trades / 50,40%, exactement le résultat "gate retiré").
+3. **La population "renversement" est déjà vide par construction dans les
+   deux moteurs.** RANGE : le gate Conflit MTF (source #5, *"l'erreur numéro
+   un"*, mieux établi que celui-ci) exige `regime_d1` hors range ; mesuré,
+   **100%** des barres qui combinent contexte D1 baissier (détecteur miroir) +
+   signal long H4 + Conflit MTF passé sont en `regime_d1 == EXCES`, l'état que
+   le manuel interdit de trader (§1 *"Bulle/Excès -> NE PAS TRADER"*), et
+   elles ne pèsent que 4,4-14,9% des candidates. TENDANCE : `trend_table.py`
+   n'a qu'un seul chemin d'ouverture, `accumulation_active = regime_v[i-1] ==
+   "TENDANCE" and ...` — toute campagne d'accumulation y est une continuation
+   par construction, le cas "Revers" (1/3 des cas selon #10) n'y est jamais
+   atteignable. Restreindre le gate aux renversements revient donc à le
+   SUPPRIMER pour 85-95% des candidates.
+4. **La justification que la source donne à l'exemption est FALSIFIÉE par nos
+   briques.** #10:9 affirme qu'une continuation est *"déjà alignée avec le TF
+   supérieur"* — mesuré, **32-42%** des candidates de continuation
+   (`regime_d1 == TENDANCE`) ne sont PAS alignées Hebdomadaire (355 BTC / 387
+   ETH / 336 BNB / 222 SOL barres). L'exemption ne serait donc pas le
+   raffinement neutre que son propre raisonnement annonce, mais un vrai
+   relâchement. Et le gate n'est pas "rarement actif" comme le supposait
+   l'énoncé de l'item : il retire 36,1-48,8% des candidates restantes et
+   DIVISE PAR ~2 le nombre de trades (BTC 256 vs 517).
+
+Enfin, direction de l'effet, dite honnêtement : **toutes** les variantes
+"renversement seulement" AUGMENTENT le rendement backtesté (BTC 15,60% ->
+18,10/28,70% ; SOL 18,30% -> 25,10/50,40%). Un item dont le seul effet
+mesurable est de relâcher une règle prudente et d'améliorer le backtest, avec
+une amplitude fixée par une définition que le corpus ne tranche pas, est
+exactement la tentation que la méthode de ce projet refuse. À noter aussi que
+le corpus n'INTERDIT pas de vérifier l'UT+2 sur une continuation : il dit que
+ce n'est *"pas nécessaire"*. L'application uniforme actuelle est donc de la
+prudence EN TROP, pas une infidélité — et elle suit le défaut déjà arbitré
+pour Conflit MTF (*"appliqué uniformément aux deux -- lecture la plus
+conservatrice"*). NE PAS restreindre ce gate sans une nouvelle décision
+explicite documentée.
+
+Trouvaille annexe, ajoutée au backlog (pas traitée ici) : ce gate teste
+`score >= 2` (proxy momentum/cycle/structure), pas `regime == "TENDANCE"`,
+alors que #9 dit *"une tendance CONFIRMÉE sur la 3ème unité de temps"* et #10
+*"vérifier la TENDANCE sur une unité de temps située deux degrés au-dessus"*.
+Mesuré : parmi les barres qui passent aujourd'hui le gate, l'Hebdomadaire est
+en `RANGE_NEUTRE` dans 77,5% (BTC 618/797), 85,5% (ETH), 65,0% (BNB), 85,4%
+(SOL) des cas — une lecture littérale "régime Hebdo = TENDANCE" serait donc
+BEAUCOUP plus stricte que le gate actuel (jusqu'à ~18x moins de barres sur
+ETH), dans le sens inverse de l'item ci-dessus.
 """
 import pandas as pd
 import numpy as np

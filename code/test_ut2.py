@@ -10,9 +10,10 @@ import numpy as np
 import pandas as pd
 import sys
 sys.path.insert(0, ".")
-from backtest_phase2 import load_h1, resample
+from backtest_phase2 import load_h1, resample, atr, ATR_LEN, EMA_SLOW
 from backtest_phase2_ut2 import attach_context_level, attach_multi_context, CLOSURE_DELAY, GATE_MODES
 from backtest_phase2_v7 import prepare
+from regime_classifier import add_regime
 
 
 def test_weekly_closure_delay_is_one_day_not_one_week():
@@ -87,6 +88,80 @@ def test_attach_context_level_no_lookahead():
 
 def test_gate_modes_are_exactly_four():
     assert set(GATE_MODES) == {"none", "d1_only", "ut2_strict", "d1_and_weekly"}
+
+
+def _synthetic_drift_series(drift: float, n: int = 800, seed: int = 7) -> pd.DataFrame:
+    """Série OHLC synthétique à dérive contrôlée — vérité terrain, pas de
+    donnée réelle : on prouve une propriété du CLASSIFICATEUR, on ne mesure
+    pas un marché. Le bruit (même graine pour toutes les dérives) est
+    nécessaire : sans lui, `width_pct` est monotone et les seuils par
+    percentile glissant de `add_regime` dégénèrent en EXCES partout, ce qui
+    rendrait le test vide de sens (vérifié avant de l'écrire — une première
+    version sans bruit ne produisait AUCUN TENDANCE même en hausse, donc ne
+    prouvait rien sur l'asymétrie)."""
+    rng = np.random.default_rng(seed)
+    close = 100.0 * np.cumprod(1 + drift + rng.normal(0, 0.012, n))
+    wick = np.abs(rng.normal(0, 0.008, n)) + 0.002
+    return pd.DataFrame({
+        "date": pd.date_range("2020-01-01", periods=n, freq="1D"),
+        "open": close, "high": close * (1 + wick), "low": close * (1 - wick),
+        "close": close, "volume": np.full(n, 1000.0),
+    })
+
+
+def _regime_counts(df: pd.DataFrame) -> dict:
+    """Mêmes 3 lignes que `backtest_phase2_v7.py::prepare` et que le
+    `__main__` de `regime_classifier.py` (canal EMA lente ± 2×ATR), pas une
+    variante locale."""
+    ema = df["close"].ewm(span=EMA_SLOW, adjust=False).mean()
+    width_pct = (2 * 2 * atr(df, ATR_LEN)) / ema * 100
+    return dict(add_regime(df, ema, width_pct)["regime"].value_counts())
+
+
+def test_no_bearish_regime_exists_so_reversal_vs_continuation_is_undetectable():
+    """Prémisse LOAD-BEARING de la décision "UT+2 réservé aux trades de
+    renversement : investigué, PAS implémenté" (10e mobilisation ; bloc dédié
+    en tête de `backtest_phase2_ut2.py`, `PLAN.md` section "10e application").
+
+    Un trade de "renversement" au sens de `TRADING_LESSONS_ZONE_ACCUMULATION.
+    md:7` est un trade pris CONTRE la tendance précédente. Or `add_regime` est
+    structurellement asymétrique : TENDANCE et RANGE_TENDANCIEL exigent tous
+    deux `slope_pct > 0`, donc une tendance BAISSIÈRE retombe dans le `else`
+    = RANGE_NEUTRE, indiscernable d'un range plat. Le projet ne peut donc pas
+    savoir si la tendance précédente était baissière, et n'a aucun moyen NON
+    INVENTÉ de séparer renversement et continuation.
+
+    Prouvé ici par contrôle positif + miroir exact (pas par lecture de la
+    formule) : la MÊME série bruitée, avec la dérive inversée, produit des
+    centaines de barres TENDANCE en hausse et ZÉRO en baisse. Si quelqu'un
+    ajoute un jour un 5e régime baissier, ce test échoue et renvoie à la
+    décision documentée — à relire AVANT, à cause du blast radius : les
+    comparaisons de chaînes `regime` du projet (dont `d1_not_range` de
+    `backtest_phase2_faithful.py`, `not in ("RANGE_NEUTRE",
+    "RANGE_TENDANCIEL")`) laisseraient PASSER un label inconnu, ouvrant
+    silencieusement des trades aujourd'hui bloqués."""
+    up = _regime_counts(_synthetic_drift_series(+0.004))
+    flat = _regime_counts(_synthetic_drift_series(0.0))
+    down = _regime_counts(_synthetic_drift_series(-0.004))
+
+    # Contrôle positif : sans lui, "aucun TENDANCE en baisse" ne prouverait rien.
+    assert up.get("TENDANCE", 0) > 100, (
+        f"contrôle positif cassé : une dérive de +0,4%/barre ne produit que "
+        f"{up.get('TENDANCE', 0)} barres TENDANCE ({up}) -- le test ne peut "
+        f"rien conclure sur l'asymétrie, le réparer avant de s'y fier"
+    )
+    # Le miroir exact de cette même série ne reçoit AUCUNE étiquette directionnelle.
+    assert down.get("TENDANCE", 0) == 0 and down.get("RANGE_TENDANCIEL", 0) == 0, (
+        f"add_regime a produit une étiquette directionnelle sur une dérive "
+        f"strictement baissière ({down}) -- la prémisse de la décision "
+        f"documentée en tête de backtest_phase2_ut2.py a changé, relire cette "
+        f"décision avant d'aller plus loin"
+    )
+    # Et la baisse est étiquetée avec le même vocabulaire qu'un range plat.
+    assert set(down) <= {"RANGE_NEUTRE", "EXCES"} <= set(flat) | {"EXCES"}, (
+        f"tendance baissière {sorted(down)} vs range plat {sorted(flat)} : un "
+        f"état directionnel baissier a peut-être été introduit"
+    )
 
 
 if __name__ == "__main__":
