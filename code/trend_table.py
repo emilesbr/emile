@@ -118,6 +118,25 @@ H7. **"Retour min 50% contexte" (Pull-Back)** : interprété comme "au moins
     50% du retracement observé doit être regagné" (recovery_frac >= 0.50
     depuis le point bas du retracement vers le plus haut de l'impulsion) —
     pas "50% du canal de contexte" au sens absolu (ambigu dans le manuel).
+    TENSION NON RÉCONCILIÉE (trouvée par `code/fibonacci.py`, cycle suivant,
+    puis vérifiée adversarialement) : `TRADING_LESSONS_PULLBACK_MATURITE.md`
+    (#13) donne, pour très probablement la MÊME étape Pull-Back de la MÊME
+    table compressée que RULES_EXTRACTION.md §1, une "Règle des 50%"
+    explicite à 2 conditions cumulatives — retracement >= 23% ET
+    pénétration dans les 50% inférieurs du CANAL DE CONTEXTE (PAS un
+    recovery_frac) — table GO/WAIT à l'appui ("Entre 23% et 38%" = GO). Une
+    fois cette source relue, la lecture "50% du canal de contexte au sens
+    absolu" — explicitement écartée ci-dessus comme "ambigu dans le
+    manuel" — apparaît en réalité la mieux étayée des deux, pas la moins
+    probable. `code/fibonacci.py::classify_regle_50` implémente cette
+    lecture "canal de contexte", en recalculant très exactement
+    `accum_retracement_frac` ci-dessous (même formule, vérifié bit-à-bit) —
+    sans l'importer, pour ne pas créer de dépendance nouvelle (cohérent
+    avec le "pourquoi un moteur séparé" en tête de fichier). **H7 n'est PAS
+    modifiée ici** (changement de comportement de cette table hors périmètre
+    de ce chantier, jamais fait sans décision explicite) — cette note
+    documente seulement la tension pour qu'un futur lecteur de H7 la voie,
+    plutôt que de la laisser visible uniquement côté `fibonacci.py`.
 H8. **Divergence "standard"** : aucun détecteur de divergence réel n'existe
     dans le projet (le vrai calcul PRO Momentum n'est pas public,
     RULES_EXTRACTION.md préambule). Approximé par le retournement de la

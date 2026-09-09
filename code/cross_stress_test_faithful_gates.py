@@ -134,7 +134,7 @@ def _prepare_features_gated(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataF
     seul)."""
     h4 = prepare(h4)                        # ajoute score/atr/ctx_support(H4 natif)/regime/local_range/context_range/n_borders
     h4 = add_wall_street_column(h4)
-    h4 = add_fibonacci_columns(h4)          # ajoute fib_retracement_pct/fib_favorable/fib_optimal
+    h4 = add_fibonacci_columns(h4)          # ajoute fib_retracement_pct/fib_favorable/fib_optimal/fib_context_position/fib_regle_50 (ce fichier ne consomme que fib_favorable)
     h4 = add_andrews_pitchfork_columns(h4)  # ajoute pitchfork_median/p1/p2
     d1 = prepare(d1)
     weekly = prepare(weekly)

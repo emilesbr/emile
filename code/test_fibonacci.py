@@ -196,20 +196,38 @@ def test_context_position_matches_hand_calculated_values():
 
 
 def test_classify_regle_50_requires_both_cumulative_conditions():
-    """"Règle des 50%" (#13) : les DEUX conditions (retracement >= 23% ET
-    context_position >= 50%) doivent être vraies simultanément -- vérifie
-    chaque combinaison des 4 cas (vrai/vrai, vrai/faux, faux/vrai,
+    """"Règle des 50%" (#13) : les DEUX conditions (retracement dans [23%,
+    61,8%] ET context_position >= 50%) doivent être vraies simultanément --
+    vérifie chaque combinaison des 4 cas (vrai/vrai, vrai/faux, faux/vrai,
     faux/faux) plus les NaN, indépendamment de tout calcul de prix réel."""
     retracement = np.array([0.30, 0.30, 0.10, 0.10, np.nan, 0.30])
     context_pos = np.array([0.70, 0.20, 0.70, 0.20, 0.70, np.nan])
     result = classify_regle_50(retracement, context_pos)
 
-    assert result[0]      # retracement>=23% ET context>=50% -> validé
+    assert result[0]      # retracement dans [23%,61,8%] ET context>=50% -> validé
     assert not result[1]  # retracement OK mais context en moitié haute -> refusé
     assert not result[2]  # context OK mais retracement < 23% -> refusé
     assert not result[3]  # aucune des deux -> refusé
     assert not result[4]  # retracement NaN -> refusé
     assert not result[5]  # context NaN -> refusé
+
+
+def test_classify_regle_50_rejects_retracement_above_favorable_max():
+    """CORRECTION (vérification adversariale, cycle suivant) : la version
+    initiale de `classify_regle_50` ne bornait le retracement que par le bas
+    (`r >= FAVORABLE_MIN`), sans plafond -- un bug de fidélité réel, ce
+    fichier affirmant lui-même en tête qu'au-delà de 61,8% le retracement
+    est "défavorable/invalidé (Red Flag explicite de #10)". Ce cas précis
+    (retracement=0,80, largement au-delà de FAVORABLE_MAX=0,618, mais
+    context_position favorable) est celui qui aurait révélé l'absence de
+    plafond -- absent de la version initiale de ce test, ajouté ici."""
+    retracement = np.array([0.80, 0.618, 0.619])
+    context_pos = np.array([0.70, 0.70, 0.70])
+    result = classify_regle_50(retracement, context_pos)
+
+    assert not result[0]  # 80% de retracement -> Red Flag #10 -> refusé malgré context favorable
+    assert result[1]      # 61,8% (FAVORABLE_MAX) -> borne haute incluse -> validé
+    assert not result[2]  # 61,9% -> juste au-delà de la borne -> refusé
 
 
 if __name__ == "__main__":
@@ -220,4 +238,5 @@ if __name__ == "__main__":
     test_add_fibonacci_columns_integration()
     test_context_position_matches_hand_calculated_values()
     test_classify_regle_50_requires_both_cumulative_conditions()
-    print("Tous les tests fibonacci passent (7/7).")
+    test_classify_regle_50_rejects_retracement_above_favorable_max()
+    print("Tous les tests fibonacci passent (8/8).")

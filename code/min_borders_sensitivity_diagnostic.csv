@@ -1,0 +1,5 @@
+symbol,n_bars,n_candidates,n_borders_min,n_borders_p05,n_borders_median,n_borders_min_on_candidates,first_binding_threshold,pct_bars_mature_2,pct_candidates_mature_2,pct_bars_mature_3,pct_candidates_mature_3,pct_bars_mature_4,pct_candidates_mature_4,pct_bars_mature_5,pct_candidates_mature_5
+BTCUSDT,14239,1091,0.0,7.0,9.0,5.0,6,99.89,100.0,99.82,100.0,99.78,100.0,99.7,100.0
+ETHUSDT,14239,1019,0.0,7.0,9.0,5.0,6,99.89,100.0,99.83,100.0,99.78,100.0,99.7,100.0
+BNBUSDT,13997,1078,0.0,7.0,9.0,5.0,6,99.94,100.0,99.85,100.0,99.75,100.0,99.69,100.0
+SOLUSDT,12696,734,0.0,6.0,9.0,5.0,6,99.87,100.0,99.83,100.0,99.73,100.0,99.61,100.0

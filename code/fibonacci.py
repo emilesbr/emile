@@ -80,33 +80,55 @@ honnêtement documenté puis comblé dans ce même cycle par
 `compute_context_position`/`classify_regle_50`/`fib_regle_50` ci-dessous.
 
 Point de vigilance résolu au passage, pour éviter une confusion future avec
-un hypothèse voisine mais DISTINCTE : `trend_table.py` a sa propre
+un hypothèse voisine, PAS clairement distincte (correction après
+vérification adversariale, cycle suivant — honnêteté à préserver plutôt
+qu'une séparation confortable mais fragile) : `trend_table.py` a sa propre
 hypothèse H7 sur la phrase "retour min 50% contexte" (RULES_EXTRACTION.md
 §1, séquence compressée de la table de tendance à 5 étapes), interprétée
 LÀ-BAS comme "recovery_frac >= 0.50" (fraction du retracement regagnée
-depuis le creux). C'est une phrase différente, dans un module différent,
-pour un usage différent (l'étape Pull-Back de la table TENDANCE à 5
-étapes, pas le filtre de qualité d'entrée générique de ce fichier) — H7
-n'est PAS modifiée ici, et la "Règle des 50%" ci-dessous n'est PAS
-réconciliée avec elle : ce sont deux lectures de deux phrases distinctes du
-corpus, chacune scopée à son propre module (cohérent avec H6 ci-dessous :
-ce fichier reste délibérément séparé de trend_table.py).
+depuis le creux). La première version de cette note affirmait que c'était
+"une phrase différente, un module différent, un usage différent" — un
+examen mot à mot ne soutient PAS cette affirmation aussi nettement :
+RULES_EXTRACTION.md §1 ("Pull-Back : retracement min 23-38% + retour min
+50% contexte") calque très probablement la même table GO/WAIT que #13
+("Entre 23% et 38%" = GO, "50% inférieurs du contexte" = condition
+cumulative) — la même étape Pull-Back, la même structure à 2 volets. #13
+(leçon vidéo) désambiguïse plausiblement le manuel compressé plutôt que de
+décrire autre chose. H7 le reconnaît d'ailleurs lui-même comme "ambigu
+dans le manuel" — ce fichier vient précisément de trouver la source qui
+lève cette ambiguïté, dans le sens "position dans le canal", pas
+"recovery_frac". **H7 n'est PAS modifiée ici** (elle reste utilisée telle
+quelle par `trend_table.py`, changement de comportement hors périmètre de
+ce chantier) — mais la tension entre les deux lectures est désormais aussi
+tracée dans `trend_table.py` lui-même, à côté de H7, pour qu'un futur
+lecteur de ce fichier la voie (au lieu de rester visible seulement ici).
 
 "Le contexte" dans la règle de #13 est interprété comme LE MÊME canal de
-contexte déjà établi ailleurs dans le projet (`ctx_high`/`ctx_low`, fenêtre
-`CONTEXT_DURATION` = "15D", `backtest_phase2_v7.py::prepare`/
-`trend_table.py::add_trend_context`) — pas une nouvelle définition
-inventée ici, la même réutilisée à l'identique (même fenêtre, même
-construction causale `shift(1)`). Lecture alternative explicitement
+contexte déjà établi par `trend_table.py::add_trend_context`
+(`ctx_high`/`ctx_low`, fenêtre `CONTEXT_DURATION` = "15D", `.shift(1)`
+causal) — PAS une nouvelle définition inventée ici. Précision après
+vérification adversariale : `backtest_phase2_v7.py::prepare` ne calcule PAS
+`ctx_high`/`ctx_low` (seulement `context_range`, une amplitude scalaire,
+SANS `.shift(1)`) — la correspondance bit-à-bit n'est vraie que contre
+`trend_table.py`, pas contre v7.py ; et `compute_context_position`
+ci-dessous ne fait pas que réutiliser la MÊME fenêtre, elle recalcule très
+exactement la MÊME grandeur que `trend_table.py::accum_retracement_frac`
+(même formule `(ctx_high - close) / (ctx_high - ctx_low)`, même
+`.replace(0, np.nan)`) — vérifié bit-à-bit sur données réelles, pas
+seulement "la même construction". Lecture alternative explicitement
 écartée mais envisagée : "le contexte" = le mouvement de retracement
 lui-même (auquel cas "50% inférieurs" désignerait un retracement >= 50%) —
 écartée parce qu'elle contredirait la propre description de #13 du niveau
 50% comme "exceptionnel, rare" (un plancher à 50% rendrait le seuil
 minimal de 23% sans objet). Ce fichier reste néanmoins volontairement
 séparé de `trend_table.py` (H6) : `compute_context_position` ci-dessous
-RECALCULE le canal de contexte plutôt que d'importer les colonnes déjà
-calculées par `backtest_phase2_v7.py`/`trend_table.py`, pour ne pas rendre
-ce module dépendant d'eux.
+RECALCULE le canal de contexte plutôt que d'importer `accum_retracement_frac`
+déjà calculée par `trend_table.py`, pour ne pas rendre ce module dépendant
+de lui. Note additionnelle : la fraction retournée n'est PAS bornée à
+[0,1] par construction (le close peut sortir du canal des `CONTEXT_DURATION`
+jours antérieurs) — mesuré sur BTC D1 réel : plage [-0,86, +3,31] — sans
+effet sur le test `>= REGLE_50_CONTEXT_MIN` ci-dessous, mais à ne pas lire
+comme une fraction strictement bornée.
 
 Pivot de mesure — quel haut/bas sert de référence : le DERNIER mouvement
 directionnel haussier complet détecté (dernier swing low, suivi
@@ -231,23 +253,29 @@ def classify_retracement(retracement_pct) -> tuple:
 def compute_context_position(df: pd.DataFrame, duration: str = CONTEXT_DURATION) -> np.ndarray:
     """Position du close dans le canal de "contexte" [ctx_low, ctx_high]
     (rolling `duration`, MÊME construction que
-    `backtest_phase2_v7.py::prepare`/`trend_table.py::add_trend_context` —
-    cf. MISE À JOUR en tête de fichier) : 0.0 = close au sommet du canal,
-    1.0 = close au bas du canal.
+    `trend_table.py::add_trend_context` — cf. MISE À JOUR en tête de
+    fichier ; PAS `backtest_phase2_v7.py::prepare`, qui ne calcule ni
+    `ctx_high` ni `ctx_low` et dont le `context_range` n'a pas de
+    `.shift(1)`) : 0.0 = close au sommet du canal, 1.0 = close au bas du
+    canal — fraction NON bornée à [0,1] par construction (le close peut
+    sortir du canal antérieur), cf. MISE À JOUR en tête de fichier.
 
     CAUSAL comme le reste du fichier : `.shift(1)` avant lecture, la
     bougie courante n'entre jamais dans son propre canal de référence (même
-    construction que `trend_table.py::ctx_high`/`ctx_low`).
+    construction que `trend_table.py::ctx_high`/`ctx_low`). Reproduit très
+    exactement `trend_table.py::accum_retracement_frac` (même formule,
+    vérifié bit-à-bit) — recalculé ici plutôt qu'importé pour ne pas rendre
+    ce module dépendant de `trend_table.py` (H6).
 
     Nécessite une colonne `date` (utilisée pour le rolling calendaire,
     comme partout ailleurs où `CONTEXT_DURATION` est utilisé dans le
-    projet). NaN pour la toute première bougie (`shift(1)` sans historique
-    antérieur) ou si `ctx_high == ctx_low` (canal de largeur nulle, division
-    évitée) ; en-deçà de 15 jours calendaires de profondeur, la fenêtre
-    reste PARTIELLE (pas NaN) — même comportement par défaut de
-    `.rolling(<offset>)` que `context_range`/`ctx_high`/`ctx_low` ailleurs
-    dans le projet (`backtest_phase2_v7.py`/`trend_table.py`), pas un choix
-    nouveau introduit ici."""
+    projet) — exigence dure introduite par cette fonction (cf. note sur
+    `add_fibonacci_columns` ci-dessous). NaN pour la toute première bougie
+    (`shift(1)` sans historique antérieur) ou si `ctx_high == ctx_low`
+    (canal de largeur nulle, division évitée) ; en-deçà de 15 jours
+    calendaires de profondeur, la fenêtre reste PARTIELLE (pas NaN) — même
+    comportement par défaut de `.rolling(<offset>)` que `ctx_high`/`ctx_low`
+    dans `trend_table.py`, pas un choix nouveau introduit ici."""
     ts = df.set_index("date")
     ctx_high = ts["high"].rolling(duration).max().shift(1)
     ctx_low = ts["low"].rolling(duration).min().shift(1)
@@ -259,14 +287,34 @@ def compute_context_position(df: pd.DataFrame, duration: str = CONTEXT_DURATION)
 def classify_regle_50(retracement_pct, context_position) -> np.ndarray:
     """"Règle des 50%" (#13, citée en tête de fichier) : condition CUMULATIVE
     (ET, pas OU, contrairement à `classify_retracement` ci-dessus qui teste
-    une seule condition) — retracement >= 23% (`FAVORABLE_MIN`, même seuil
-    que la classification favorable/optimale) ET pénétration du close dans
-    les 50% inférieurs du canal de contexte (`context_position >=
-    REGLE_50_CONTEXT_MIN`). NaN sur l'une ou l'autre entrée -> False (toute
-    comparaison avec NaN vaut False), comme `classify_retracement`."""
+    une seule condition) — retracement dans la zone favorable [23%, 61,8%]
+    (`FAVORABLE_MIN`/`FAVORABLE_MAX`, MÊMES bornes que `classify_retracement`
+    ci-dessus) ET pénétration du close dans les 50% inférieurs du canal de
+    contexte (`context_position >= REGLE_50_CONTEXT_MIN`). NaN sur l'une ou
+    l'autre entrée -> False (toute comparaison avec NaN vaut False), comme
+    `classify_retracement`.
+
+    CORRECTION (vérification adversariale dédiée, cycle suivant) : la
+    version initiale de cette fonction ne bornait le retracement que par le
+    bas (`r >= FAVORABLE_MIN`), sans plafond haut — un bug de fidélité
+    réel, pas cosmétique : ce fichier affirme lui-même en tête (synthèse
+    retenue) qu'au-delà de 61,8% le retracement est "défavorable / invalidé
+    (Red Flag explicite de #10)", et la propre table de décision GO/WAIT de
+    #13 est encore plus stricte ("GO si cluster Fibonacci entre 23% et
+    38%"). Sans plafond, `fib_regle_50` s'est révélé PLUS LARGE que
+    `fib_favorable` en nombre de bougies (mesuré : 65,2% des bougies
+    validées par la version buguée avaient en réalité un retracement >61,8%
+    sur BTC H4), contredisant la prétention du commit d'origine ("condition
+    BEAUCOUP plus restrictive") — le faible nombre de trades mesuré
+    initialement venait d'une anticorrélation avec les autres gates
+    (score/MTF), pas d'un resserrement réel de la zone. Plafonner à
+    `FAVORABLE_MAX` (au lieu du 38% de la table GO/WAIT de #13, plus strict
+    encore) est le choix qui réutilise une borne déjà établie et justifiée
+    dans ce même fichier plutôt que d'en inventer une 3e — cohérent avec la
+    discipline "pas de nouveau seuil sans le documenter comme hypothèse"."""
     r = np.asarray(retracement_pct, dtype=float)
     p = np.asarray(context_position, dtype=float)
-    return (r >= FAVORABLE_MIN) & (p >= REGLE_50_CONTEXT_MIN)
+    return (r >= FAVORABLE_MIN) & (r <= FAVORABLE_MAX) & (p >= REGLE_50_CONTEXT_MIN)
 
 
 def add_fibonacci_columns(df: pd.DataFrame, order: int = SWING_ORDER) -> pd.DataFrame:
@@ -280,7 +328,18 @@ def add_fibonacci_columns(df: pd.DataFrame, order: int = SWING_ORDER) -> pd.Data
     low/high n'entre dans le calcul de retracement qu'une fois réellement
     confirmé (`order` bougies après le creux/sommet lui-même), jamais
     avant ; le canal de contexte est lu avec `.shift(1)` (cf.
-    `compute_context_position`)."""
+    `compute_context_position`).
+
+    EXIGENCE DURE introduite par les colonnes `fib_context_position`/
+    `fib_regle_50` (vérification adversariale dédiée, cycle suivant) : `df`
+    doit désormais contenir une colonne `date` (utilisée par
+    `compute_context_position` pour le rolling calendaire) — avant leur
+    ajout, cette fonction acceptait un df `high`/`low`/`close` seul. Lève
+    `KeyError` explicitement si absente, pas un comportement silencieux ;
+    les deux appelants réels (`backtest_phase2_fib.py`,
+    `cross_stress_test_faithful_gates.py`) passent tous deux un df issu de
+    `prepare()`, qui a toujours `date` — non cassé, mais signalé ici comme
+    rupture de contrat d'API pour tout futur appelant."""
     df = df.copy()
     retracement = compute_retracement(df, order=order)
     favorable, optimal = classify_retracement(retracement)

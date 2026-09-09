@@ -11,22 +11,24 @@ Exécution sur H4, référence/contexte sur D1 : un signal H4 n'est validé que 
 
 **Historique de cette section** : le tableau ci-dessous montrait initialement des chiffres calculés avec l'ancien calcul batch (non causal) du cycle Hilbert, signalés obsolètes puis laissés en l'état "à rejouer" pendant le traitement du P1 (stop cross-timeframe, tâche distincte). Les chiffres avec le moteur causal (`compute_cycle_phase_causal`) existaient déjà dans `phase2_v7_mtf_results.csv` (produits lors du rejeu de la section "Correction P1" ci-dessous) mais n'avaient jamais été transcrits ici — corrigé à présent, sans nouveau calcul, juste lecture du CSV déjà à jour.
 
+**REFRESH (6e round de mobilisation multi-agents, trouvaille annexe de la sensibilité `MIN_BORDERS`)** : `phase2_v7_mtf_results.csv` était resté périmé depuis les corrections EXCES-H4 et Conflit Multi-Timeframe apportées à `backtest_phase2_v7.py` (ex. BTC 504→**492** trades) — jamais régénéré après ces 2 corrections. Régénéré et tableaux ci-dessous rafraîchis (`python3 backtest_phase2_v7.py`, vérifié par ailleurs indépendamment via `min_borders_sensitivity_v7_results.csv` au seuil de référence).
+
 | Actif (profil FAIBLE, stop H4) | Trades | Win rate | Profit factor | Max DD | Retour |
 |---|---|---|---|---|---|
-| BTC — H4 seul | 1402 | 39,4% | 1,52 | -14,8% | +81,8% |
-| BTC — validé par D1 | 504 | **42,7%** | **1,60** | **-9,1%** | +23,1% |
-| ETH — H4 seul | 1363 | 37,1% | 1,49 | -12,6% | +88,2% |
-| ETH — validé par D1 | 417 | **45,6%** | **2,40** | **-6,1%** | +55,2% |
-| BNB — H4 seul | 1399 | 41,2% | 1,37 | -17,2% | +46,3% |
-| BNB — validé par D1 | 544 | **42,1%** | **1,41** | **-12,6%** | +17,0% |
-| SOL — H4 seul | 1239 | 38,8% | 1,79 | -21,2% | +182,0% |
-| SOL — validé par D1 | 361 | **41,6%** | **1,82** | **-8,7%** | +24,5% |
+| BTC — H4 seul | 1400 | 41,0% | 1,52 | -14,4% | +79,4% |
+| BTC — validé par D1 | 492 | **43,1%** | **1,57** | **-9,8%** | +21,9% |
+| ETH — H4 seul | 1405 | 36,9% | 1,29 | -15,1% | +35,0% |
+| ETH — validé par D1 | 427 | **46,1%** | **2,06** | **-6,5%** | +38,9% |
+| BNB — H4 seul | 1408 | 41,1% | 1,32 | -18,0% | +37,9% |
+| BNB — validé par D1 | 525 | **42,7%** | **1,48** | **-12,5%** | +20,5% |
+| SOL — H4 seul | 1234 | 39,6% | 1,69 | -19,3% | +141,4% |
+| SOL — validé par D1 | 339 | **39,8%** | **1,77** | **-8,4%** | +23,0% |
 
 Détail complet (4 profils × 4 actifs × 2 configurations de stop) : `phase2_v7_mtf_results.csv`.
 
-**Constat révisé (moteur causal) — la direction tient, l'ampleur est bien plus modeste qu'annoncé initialement** : sur les 4 actifs, sans exception, la validation par D1 réduit le nombre de trades (~2,5-3×), améliore le win rate et le profit factor, et réduit le drawdown — la direction du résultat original tient. Mais l'ampleur de l'amélioration, qui semblait spectaculaire avec le calcul batch (+5 à +13 points de win rate), est **beaucoup plus modeste avec le calcul causal** : +0,9 point (BNB) à +8,5 points (ETH) de win rate ; profit factor quasiment inchangé sur BNB/SOL (+0,03 à +0,04) et significatif seulement sur ETH (+0,91) ; le retour cumulé chute fortement partout (cohérent avec l'edge global lui-même surestimé ~4× par le batch, cf. `COUVERTURE_ENSEIGNEMENTS.md` P0).
+**Constat révisé (moteur causal, chiffres rafraîchis) — la direction tient, l'ampleur reste modeste** : sur les 4 actifs, sans exception, la validation par D1 réduit le nombre de trades (~2,7-3,3×), améliore le win rate et le profit factor, et réduit le drawdown — la direction du résultat original tient. L'ampleur reste modeste, cohérente avec la mesure précédente (avant EXCES-H4/Conflit MTF) : +0,2 point (SOL) à +9,2 points (ETH) de win rate ; profit factor quasiment inchangé sur BTC/SOL (+0,05 à +0,08) et significatif sur ETH (+0,77) et BNB (+0,16) ; le retour cumulé chute fortement partout (cohérent avec l'edge global lui-même surestimé ~4× par le batch, cf. `COUVERTURE_ENSEIGNEMENTS.md` P0).
 
-Ce n'est plus "le résultat le plus uniformément spectaculaire du projet" (affirmation d'origine, à ne plus citer telle quelle) — c'est un résultat qui **confirme la direction** (valider un signal H4 par son contexte D1 aide, sans exception sur les 4 actifs) avec une ampleur bien plus modeste que ce qu'on pensait, cohérent avec 7 sources indépendantes du corpus sur l'intérêt de la validation croisée — mais qui ne suffit plus à lui seul à justifier un déploiement, vu la faiblesse de certains gains (BNB notamment, quasi neutre).
+Ce n'est plus "le résultat le plus uniformément spectaculaire du projet" (affirmation d'origine, à ne plus citer telle quelle) — c'est un résultat qui **confirme la direction** (valider un signal H4 par son contexte D1 aide, sans exception sur les 4 actifs) avec une ampleur modeste, cohérent avec 7 sources indépendantes du corpus sur l'intérêt de la validation croisée — mais qui ne suffit plus à lui seul à justifier un déploiement, vu la faiblesse de certains gains (SOL notamment, quasi neutre sur le win rate).
 
 ## Limites documentées
 - Toujours un proxy, pas le vrai signal PRO Framework
@@ -41,27 +43,27 @@ Ce n'est plus "le résultat le plus uniformément spectaculaire du projet" (affi
 
 **Ce qui a changé** (`code/backtest_phase2_v7.py`) : `attach_higher_context` transmet maintenant, en plus du score et du régime, le `ctx_support` D1 — via la même jointure `merge_asof` sans lookahead (dernière bougie D1 entièrement close). `run_v7` expose un nouveau paramètre `use_mtf_stop` (défaut `False`, comportement historique inchangé) : à `True`, le stop réel à l'entrée est ce `ctx_support` D1 (niveau de prix absolu, substituable tel quel à `ctx_support` H4 — pas de problème d'échelle, les deux sont des prix, pas des distances).
 
-**Mesure — stop H4 (même UT) vs stop D1 réel, gate MTF activé dans les deux cas, 4 actifs × 4 profils, moteur DÉJÀ CAUSAL** (`compute_cycle_phase_causal`, correction P0 intégrée au moment de cette mesure — chiffres les plus à jour du document ; détail complet : `phase2_v7_mtf_results.csv`, colonnes `profile`/`stop`) :
+**Mesure — stop H4 (même UT) vs stop D1 réel, gate MTF activé dans les deux cas, 4 actifs × 4 profils, moteur DÉJÀ CAUSAL** (`compute_cycle_phase_causal`, correction P0 intégrée au moment de cette mesure ; CSV rafraîchi 6e round, cf. note ci-dessus — détail complet : `phase2_v7_mtf_results.csv`, colonnes `profile`/`stop`) :
 
 | Actif (profil FAIBLE) | Stop | Trades | Win rate | Profit factor | Max DD | Retour | Retour/DD |
 |---|---|---|---|---|---|---|---|
-| BTC | H4 (même UT) | 504 | 42,7% | 1,60 | -9,1% | +23,1% | 2,54 |
-| BTC | D1 réel | 505 | 42,4% | **2,02** | **-3,1%** | +15,5% | **5,00** |
-| ETH | H4 (même UT) | 417 | 45,6% | 2,40 | -6,1% | +55,2% | **9,05** |
-| ETH | D1 réel | 418 | 45,0% | 2,41 | **-2,8%** | +20,9% | 7,46 |
-| BNB | H4 (même UT) | 544 | 42,1% | 1,41 | -12,6% | +17,0% | **1,35** |
-| BNB | D1 réel | 543 | 41,8% | 1,40 | **-5,6%** | +7,0% | 1,25 |
-| SOL | H4 (même UT) | 361 | 41,6% | 1,82 | -8,7% | +24,5% | **2,82** |
-| SOL | D1 réel | 361 | 41,0% | 1,54 | -3,6% | +6,9% | 1,92 |
+| BTC | H4 (même UT) | 492 | 43,1% | 1,57 | -9,8% | +21,9% | 2,23 |
+| BTC | D1 réel | 491 | 43,2% | **1,97** | **-3,1%** | +14,5% | **4,68** |
+| ETH | H4 (même UT) | 427 | 46,1% | 2,06 | -6,5% | +38,9% | **5,98** |
+| ETH | D1 réel | 427 | 45,4% | 2,09 | **-2,9%** | +16,1% | 5,55 |
+| BNB | H4 (même UT) | 525 | 42,7% | 1,48 | -12,5% | +20,5% | **1,64** |
+| BNB | D1 réel | 522 | 42,5% | 1,41 | **-5,6%** | +7,0% | 1,25 |
+| SOL | H4 (même UT) | 339 | 39,8% | 1,77 | -8,4% | +23,0% | **2,74** |
+| SOL | D1 réel | 339 | 39,8% | 1,37 | -4,4% | +4,4% | 1,00 |
 
-**Mécanisme identifié (pas une hypothèse — vérifié sur BTC, indépendant du cycle donc inchangé par la correction P0)** : le `ctx_support` D1 réel est en moyenne ~2,7× plus loin du prix que le `ctx_support` calculé sur H4 (distance moyenne 10,1% vs 3,8% du prix ; le D1 est plus éloigné dans 78% des bougies). Le sizing du moteur (`size_frac = risk_pct / stop_pct`, risque fixe en % de l'equity) réduit donc mécaniquement la taille de position quand le stop réel D1 est utilisé — moins d'exposition, donc moins de retour composé, mais aussi (le plus souvent) moins de drawdown, dans une proportion qui varie par actif.
+**Mécanisme identifié (pas une hypothèse — vérifié sur BTC, indépendant du cycle donc inchangé par la correction P0 ; non re-vérifié indépendamment lors du refresh 6e round, mais c'est un fait structurel sur `ctx_support`, indépendant des gates EXCES-H4/Conflit MTF corrigés depuis)** : le `ctx_support` D1 réel est en moyenne ~2,7× plus loin du prix que le `ctx_support` calculé sur H4 (distance moyenne 10,1% vs 3,8% du prix ; le D1 est plus éloigné dans 78% des bougies). Le sizing du moteur (`size_frac = risk_pct / stop_pct`, risque fixe en % de l'equity) réduit donc mécaniquement la taille de position quand le stop réel D1 est utilisé — moins d'exposition, donc moins de retour composé, mais aussi (le plus souvent) moins de drawdown, dans une proportion qui varie par actif.
 
-**Résultat honnête, mesuré sur les 16 combinaisons (4 actifs × 4 profils), gate MTF activé, moteur causal** :
-- Le drawdown absolu diminue avec le stop D1 réel dans **16/16 cas**, sans exception cette fois (avec le moteur pré-P0, deux exceptions apparaissaient sur BNB Très Agressif et SOL Faible ; elles disparaissent avec le cycle causal).
+**Résultat honnête, mesuré sur les 16 combinaisons (4 actifs × 4 profils), gate MTF activé, moteur causal, chiffres rafraîchis 6e round** :
+- Le drawdown absolu diminue avec le stop D1 réel dans **16/16 cas**, sans exception.
 - Le retour total diminue systématiquement (16/16) — cohérent avec le sizing plus petit.
-- **Le ratio retour/drawdown (calmar) se dégrade avec le stop D1 réel dans 13/16 combinaisons** — seules exceptions où le stop D1 réel améliore le ratio : BTC/FAIBLE, BTC/MODERE, ETH/TRES_AGRESSIF. SOL et BNB restent les cas les plus nets où le calmar se dégrade avec le stop D1 réel, quel que soit le profil.
-- Le win rate et le profit factor sont globalement proches entre les deux configurations (BTC/ETH plutôt meilleurs avec D1, BNB/SOL plutôt légèrement moins bons), sans direction constante unique.
-- **Conclusion inchangée par la correction P0** : le sens du résultat (D1 réel réduit systématiquement retour ET drawdown, dégrade le ratio risque-ajusté dans la majorité des cas) est resté stable en recalculant avec le cycle causal — seule l'ampleur des chiffres bruts a changé (win rate/PF nettement plus faibles qu'avant P0, cohérent avec l'inflation du cycle batch documentée dans `COUVERTURE_ENSEIGNEMENTS.md`).
+- **Le ratio retour/drawdown (calmar) se dégrade avec le stop D1 réel dans 11/16 combinaisons** (recalculé après le refresh du CSV, chiffre corrigé — était "13/16" avant les corrections EXCES-H4/Conflit MTF) — exceptions où le stop D1 réel améliore le ratio : BTC/FAIBLE, BTC/MODERE, ETH/MODERE, ETH/AGRESSIF, ETH/TRES_AGRESSIF. BNB et SOL restent les cas les plus nets où le calmar se dégrade avec le stop D1 réel, sur les 4 profils sans exception.
+- Le win rate et le profit factor sont globalement proches entre les deux configurations (BTC/ETH plutôt meilleurs ou stables avec D1, BNB/SOL plutôt légèrement moins bons), sans direction constante unique.
+- **Conclusion qualitative inchangée par les corrections successives (P0, EXCES-H4, Conflit MTF)** : le sens du résultat (D1 réel réduit systématiquement retour ET drawdown, dégrade le ratio risque-ajusté dans la majorité des cas) est resté stable à travers toutes les corrections apportées à `backtest_phase2_v7.py` depuis — seule l'ampleur des chiffres bruts et le compte exact des exceptions (11/16 vs 13/16) ont changé.
 
 **Conclusion mesurée, pas supposée** : le stop D1 réel n'améliore PAS la performance risque-ajustée dans la majorité des cas testés avec ce moteur de sizing à risque fixe — l'effet dominant est la réduction mécanique de la taille de position (stop plus loin ⇒ position plus petite ⇒ moins de retour, sans réduction proportionnelle du drawdown). Ce n'est pas un motif pour ne pas l'avoir implémenté (principe acté dans `COUVERTURE_ENSEIGNEMENTS.md` : la performance du proxy ne décide jamais si un élément du corpus doit être implémenté) — l'implémentation reste due et faite ; c'est en revanche un motif légitime pour garder `use_mtf_stop=False` comme réglage par défaut des campagnes de résultats tant qu'aucune analyse plus fine (ex. ajuster `risk_pct` en fonction de la distance du stop, ou ne prendre le stop D1 que lorsqu'il est plus PROCHE que le H4, pas plus loin) n'a été tentée. Ce point reste ouvert.
 
