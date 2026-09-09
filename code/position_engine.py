@@ -274,6 +274,95 @@ H-Canal-Large-4 -- PÉRIMÈTRE : table RANGE seulement (ce fichier), PAS la
   et son plafond de risque de campagne (H3) -- une seconde décision de
   conception que le corpus ne tranche nulle part. Laissée explicitement hors
   périmètre et documentée ici, plutôt qu'appliquée en silence par analogie.
+
+================================================================================
+"RED FLAGS D'INVALIDATION PRÉCOCE" (#10) -- EXAMINÉS ET DÉLIBÉRÉMENT PAS
+AJOUTÉS ICI. Note DOCUMENTAIRE (aucun comportement, aucune constante) --
+même discipline que la note H7 de `trend_table.py` : la trouvaille doit être
+visible par le lecteur du fichier concerné, pas seulement dans les documents
+de suivi. Décision complète, chiffres et citations : `PLAN.md` section
+"9e application", `COUVERTURE_ENSEIGNEMENTS.md` (section "Audit exhaustif du
+corpus complet", item "Red Flags d'invalidation précoce").
+================================================================================
+Citation exacte (`TRADING_LESSONS_ZONE_ACCUMULATION.md` lignes 44-47, il y en
+a exactement TROIS) :
+
+    ## Signaux d'invalidation précoce ("Red Flags")
+    - Clôtures du contexte sous la MA20
+    - Retracement profond : clôture maintenue au-delà de 61% de la structure
+    - Retour au contexte opposé : atteinte de la borne extérieure opposée du
+      range initial
+
+Ce qu'il faut savoir en lisant CE fichier, dans l'ordre d'importance :
+
+1. CE MOTEUR A DÉJÀ UN MÉCANISME D'INVALIDATION PRÉCOCE, et ce n'est pas le
+   stop -- c'est l'étape 3 de `process_tranche` (« Sortie de signal (flip)
+   avant toute étape »), qui ne s'applique QUE tant que `val_done` et
+   `conf_done` sont faux, donc précisément "précocement". C'est déjà le canal
+   par lequel les règles d'abstention littérales du corpus (EXCES-H4, gate
+   UT+2 Hebdomadaire, Conflit MTF D1) FERMENT une tranche déjà ouverte, via
+   `gated_long_signal` -- cf. la note dédiée en tête de
+   `backtest_phase2_faithful.py`. Mesuré sur les 4 388 trades de `faithful.py`
+   (BTC/ETH/BNB/SOL x 4 profils, historique complet) : FLIP 93,8% / LIMITE
+   3,8% / STOP 2,4% des sorties. L'affirmation de l'audit du 5e round (« pas
+   de mécanisme distinct du stop de protection standard ») était donc FAUSSE,
+   et elle est corrigée dans les documents de suivi. Si les Red Flags devaient
+   un jour être implémentés, l'endroit juste est ce canal-là (le `gate()` de
+   l'appelant), PAS une 6e branche dans `process_tranche`.
+
+2. Le Red Flag « retour au contexte opposé » est un DOUBLON BIT-À-BIT de
+   l'étape 2 ci-dessous, et il est PROUVÉ NON PRÉCOCE. Le stop est déjà posé
+   exactement à ce niveau (`stop_price = min(ctx_support_v[j], entry*0.999)`,
+   `ctx_support_d1` = borne basse du canal de contexte UT+1) et déclenché sur
+   la MÈCHE, ce qui est mot pour mot « atteinte de la borne extérieure
+   opposée ». Vérifié empiriquement, pas déduit : la branche `entry*0.999` du
+   `min()` ne mord JAMAIS (0/4 388 trades) ; le niveau est atteint par 24
+   trades seulement, et dans 24/24 cas la bougie de déclenchement EST la
+   bougie de sortie réelle -- 0/4 388 trade sortirait plus tôt. La seule
+   variante qui sortirait vraiment plus tôt (relire `ctx_support` EN DIRECT à
+   chaque bougie au lieu de le figer à l'entrée) est un stop suiveur sur la
+   bande de contexte : elle contredit frontalement la règle la mieux étayée de
+   tout le corpus (interdiction de resserrer / passer au break-even avant la
+   Confirmation -- sources #12/#13/#15/#16 nommées, #16 s'annonçant lui-même
+   comme la « 5e/6e confirmation » -- déjà encodée par `conf_to_be` et par
+   l'ordre séquentiel des étapes 4/5 ci-dessous). Écartée pour cette raison
+   précise, pas par préférence.
+
+3. Le Red Flag « clôture maintenue au-delà de 61% » est DÉJÀ implémenté, deux
+   fois, mais comme plafond d'ENTRÉE, pas de sortie :
+   `trend_table.py::ACCUM_RETRACEMENT_HIGH = 0.61` et
+   `fibonacci.py::FAVORABLE_MAX = 0.618` (dont le commentaire cite déjà ce
+   Red Flag nommément). En faire EN PLUS une condition de sortie ici serait un
+   TROISIÈME usage du même chiffre, alors que le corpus l'emploie comme
+   MINIMUM d'entrée dans trois autres passages (`RULES_EXTRACTION.md` §1
+   "Range tendanciel ... >=61,8%" ; #5 "entrée agressive possible dès 61%
+   Fibonacci" ; #11 "zone d'intervention à Fibonacci 61,8%") -- même chiffre,
+   inégalité INVERSE, référentiels différents. C'est exactement le piège déjà
+   documenté pour le 76% (« seuil d'ENTRÉE ici, cible de SORTIE ailleurs --
+   deux règles distinctes à ne jamais confondre »). En outre le mot
+   "maintenue" n'est chiffré NULLE PART dans le corpus : l'implémenter
+   exigerait d'inventer ce paramètre, motif de refus déjà retenu pour le gate
+   Fibonacci RANGE §1.
+
+4. Le Red Flag « clôtures du contexte sous la MA20 » est le SEUL des trois qui
+   ne soit ni redondant ni déjà codé -- il reste au backlog catégorie C, pas
+   ici. Il dispose d'une 2e source plus précise (`TRADING_LESSONS_CLUSTERS_
+   PRIX.md:50`, #16, section « Règle de Trois (invalidation statistique) » :
+   "clôtures multiples et marginales sous la moyenne mobile"), mais : (a) dans
+   cette section de #16, les deux puces voisines énoncent leur conséquence et
+   c'est "prudence maximale" (déjà implémentée -- `rule3_streak`/
+   `rule3_size_mult` ci-dessous) et "arrêt des NOUVEAUX ENGAGEMENTS", donc une
+   abstention, pas la fermeture d'une position ouverte ; (b) "multiples" et
+   "marginales" sont deux paramètres à inventer ; (c) les deux sources placent
+   la MA20 sur des unités de temps DIFFÉRENTES (#10 dit "clôtures DU
+   CONTEXTE", le tableau de #16 est calé sur "Unité de Temps de Trading |
+   Horaire (H1)") ; (d) le projet contient déjà TROIS "moyennes 20 périodes"
+   distinctes, à ne jamais confondre -- `cluster_technique.py::
+   compute_ma20_rebound` (MA20 de PRIX, UT d'exécution, signal d'ENTRÉE,
+   exige la clôture AU-DESSUS), `trend_table.py` H9 (MA20 de VOLUME,
+   confirmation de breakout) et celle de ce Red Flag (MA20 de prix, sur le
+   CONTEXTE, clôture EN DESSOUS, invalidation) : même piège terminologique que
+   celui déjà documenté pour "Cluster technique".
 ================================================================================
 """
 import numpy as np
