@@ -169,7 +169,35 @@ def _swing_confirmed(values: np.ndarray, comparator, order: int) -> np.ndarray:
 def compute_swing_low_confirmed(low: np.ndarray, order: int = SWING_ORDER) -> np.ndarray:
     """Version CAUSALE de la détection de swing low (cf. réserve P0-bis en
     tête de fichier). `confirmed[t]` vrai ssi `low[t - order]` est un swing
-    low confirmé à l'instant t."""
+    low confirmé à l'instant t.
+
+    NOTE — pourquoi sur les MÈCHES (`low`) et pas sur les clôtures (décision
+    prise au 8e round de mobilisation, documentée ici pour qu'un futur
+    lecteur la voie ; cf. `PLAN.md` section "8e application" et
+    `COUVERTURE_ENSEIGNEMENTS.md` pour les citations complètes). La question
+    a été posée par l'audit du corpus ("définition stricte de la 3ème borne
+    par clôtures, pas mèches", `TRADING_LESSONS_TROISIEME_BORNE.md`) et
+    TRANCHÉE EN FAVEUR DES MÈCHES : les clauses "clôtures" de cette source
+    sont des prédicats de VALIDATION d'un niveau déjà tracé ("le prix doit
+    rompre... validée par des clôtures de bougies au-delà du contexte"),
+    jamais une règle de LOCALISATION d'un point de swing — et 3 sources
+    contredisent frontalement une détection par clôtures
+    (`CLUSTERS_PRIX.md:30` : *"le dernier creux structurel (bas de clôture
+    OU mèche)"* ; `ZONE_ACCUMULATION.md:38` : *"sous le point bas de la 4ème
+    borne"* ; `STRUCTURES_ALTERATIONS.md:28` : *"les mèches peuvent
+    pénétrer... les clôtures doivent rester à l'extérieur pour valider"* =
+    niveau tracé sur les extrêmes, clôtures comme TEST). La convention du
+    projet est donc cohérente avec le corpus et déjà appliquée partout :
+    niveau/borne sur les extrêmes, validation de cassure sur la clôture
+    (`trend_table.py::breakout_raw`/`excess_raw`, hypothèse H5,
+    `PHASE2_CORRECTION_CLOSES.md`), stop sur la mèche car ordre réel
+    intrabar (`position_engine.py`). Mesuré avant de trancher : une détection
+    par clôtures ne changerait quasi pas la FRÉQUENCE (-1,0% à +2,1% de
+    swings sur BTC/ETH/BNB/SOL H4) mais DÉPLACERAIT ~60% des bornes, sans
+    aucun effet utile sur `n_borders` (gate de maturité déjà inerte) et avec
+    5,6-8,1% de bascules du signal `score >= 2` via
+    `compute_ascending_lows`. NE PAS rebasculer cette primitive sur les
+    clôtures sans une nouvelle décision explicite documentée."""
     return _swing_confirmed(low, np.less_equal, order)
 
 

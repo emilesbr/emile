@@ -403,6 +403,26 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
         if size_frac <= 0:
             return None
         state["last_pyramid_high"] = max(state["last_pyramid_high"], high[j]) if is_pyramid_add else high[j]
+        # TENSION OUVERTE, NON RÉSOLUE (trouvée au 8e round de mobilisation,
+        # tracée ici pour qu'un futur lecteur de ces 3 lignes la voie —
+        # AUCUN changement de comportement, cf. `PLAN.md` section "8e
+        # application" et `COUVERTURE_ENSEIGNEMENTS.md` catégorie C) :
+        # `local_range_v`/`context_range_v` sont calculés en amont comme
+        # `max(high) - min(low)` (`backtest_phase2_v7.py::prepare` et ses
+        # copies), donc des amplitudes PUREMENT MÈCHES, projetées telles
+        # quelles ci-dessous. Or `TRADING_LESSONS_PYRAMIDALISATION.md:20`
+        # (#15) en fait un titre de section : *"règle d'or : calculs sur
+        # clôtures, jamais sur les mèches"*, précisé l.22 — *"validation au
+        # ratio 1:1 (report de l'amplitude du range EN CLÔTURE)"*.
+        # `PHASE2_CORRECTION_CLOSES.md` avait basculé les DÉCLENCHEMENTS sur
+        # clôture (`process_tranche`) mais laissé les AMPLITUDES en mèches.
+        # Mesuré (BTC/ETH/BNB/SOL) : une amplitude en clôtures vaut 0,79-0,81
+        # de celle en mèches sur `local_range` H4 et 0,55-0,58 en D1 — donc
+        # des cibles val/conf/lim nettement plus proches, pas un no-op.
+        # Décision de conception requise avant tout code (le corpus ne dit
+        # pas si "amplitude du range" désigne la fenêtre glissante ou une
+        # structure de range identifiée) : NE PAS changer sans décision
+        # explicite documentée.
         return {
             "entry": entry_price, "stop": stop_price, "remaining": size_frac,
             "val_done": False, "conf_done": False, "pnl_accum": 0.0,
