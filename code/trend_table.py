@@ -167,6 +167,60 @@ H11. **Portée réglage marché** : contrairement à `backtest_phase2_v7.py`,
     backtest associé), comme v6. Hors régime TENDANCE : aucune position
     ouverte (pas de repli sur la table range, pour mesurer cette table
     isolément plutôt que mélangée à une performance déjà connue).
+
+    NOTE ajoutée au 10e round de mobilisation (DOCUMENTATION SEULE, aucun
+    changement de comportement — même discipline que la note H7 ci-dessus).
+    `COUVERTURE_ENSEIGNEMENTS.md`/`PLAN.md` listaient en catégorie C un item
+    « mécanisme d'emboîtement T/T-1 » en s'appuyant sur H11 (« `trend_table.py`
+    reconnaît DÉJÀ lui-même être mono-timeframe »). **H11 et cet item ne
+    parlent pas de la même chose, et la confusion est dans l'item, pas ici** :
+    H11 décline la validation par l'UT SUPÉRIEURE (« H4 validé par D1 »), qui
+    est la direction que le corpus prescrit réellement ; l'item demandait la
+    structure de l'UT INFÉRIEURE (T-1). Investigué et tranché : NE PAS
+    IMPLÉMENTER. Trois raisons mesurées, pour qu'un futur lecteur de H11 ne
+    rouvre pas le chantier à l'aveugle :
+      (a) La citation d'origine (`TRADING_LESSONS_ZONE_ACCUMULATION.md:13`,
+          *"le canal de tendance observé sur votre unité de temps de contexte
+          (T) n'est rien d'autre que la structure interne de l'unité de temps
+          inférieure (T-1)"*) énonce une IDENTITÉ de lecture graphique, pas
+          une procédure de calcul. Sa seule traduction opérationnelle dans
+          tout le corpus est la projection vers le BAS — *"Extreme Channel
+          (contexte de l'UT supérieure affiché sur l'UT de trading)"* (#16
+          `TRADING_LESSONS_CLUSTERS_PRIX.md:12`), stop sous ce canal (#16:28,
+          #12 `TRADING_LESSONS_BREAKOUT_RATIO11.md:7`, #10:38) — déjà
+          implémentée SANS CONDITION ailleurs dans le projet (`ctx_support_d1`,
+          `backtest_phase2_faithful.py` ; option `use_mtf_stop` de
+          `backtest_phase2_ut2.py::run_ut2`). Jamais la recomputation d'une
+          structure de rang inférieur.
+      (b) Mesuré : la seule grandeur numérique du gate Accumulation,
+          `accum_retracement_frac`, ne porte AUCUNE information T-1.
+          `ctx_high`/`ctx_low` calculés en H1 puis joints causalement au H4
+          (même `merge_asof` que `attach_context_level`, closure_delay=1h)
+          sont identiques aux valeurs H4 natives sur 94,6-95,5% des barres,
+          et sur **100,00%** une fois neutralisé l'artefact de granularité du
+          `shift(1)` de `add_trend_context` (1 barre = 1h vs 4h) : un max/min
+          sur fenêtre CALENDAIRE est exactement invariant par agrégation de
+          bougies. La clôture H1 jointe est celle de la bougie H4 précédente
+          sur 100% des barres. Et le gate ADDITIF « structure T-1 mature »
+          est inerte bit-à-bit : 7/7, 9/9, 16/16, 8/8 déclenchements
+          Accumulation (BTC/ETH/BNB/SOL, historique complet), écart 0 —
+          `n_borders` vaut 32-34 au MINIMUM en H1 sur les barres candidates
+          contre un seuil `MIN_BORDERS=3` (même « gate inerte » qu'aux 6e et
+          8e rounds).
+      (c) La seule composante réellement dépendante du niveau est la bande
+          EMA±ATR — et dans la direction que le corpus prescrit (vers le
+          HAUT), elle est incompatible avec H3 dans CE moteur : un stop posé
+          sur le canal D1 passe de 1,20-2,26% à 14,75-19,88% de distance
+          (×8,6 à ×14,6), ce qui plafonne la campagne entière à 0,25-0,34 du
+          capital au lieu de 2,2-4,2 — les 4 profils s'écrasent sur le MÊME
+          plafond et la table §4 (Renfort +25/+50/+100/+150/+200%), seul objet
+          que ce fichier existe pour mesurer, devient inexprimable.
+          (`position_engine.py` n'a pas ce problème : il dimensionne chaque
+          tranche indépendamment, `risk_pct / stop_pct`, sans plafond cumulé
+          de campagne.) Et utiliser le canal D1 comme référence du REJET fait
+          tomber les déclenchements Accumulation de 7/9/16/8 à 0/0/0/3.
+    Détail complet, citations vérifiées mot pour mot et tensions de sources :
+    `PLAN.md` section "10e application", `COUVERTURE_ENSEIGNEMENTS.md`.
 H12. **Une seule campagne active à la fois** ("un seul tracker actif",
     principe du projet appliqué ici aussi à l'échelle d'une position) : pas
     de pyramidalisation de PLUSIEURS campagnes de tendance en parallèle,

@@ -823,6 +823,25 @@ Verdict par Red Flag (détail complet et chiffres : `PLAN.md` section "9e applic
 
 ---
 
+## 5novies. "Mécanisme d'emboîtement T/T-1" — investigué, PAS implémenté (catégorie C, 11e round)
+
+Aucune décision ON/OFF de ce document ne change : **aucun changement de comportement, aucun CSV régénéré, suite complète 163/163 avant et après**. La section existe pour que le lecteur de ce document sache que la question a été tranchée, et pourquoi.
+
+Citation exacte (`TRADING_LESSONS_ZONE_ACCUMULATION.md:13`, vérifiée mot pour mot) : *"Le succès repose sur la compréhension de la mécanique d'emboîtement des unités de temps (UT). La règle d'or : le **canal de tendance** observé sur votre unité de temps de contexte (T) n'est rien d'autre que la structure interne de l'unité de temps inférieure (T-1)."*
+
+**Deux prémisses de l'item étaient fausses et sont corrigées** : (1) la paraphrase de l'audit du 5e round écrivait *"le canal observé"* et perdait le mot porteur — « canal de tendance » n'est pas un synonyme de « contexte » dans ce corpus mais un objet situé **un cran sous** lui (`TROISIEME_BORNE.md:14-18` oppose *"UT « Contexte »"* et *"UT « Canal de Tendance »"* ; `BREAKOUT_RATIO11.md:7` place le *"canal de tendance de l'UT+1"* sous le *"range de contexte principal"* de l'UT+2), ce qui fait de la phrase une **identité de lecture graphique**, pas une procédure de calcul ; (2) **H11 de `trend_table.py` ne porte pas sur ce sujet** — elle décline la validation par l'UT **supérieure** (*"H4 validé par D1"*), pas la structure de l'UT **inférieure** que l'item réclamait.
+
+**Ce qui est déjà en place, et que l'item ne voyait pas** : la seule traduction opérationnelle de l'emboîtement dans tout le corpus est la projection vers le **bas** — *"Extreme Channel (contexte de l'UT supérieure **affiché sur l'UT de trading**)"* (`CLUSTERS_PRIX.md:12`), *"Stop Loss : placé sous l'Extreme Channel"* (l.28), *"le canal de l'UT supérieure définit la zone de protection technique réelle"* (`BREAKOUT_RATIO11.md:7`). C'est le **stop UT+1 déjà actif sans condition dans la config FIDÈLE** (`ctx_support_d1`, cf. §2/§3 de ce document) : structure détectée sur le H4 tradé, canal lu sur le D1. L'item était donc partiellement déjà couvert — même classe de trouvaille que le Red Flag 3 au 9e round.
+
+**Pourquoi la lecture littérale T-1 n'est pas implémentée (mesuré, pas supposé — BTC/ETH/BNB/SOL, historique complet)** :
+- **No-op mathématique sur la seule grandeur numérique concernée** : `ctx_high`/`ctx_low` calculés en H1 puis joints causalement au H4 sont identiques aux valeurs H4 natives sur **100,00%** des barres une fois neutralisé l'artefact de granularité du `shift(1)` (94,6-95,5% avant) — un max/min sur fenêtre **calendaire** est exactement invariant par agrégation de bougies ; et la clôture H1 jointe est celle de la bougie H4 précédente sur 100% des barres. `accum_retracement_frac` ne porte donc aucune information T-1.
+- **Gate additif inerte bit-à-bit** : exiger en plus une « structure T-1 mature » laisse les déclenchements Accumulation à 7/7, 9/9, 16/16, 8/8 — **écart 0 sur 4/4 actifs** (`n_borders` en H1 vaut 32-34 au minimum sur les barres candidates contre un seuil `MIN_BORDERS=3`).
+- **Dans la direction que le corpus prescrit, incompatible avec H3 du moteur de tendance** : un stop posé sur le canal D1 passe de 1,20-2,26% à 14,75-19,88% de distance (×8,6-14,6), ce qui fait tomber le plafond de campagne de H3 (5% de risque) de 2,2-4,2 fois U à **0,25-0,34** — les 4 profils s'écrasent sur le même plafond et la table de money management §4 (Renfort +25/+50/+100/+150/+200%) devient inexprimable. `position_engine.py` (donc la config FIDÈLE de ce document) échappe à ce problème car il dimensionne chaque tranche indépendamment (`risk_pct / stop_pct`), sans plafond cumulé de campagne — c'est pourquoi `ctx_support_d1` y fonctionne sans dégât. Utiliser le canal D1 comme référence du **rejet** de canal ferait par ailleurs tomber les déclenchements de 7/9/16/8 à **0/0/0/3**.
+
+**Reste backlog catégorie C, requalifié en deux items mieux étayés** : (1) le `ctx_support` de `trend_table.py` n'est **pas** l'« Extreme Channel » du corpus (bande `ema_slow - 2*ATR` de l'UT tradée au lieu du contexte UT+1 ; écart médian mesuré 7,4-12,7%) — soit porter le stop UT+1 ET redéfinir H1/H3 pour que la table §4 reste exprimable, soit renommer honnêtement la bande H4 ; (2) tension jamais consignée entre `ZONE_ACCUMULATION.md:18` (*"utilise la structure de l'UT inférieure pour valider"*) et `TROISIEME_BORNE.md:9/18` (*"inexistante et non-avenue"*, *"« bruit » dès qu'une borne supérieure est détectée"*). Détail complet : `PLAN.md` section "11e application", `COUVERTURE_ENSEIGNEMENTS.md`.
+
+---
+
 ## 6. Pour aller plus loin (documents à consulter, pas à dupliquer)
 
 - **Détail complet des preuves citées section 1** : `COUVERTURE_ENSEIGNEMENTS.md`
