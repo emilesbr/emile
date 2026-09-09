@@ -194,6 +194,14 @@ def _synthetic_pyramid_feat(n: int, regime_h4_value) -> dict:
         "regime_h4": np.full(n, regime_h4_value, dtype=object),
         "regime_d1": np.full(n, "TENDANCE", dtype=object),   # jamais en range -- isole le test du gate CONFLIT MTF
         "wall_street_active": np.zeros(n, dtype=bool),
+        # Règle de volatilité "Stop Loss = taille du canal" (littérale,
+        # inconditionnelle, cf. tête de `backtest_phase2_faithful.py`) :
+        # neutralisée ici (aucune bougie "très large"), comme
+        # `wall_street_active` ci-dessus -- ce tableau isole l'effet de
+        # `regime_h4`, il ne doit pas faire varier le dimensionnement en même
+        # temps. Le mécanisme lui-même est testé à part, à vérité terrain,
+        # dans `test_position_engine.py` (5 tests) et `test_regime_classifier.py`.
+        "wide_channel": np.zeros(n, dtype=bool),
     }
 
 

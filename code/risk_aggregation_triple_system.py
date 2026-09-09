@@ -247,6 +247,13 @@ def _run_triple_core(feat_u: dict, h4p: pd.DataFrame, profile_name: str,
         feat_u["atr"], feat_u["ctx_support_d1"], feat_u["local_range"], feat_u["context_range"],
         feat_u["n_borders"], high, o, score, WARMUP, MIN_BORDERS, MAX_TRANCHES,
         RULE3_STREAK, RULE3_SIZE_MULT, risk_pct, range_state, extra_gate_fn=gate_extra,
+        # Règle de volatilité "Stop Loss = taille du canal" : réplique le
+        # sizing RANGE RÉEL de `_run_core_unified` tel qu'il existe désormais
+        # (littéral, inconditionnel) -- même discipline que les corrections
+        # EXCES-H4 / CONFLIT MTF / pyramidalisation-régime ci-dessus, pas une
+        # version pré-correction figée. `wide_channel` vient de
+        # `_prepare_unified`, jamais recalculé ici.
+        wide_channel_v=feat_u["wide_channel"],
     )
     gated_long_signal = np.array([
         (score[i] >= 2) and gate(i) and not bool(wall_street_v[i]) for i in range(n_total)

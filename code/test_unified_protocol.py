@@ -75,6 +75,10 @@ def _make_base_feat(n=N):
         "ctx_support": np.full(n, 90.0),
         "ctx_support_d1": np.full(n, 90.0),
         "wall_street_active": np.full(n, False),
+        # Règle de volatilité "Stop Loss = taille du canal" : neutre par
+        # défaut (aucune bougie "très large") -- comme `wall_street_active`
+        # ci-dessus, un test dédié l'override pour injecter SON scénario.
+        "wide_channel": np.full(n, False),
         "local_range": np.full(n, 5.0),
         "context_range": np.full(n, 10.0),
         "n_borders": np.full(n, float(MIN_BORDERS)),
@@ -233,7 +237,7 @@ def test_pure_range_sequence_matches_faithful_engine():
     range_keys = [
         "date", "open", "high", "low", "close", "score", "atr", "ctx_support_d1",
         "local_range", "context_range", "n_borders", "gate_score", "gate_regime",
-        "wall_street_active",
+        "wall_street_active", "wide_channel",
     ]
     feat_range_only = {k: feat[k] for k in range_keys}
     # "regime" (unified) et "regime_h4" (faithful) désignent la MÊME grandeur

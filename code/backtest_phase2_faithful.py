@@ -36,6 +36,55 @@ VÉRIFIÉ SOURCE PAR SOURCE (pas supposé) :
     profil). **Activé ici sans condition POUR CE PROFIL SEULEMENT** — les 3
     autres gardent `reverse_at_limit=False`, cohérent avec le fait que le
     corpus ne mentionne "+Reverse" QUE sur cette ligne.
+  - **Règle de volatilité "Stop Loss = taille du canal"** (AJOUTÉE ce cycle,
+    catégorie B item (ii) de l'audit exhaustif du corpus) :
+    `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` (#5) §5 — *"Règle de
+    volatilité (symétrie du risque) : si canal très large → Taille du Canal
+    / 2 = Taille du Stop Loss ET Taille de Position / 2 simultanément
+    (préserve une exposition capital constante)"*, ÉRIGÉE EN OBLIGATION par
+    la checklist pré-trade de la même source (*"[ ] Dimensionnement : stop
+    loss indexé sur le canal (ajusté selon volatilité) ?"*). Règle littérale
+    de dimensionnement, pas une hypothèse de gating à nous. **Activée ici
+    sans condition** (`wide_channel_v` passé à `make_open_tranche_fn`).
+    Le canal mesuré est celui QUI PORTE LE STOP dans ce fichier, donc le
+    canal **D1** (UT+1, `ctx["D1"]["ctx_width_pct"]`, même jointure sans
+    lookahead que `ctx_support_d1`) — H-Canal-Large-2.
+    Même structure de fidélité que l'abstention Wall Street ci-dessus, et
+    signalée telle quelle plutôt que masquée : le COMPORTEMENT une fois le
+    canal jugé très large est littéral (deux "/2" simultanés), seul le
+    SEUIL de "très large" est une hypothèse à nous (H-Canal-Large-3 —
+    aucun chiffre nulle part dans le corpus, vérifié par relecture
+    exhaustive), exactement comme H1 de `wall_street_pattern.py` est une
+    hypothèse sur le nombre de bornes alors que l'abstention, elle, ne
+    l'est pas. Citation exacte, mécanique des deux "/2" (H-Canal-Large-1),
+    définition du canal (H-Canal-Large-2), justification du seuil
+    (H-Canal-Large-3) et périmètre RANGE-seulement (H-Canal-Large-4) : bloc
+    "STOP LOSS = TAILLE DU CANAL" en tête de `position_engine.py`.
+    Effet net dans un moteur dimensionné par le risque (démontré en
+    H-Canal-Large-1, et c'est ce que la source revendique elle-même par
+    *"(préserve une exposition capital constante)"*) : sur les bougies à
+    canal très large, la taille de position est INCHANGÉE et le stop est
+    deux fois plus serré — donc capital risqué divisé par deux, et plus de
+    stops touchés.
+    **Impact chiffré honnête, mesuré, y compris défavorable** (BTC/ETH/BNB/
+    SOL x 4 profils, avant vs après activation, même historique) : retour
+    total **-2,6 points en moyenne**, signe MIXTE selon l'actif — BTC -1,3 à
+    -13,5 pts et BNB -1,8 à -13,5 pts (dégradés), SOL +0,6 à +8,1 pts
+    (améliorés), ETH **exactement inchangé** (ses 7 seules sorties au stop
+    ne tombent sur aucune bougie à canal très large). Drawdown quasi
+    inchangé en moyenne (-0,07 pt) : moins profond sur SOL (jusqu'à +4,3
+    pts), plus profond sur BNB (jusqu'à -5,0 pts). 33% à 43% des tranches
+    ouvertes le sont sur une bougie à canal très large, la règle n'est donc
+    pas vacueuse. Effet secondaire réel à connaître : sur BTC le nombre de
+    trades MONTE (239 -> 256) — un stop plus serré referme plus tôt une
+    tranche dont le stop standard n'aurait JAMAIS été touché (cas vérifié :
+    entrée à 91 696 avec un canal D1 dont la borne basse est à 66 085, soit
+    un stop standard à -27,9% jamais atteint ; à -14,0% il est touché), ce
+    qui libère un emplacement de pyramidage plus tôt et enchaîne des
+    entrées supplémentaires. **Implémentée intégralement malgré ce
+    résultat**, conformément au principe inviolable du projet — la
+    performance du proxy ne décide jamais si une règle littéralement
+    documentée de l'IP de Philippe est implémentée ou non.
 
 CE QUI RESTE VOLONTAIREMENT NON COMBINÉ ICI (limite documentée, pas une
 invention silencieuse) :
@@ -240,6 +289,7 @@ from backtest_phase2_recommended import run_recommended, WARMUP
 from position_engine import run_position_engine, make_open_tranche_fn
 from wall_street_pattern import add_wall_street_column
 from capital_tiers import effective_sizing
+from regime_classifier import compute_wide_channel
 
 # RULES_EXTRACTION.md §3, table Money Management range : "+Reverse" (Limite,
 # TP100%+Reverse) n'apparaît QUE sur la ligne "Très agressif" -- scope
@@ -299,6 +349,12 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         "regime_h4": h4["regime"].values,   # cf. CORRECTION EXCES H4 en tête de fichier
         "regime_d1": ctx["D1"]["regime"],   # cf. CORRECTION CONFLIT MTF en tête de fichier
         "wall_street_active": h4["wall_street_active"].values,
+        # Règle de volatilité "Stop Loss = taille du canal" (littérale,
+        # inconditionnelle, cf. tête de fichier). Largeur du canal D1 -- le
+        # MÊME niveau que `ctx_support_d1` qui porte le stop ici
+        # (H-Canal-Large-2), joint par la MÊME jointure sans lookahead, jamais
+        # recalculé localement.
+        "wide_channel": compute_wide_channel(ctx["D1"]["ctx_width_pct"]),
     }
 
 
@@ -329,6 +385,7 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
     regime_h4_v = feat["regime_h4"][start_:end]
     regime_d1_v = feat["regime_d1"][start_:end]
     wall_street_v = feat["wall_street_active"][start_:end]
+    wide_channel_v = feat["wide_channel"][start_:end]   # littéral, non conditionnel
     n = end - start_
 
     local_warmup = max(0, WARMUP - start_)
@@ -367,7 +424,7 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
     open_tranche_fn = make_open_tranche_fn(
         atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v, high, o, score,
         local_warmup, MIN_BORDERS, MAX_TRANCHES, RULE3_STREAK, RULE3_SIZE_MULT, risk_pct, state,
-        extra_gate_fn=gate_extra,
+        extra_gate_fn=gate_extra, wide_channel_v=wide_channel_v,
     )
 
     gated_long_signal = np.array([

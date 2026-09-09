@@ -7,14 +7,19 @@ attendu" dans chaque test).
 Aucune donnée réelle n'est utilisée. Exécution : `python3 test_position_engine.py`.
 Affiche PASS/FAIL par test et sort avec un code non-nul si un test échoue.
 
-8 tests (5 historiques Validation/Confirmation/Limite/Invalidation/
+13 tests (5 historiques Validation/Confirmation/Limite/Invalidation/
 pyramidalisation + 3 pour le mécanisme "+Reverse" du profil Très Agressif,
 table RANGE, RULES_EXTRACTION.md §3 -- cf. le bloc dédié en tête de
-`position_engine.py`, hypothèse H-Reverse-Range).
+`position_engine.py`, hypothèse H-Reverse-Range -- + 5 pour la règle de
+volatilité "Stop Loss = taille du canal", TRADING_LESSONS_MAITRISE_GRADIENT_
+RISQUE.md §5, hypothèses H-Canal-Large-1..4 du même fichier).
 """
 import numpy as np
 
-from position_engine import process_tranche, process_reverse, run_position_engine
+from position_engine import (
+    process_tranche, process_reverse, run_position_engine, make_open_tranche_fn,
+    WIDE_CHANNEL_STOP_FRAC, WIDE_CHANNEL_SIZE_FRAC,
+)
 
 
 def make_tranche(entry, stop, remaining, val_px, conf_px, lim_px):
@@ -369,6 +374,137 @@ def test_process_reverse_stop_on_wick_and_target_on_close():
     assert abs(realized_b - 0.21) < 1e-9, f"pnl attendu 0.21, obtenu {realized_b}"
 
 
+# ---------------------------------------------------------------------------
+# Tests 9-13 : règle de volatilité "Stop Loss = taille du canal"
+# (TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md §5 -- cf. le bloc "STOP LOSS =
+# TAILLE DU CANAL" en tête de `position_engine.py`, hypothèses
+# H-Canal-Large-1..4). Vérité terrain calculée à la main dans chaque
+# docstring, aucune donnée réelle, aucune propriété statistique.
+# ---------------------------------------------------------------------------
+def _open_once(risk_pct, wide_channel_v, ctx_support=90.0, entry=100.0, max_tranches=3):
+    """Ouvre UNE tranche à i=1 (donc j=0) avec la factory réelle et retourne le
+    dict de tranche. Tous les paramètres non pertinents ici sont neutralisés :
+    `rule3_streak` inatteignable (Règle de Trois jamais déclenchée),
+    `min_borders=1` avec `n_borders=1` (maturité toujours acquise),
+    `warmup=0`, aucun gate additionnel."""
+    n = 3
+    o = np.full(n, entry)
+    high = np.full(n, entry)
+    state = {"last_pyramid_high": -np.inf}
+    fn = make_open_tranche_fn(
+        atr_v=np.full(n, 1.0), ctx_support_v=np.full(n, ctx_support),
+        local_range_v=np.full(n, 5.0), context_range_v=np.full(n, 10.0),
+        n_borders_v=np.full(n, 1.0), high=high, o=o, score=np.full(n, 2.0),
+        warmup=0, min_borders=1, max_tranches=max_tranches,
+        rule3_streak=10 ** 9, rule3_size_mult=1.0, risk_pct=risk_pct, state=state,
+        wide_channel_v=wide_channel_v,
+    )
+    return fn(1, [], 0)
+
+
+def test_wide_channel_halves_stop_and_leaves_exposure_constant():
+    """Vérité terrain (H-Canal-Large-1), entrée=100, canal bas=90, risk=2% :
+
+      RÈGLE STANDARD (canal pas très large)
+        stop_pct = (100-90)/100 = 0.10 -> stop = 90.0
+        size     = min(1/3, 0.02/0.10) = min(0.3333, 0.20) = 0.20
+        capital risqué = 0.10 * 0.20 = 0.02 = risk_pct
+
+      RÈGLE DE VOLATILITÉ (canal très large) -- les deux "/2" de la source
+        "Taille du Canal / 2 = Taille du Stop Loss" : stop_pct = 0.05
+                                                     -> stop = 100*(1-0.05) = 95.0
+        "ET Taille de Position / 2" : size = min(1/3, (0.02/0.05) * 0.5)
+                                           = min(0.3333, 0.20) = 0.20
+        capital risqué = 0.05 * 0.20 = 0.01 = risk_pct / 2
+
+    Donc : stop DEUX FOIS plus serré, position INCHANGÉE (= *"préserve une
+    exposition capital constante"*, la parenthèse même de la source, qui est
+    ce qui tranche entre les deux lectures possibles), capital risqué DIVISÉ
+    PAR DEUX."""
+    std = _open_once(0.02, wide_channel_v=None)
+    wide = _open_once(0.02, wide_channel_v=np.array([True, True, True]))
+
+    assert std["stop"] == 90.0, f"stop standard attendu 90.0, obtenu {std['stop']}"
+    assert abs(std["remaining"] - 0.20) < 1e-12, (
+        f"taille standard attendue 0.20, obtenue {std['remaining']}")
+
+    assert abs(wide["stop"] - 95.0) < 1e-12, (
+        f"stop 'canal très large' attendu 95.0 (moitié de la distance 100->90), "
+        f"obtenu {wide['stop']}")
+    assert abs(wide["remaining"] - 0.20) < 1e-12, (
+        f"taille 'canal très large' attendue 0.20 (INCHANGÉE : les deux '/2' se "
+        f"compensent dans un moteur dimensionné par le risque), obtenue "
+        f"{wide['remaining']}")
+
+    risk_std = (std["entry"] - std["stop"]) / std["entry"] * std["remaining"]
+    risk_wide = (wide["entry"] - wide["stop"]) / wide["entry"] * wide["remaining"]
+    assert abs(risk_std - 0.02) < 1e-12, f"capital risqué standard attendu 0.02, obtenu {risk_std}"
+    assert abs(risk_wide - 0.01) < 1e-12, (
+        f"capital risqué 'canal très large' attendu 0.01 (moitié), obtenu {risk_wide}")
+
+
+def test_wide_channel_halving_applies_before_the_per_tranche_cap():
+    """Corollaire d'implémentation de H-Canal-Large-1, testé explicitement
+    parce que c'est le point où les deux ordres possibles DIVERGENT.
+
+    Vérité terrain, entrée=100, canal bas=90, risk=20% (choisi pour que le
+    plafond `1/max_tranches` MORDE dans les deux cas), max_tranches=3 :
+      standard : min(1/3, 0.20/0.10 = 2.0)                = 1/3
+      RETENU   (réduction AVANT le plafond) :
+                 min(1/3, (0.20/0.05) * 0.5 = 2.0)        = 1/3   <- constant
+      ÉCARTÉ   (réduction APRÈS le plafond) :
+                 0.5 * min(1/3, 0.20/0.05 = 4.0)          = 1/6   <- non constant
+    Seul l'ordre retenu respecte *"(préserve une exposition capital
+    constante)"* quand le plafond mord -- c'est-à-dire précisément dans les
+    configurations les plus volatiles, celles que la règle vise."""
+    std = _open_once(0.20, wide_channel_v=None)
+    wide = _open_once(0.20, wide_channel_v=np.array([True, True, True]))
+    assert abs(std["remaining"] - 1.0 / 3.0) < 1e-12, (
+        f"taille standard attendue 1/3 (plafond), obtenue {std['remaining']}")
+    assert abs(wide["remaining"] - 1.0 / 3.0) < 1e-12, (
+        f"taille 'canal très large' attendue 1/3 (plafond, INCHANGÉE), obtenue "
+        f"{wide['remaining']} -- 1/6 signifierait que la réduction de taille est "
+        f"appliquée APRÈS le plafond (lecture explicitement écartée)")
+
+
+def test_wide_channel_none_and_all_false_are_identical():
+    """Non-régression : `wide_channel_v=None` (défaut des 9 moteurs déjà en
+    place) et un array entièrement False doivent produire EXACTEMENT la même
+    tranche que l'un l'autre -- la règle n'a aucun effet hors des bougies
+    qu'elle vise."""
+    default = _open_once(0.02, wide_channel_v=None)
+    all_false = _open_once(0.02, wide_channel_v=np.array([False, False, False]))
+    assert default == all_false, (
+        f"comportement par défaut modifié : {default} != {all_false}")
+
+
+def test_wide_channel_is_read_at_j_equals_i_minus_1_causal():
+    """Causalité : la factory lit `wide_channel_v[j]` avec j = i-1, comme
+    `ctx_support_v[j]`/`score[j]`. Une ouverture à i=1 doit donc consulter
+    l'indice 0, JAMAIS l'indice 1 (la bougie en cours). Array
+    [False, True, True] : la tranche ouverte à i=1 doit être dimensionnée par
+    la RÈGLE STANDARD (stop 90), pas par la règle de volatilité (stop 95)."""
+    tr = _open_once(0.02, wide_channel_v=np.array([False, True, True]))
+    assert tr["stop"] == 90.0, (
+        f"stop attendu 90.0 (règle standard : wide_channel_v[0] est False), "
+        f"obtenu {tr['stop']} -- la factory lit la bougie en cours (lookahead) "
+        f"au lieu de la précédente")
+
+
+def test_wide_channel_fractions_are_the_two_halves_of_the_source():
+    """Garde-fou de traçabilité : les deux constantes sont les deux "/2"
+    littéraux de la phrase source (*"Taille du Canal / 2 = Taille du Stop Loss
+    ET Taille de Position / 2"*). Si l'une d'elles change un jour, le calcul à
+    la main des tests ci-dessus n'est plus valide -- l'échec doit être
+    explicite, pas silencieux."""
+    assert WIDE_CHANNEL_STOP_FRAC == 0.5, (
+        f"WIDE_CHANNEL_STOP_FRAC={WIDE_CHANNEL_STOP_FRAC}, la source dit "
+        f"'Taille du Canal / 2 = Taille du Stop Loss'")
+    assert WIDE_CHANNEL_SIZE_FRAC == 0.5, (
+        f"WIDE_CHANNEL_SIZE_FRAC={WIDE_CHANNEL_SIZE_FRAC}, la source dit "
+        f"'ET Taille de Position / 2'")
+
+
 TESTS = [
     test_validation_confirmation_limite_sequence,
     test_immediate_stop_loss,
@@ -378,6 +514,11 @@ TESTS = [
     test_reverse_at_limit_sequence,
     test_reverse_disabled_by_default_no_behavior_change,
     test_process_reverse_stop_on_wick_and_target_on_close,
+    test_wide_channel_halves_stop_and_leaves_exposure_constant,
+    test_wide_channel_halving_applies_before_the_per_tranche_cap,
+    test_wide_channel_none_and_all_false_are_identical,
+    test_wide_channel_is_read_at_j_equals_i_minus_1_causal,
+    test_wide_channel_fractions_are_the_two_halves_of_the_source,
 ]
 
 

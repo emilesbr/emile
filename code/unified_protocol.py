@@ -276,6 +276,7 @@ from backtest_phase2_faithful import REVERSE_SCOPED_PROFILE, run_faithful
 from backtest_phase2_ut2 import attach_multi_context, CLOSURE_DELAY
 from position_engine import make_open_tranche_fn, process_tranche, process_reverse
 from wall_street_pattern import add_wall_street_column
+from regime_classifier import compute_wide_channel
 from trend_table import (
     PROFILES_TREND, add_trend_context, add_leg, make_campaign, step_campaign,
     try_open_campaign, step_reverse, load_volume, resample_volume,
@@ -350,6 +351,16 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         "ctx_support_d1": ctx_support_d1,
         "regime_d1": ctx["D1"]["regime"],   # cf. CORRECTION CONFLIT MTF en tête de fichier
         "wall_street_active": wall_street_active,
+        # Règle de volatilité "Stop Loss = taille du canal" (littérale,
+        # inconditionnelle côté RANGE, cf. `backtest_phase2_faithful.py`) --
+        # largeur du canal D1, le MÊME niveau que `ctx_support_d1` qui porte
+        # le stop RANGE ici (H-Canal-Large-2, `position_engine.py`). Répliquée
+        # ici pour que le côté RANGE du protocole unifié reste STRICTEMENT
+        # identique à `faithful.py` (invariant vérifié par
+        # `test_unified_protocol.py::test_pure_range_sequence_matches_faithful_engine`).
+        # Le côté TENDANCE n'est PAS concerné (H-Canal-Large-4 : la règle est
+        # scopée à la table RANGE par le corpus).
+        "wide_channel": compute_wide_channel(ctx["D1"]["ctx_width_pct"]),
         "regime": trend_df["regime"].values,
         "ctx_resistance": trend_df["ctx_resistance"].values,
         "ctx_high": trend_df["ctx_high"].values,
@@ -540,6 +551,7 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
         feat["atr"], feat["ctx_support_d1"], feat["local_range"], feat["context_range"],
         feat["n_borders"], high, o, score, WARMUP, MIN_BORDERS, MAX_TRANCHES,
         RULE3_STREAK, RULE3_SIZE_MULT, risk_pct, range_state, extra_gate_fn=gate_extra,
+        wide_channel_v=feat["wide_channel"],   # littéral, non conditionnel (cf. faithful.py)
     )
     gated_long_signal = np.array([
         (score[i] >= 2) and gate(i) and not bool(wall_street_v[i]) for i in range(n_total)

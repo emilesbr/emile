@@ -30,10 +30,20 @@ import numpy as np
 import pandas as pd
 import sys
 sys.path.insert(0, ".")
-sys.path.insert(0, "/home/user/emile/code")
+# `append`, PAS `insert(0, ...)` : ce chemin absolu reste un SECOURS (pouvoir
+# lancer ce fichier depuis n'importe quel répertoire), il ne doit pas PRIMER
+# sur le répertoire courant. Avec `insert(0, ...)`, ce fichier chargeait le
+# `regime_classifier.py` de `/home/user/emile/code` même en étant exécuté
+# depuis un autre checkout (worktree) -- donc il testait un AUTRE code que
+# celui d'à côté, et ne le voyait que par hasard selon l'ordre d'import de la
+# suite. Corrigé ici parce que ce fichier importe désormais un symbole ajouté
+# dans le même cycle (`compute_wide_channel`) : sans ce correctif, il échoue
+# lancé seul et passe lancé dans la suite -- exactement le genre de test
+# non déterministe que ce projet ne veut pas.
+sys.path.append("/home/user/emile/code")
 from regime_classifier import (
     add_regime, PCTL_WINDOW, SQUEEZE_PCTL, EXCESS_PCTL, TREND_SLOPE_THRESHOLD,
-    RECENT_WINDOW,
+    RECENT_WINDOW, compute_wide_channel, WIDE_PCTL,
 )
 
 N_WARMUP_MARGIN = 400  # >> PCTL_WINDOW (250) pour que les seuils adaptatifs soient toujours définis
@@ -384,6 +394,101 @@ def test_real_btc_d1_distribution_close_to_documented():
         )
 
 
+# ---------------------------------------------------------------------------
+# compute_wide_channel — détecteur "canal TRÈS LARGE" de la règle de volatilité
+# "Stop Loss = taille du canal" (TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md
+# §5). Tests À VÉRITÉ TERRAIN : quantiles calculés à la main sur une série de
+# 6 valeurs, pas une propriété statistique sur données réelles.
+# ---------------------------------------------------------------------------
+def test_wide_channel_ground_truth_hand_computed_quantile():
+    """Série choisie pour que le seuil glissant soit calculable À LA MAIN.
+
+    width  = [1, 2, 3, 4, 100, 0.5], window=4, pctl=0.50.
+    shift(1) -> [nan, 1, 2, 3, 4, 100]. Une fenêtre de 4 n'a 4 valeurs non-NaN
+    qu'à partir de l'indice 4 :
+      i=4 : fenêtre [1,2,3,4]    -> médiane linéaire = (2+3)/2 = 2.5
+            width[4]=100  > 2.5  -> TRÈS LARGE
+      i=5 : fenêtre [2,3,4,100]  -> médiane linéaire = (3+4)/2 = 3.5
+            width[5]=0.5  > 3.5  -> FAUX
+      i=0..3 : seuil NaN (warmup) -> FAUX (défaut prudent = règle standard)
+    """
+    width = np.array([1.0, 2.0, 3.0, 4.0, 100.0, 0.5])
+    got = compute_wide_channel(width, pctl=0.50, window=4)
+    expected = np.array([False, False, False, False, True, False])
+    assert got.dtype == bool, f"doit retourner un array de bool, obtenu {got.dtype}"
+    assert np.array_equal(got, expected), (
+        f"vérité terrain calculée à la main : attendu {expected.tolist()}, "
+        f"obtenu {got.tolist()} (seuils glissants attendus : NaN,NaN,NaN,NaN,2.5,3.5)"
+    )
+
+
+def test_wide_channel_nan_width_is_not_wide():
+    """NaN en entrée (largeur non calculable, ex. warmup ATR/EMA) -> JAMAIS
+    "très large" -> règle STANDARD "Stop Loss = taille du canal", jamais la
+    règle de volatilité. Même esprit de défaut prudent que "en cas de doute,
+    toujours RANGE" du manuel (déjà testé plus haut pour `add_regime`)."""
+    width = np.array([np.nan] * 5 + [1.0, 2.0, 3.0, 4.0] + [np.nan])
+    got = compute_wide_channel(width, pctl=0.50, window=4)
+    assert not got[:5].any(), "les NaN de warmup ne doivent jamais être classés très larges"
+    assert not got[-1], "un NaN de largeur ne doit jamais être classé très large"
+
+
+def test_wide_channel_is_causal_truncating_future_changes_nothing():
+    """Régression de CAUSALITÉ, même protocole que
+    `test_regime_causal_matches_truncated_series` ci-dessus : la classification
+    à l'instant t ne doit dépendre d'AUCUNE bougie postérieure. On tronque la
+    série et on vérifie que rien ne bouge sur la partie commune."""
+    rng = np.random.default_rng(20260908)
+    width = np.abs(rng.normal(10.0, 4.0, size=300)) + 1.0
+    full = compute_wide_channel(width)
+    cut = 240
+    truncated = compute_wide_channel(width[:cut])
+    assert np.array_equal(full[:cut], truncated), (
+        "compute_wide_channel n'est pas causal : la classification des bougies "
+        "déjà passées change quand on ajoute des bougies futures"
+    )
+
+
+def test_wide_channel_threshold_strictly_between_median_and_exces():
+    """Garde-fou sur H-Canal-Large-3 (cf. `position_engine.py`), les deux
+    contraintes de conception qui justifient le chiffre retenu :
+      1. WIDE_PCTL < EXCESS_PCTL — "très large" (dimensionnement) doit rester
+         un état DISTINCT d'EXCES (abstention totale), sinon la règle de
+         volatilité serait vacueuse dans tout moteur qui refuse déjà d'entrer
+         en régime EXCES.
+      2. WIDE_PCTL > 0.50 — un canal "très large" doit être plus large que la
+         *"largeur moyenne du canal de tendance récent"*, seule autre référence
+         de largeur du corpus (TRADING_LESSONS_ZONE_ACCUMULATION.md)."""
+    assert WIDE_PCTL < EXCESS_PCTL, (
+        f"WIDE_PCTL={WIDE_PCTL} doit rester strictement sous EXCESS_PCTL="
+        f"{EXCESS_PCTL} (sinon 'canal très large' se confond avec EXCES et la "
+        f"règle de volatilité devient inapplicable)"
+    )
+    assert WIDE_PCTL > 0.50, (
+        f"WIDE_PCTL={WIDE_PCTL} doit rester strictement au-dessus de la médiane"
+    )
+
+
+def test_wide_channel_stricter_percentile_selects_a_subset():
+    """Conséquence directe de la contrainte 1 ci-dessus, vérifiée sur une série
+    concrète plutôt que supposée : l'ensemble des bougies détectées au
+    percentile EXCES est INCLUS dans celui détecté au percentile "très large"
+    — donc il existe bien des bougies très larges qui ne sont PAS en excès (le
+    scénario que la règle de volatilité vise), et le test serait non-vacueux."""
+    rng = np.random.default_rng(4242)
+    width = np.abs(rng.normal(10.0, 4.0, size=600)) + 1.0
+    loose = compute_wide_channel(width, pctl=WIDE_PCTL)
+    strict = compute_wide_channel(width, pctl=EXCESS_PCTL)
+    assert np.all(loose[strict]), (
+        "toute bougie détectée au percentile EXCES doit l'être aussi au "
+        "percentile 'très large' (percentile plus bas = ensemble plus large)"
+    )
+    assert loose.sum() > strict.sum() > 0, (
+        f"test vacueux : loose={loose.sum()} strict={strict.sum()} — il doit "
+        f"exister des bougies 'très larges' qui ne sont pas en EXCES"
+    )
+
+
 if __name__ == "__main__":
     tests = [
         test_regime_range_neutre_synthetic,
@@ -396,6 +501,11 @@ if __name__ == "__main__":
         test_regime_causal_matches_truncated_series,
         test_regime_causal_check_detects_noncausal_regression,
         test_real_btc_d1_distribution_close_to_documented,
+        test_wide_channel_ground_truth_hand_computed_quantile,
+        test_wide_channel_nan_width_is_not_wide,
+        test_wide_channel_is_causal_truncating_future_changes_nothing,
+        test_wide_channel_threshold_strictly_between_median_and_exces,
+        test_wide_channel_stricter_percentile_selects_a_subset,
     ]
     for t in tests:
         t()

@@ -15,6 +15,18 @@ tendanciel ~25%, Tendance ~20%, Bulle/Excès ~5%) :
     (squeeze) -> "NE PAS TRADER" selon le manuel
 
 Règle du manuel explicitement respectée : "en cas de doute, toujours RANGE".
+
+AJOUT — détecteur "canal TRÈS LARGE" (`compute_wide_channel` en bas de
+fichier), support de la règle de volatilité "Stop Loss = taille du canal"
+de `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` §5. Placé ICI et pas
+ailleurs pour une raison de principe déjà établie dans ce projet ("même
+terme = même définition partout, pas une nouvelle par module") : ce fichier
+est DÉJÀ celui qui possède le vocabulaire "canal trop large" (EXCES) et la
+machinerie de percentile glissant causal qui le mesure. Le MÉCANISME de
+sizing associé, lui, vit dans `position_engine.py` (qui possède le sizing) —
+cf. le bloc "STOP LOSS = TAILLE DU CANAL" en tête de ce fichier-là pour la
+citation exacte, les 4 hypothèses (H-Canal-Large-1..4) et la justification
+complète du seuil retenu.
 """
 import pandas as pd
 import numpy as np
@@ -31,6 +43,13 @@ TREND_SLOPE_THRESHOLD = 1.5   # % , seuil de pente pour "tendance" (cf. manuel: 
 PCTL_WINDOW = 250          # bougies, fenêtre glissante pour les percentiles adaptatifs
 SQUEEZE_PCTL = 0.05
 EXCESS_PCTL = 0.95
+# Seuil "canal TRÈS LARGE" (hypothèse H-Canal-Large-3, cf. position_engine.py) —
+# strictement EN DESSOUS de EXCESS_PCTL : "très large" est un état de
+# DIMENSIONNEMENT (le corpus dit "ajusté selon volatilité"), pas d'abstention
+# ("Bulle/Excès -> NE PAS TRADER"). Les deux doivent rester distincts, sinon la
+# règle de volatilité serait vacueuse dans tout moteur qui refuse déjà de
+# trader en régime EXCES.
+WIDE_PCTL = 0.80
 
 
 def add_regime(df: pd.DataFrame, ctx_median: pd.Series, ctx_width_pct: pd.Series) -> pd.DataFrame:
@@ -72,6 +91,35 @@ def add_regime(df: pd.DataFrame, ctx_median: pd.Series, ctx_width_pct: pd.Series
             regimes.append("RANGE_NEUTRE")  # défaut = doute = range (règle explicite du manuel)
     df["regime"] = regimes
     return df
+
+
+def compute_wide_channel(ctx_width_pct, pctl: float = WIDE_PCTL,
+                          window: int = PCTL_WINDOW) -> np.ndarray:
+    """"Canal TRÈS LARGE" — détecteur de la règle de volatilité de
+    `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` §5 (citation exacte et
+    hypothèses : bloc "STOP LOSS = TAILLE DU CANAL" en tête de
+    `position_engine.py`). Retourne un array booléen aligné sur
+    `ctx_width_pct`.
+
+    Réutilise EXACTEMENT la machinerie déjà en place dans `add_regime`
+    ci-dessus pour dire "canal trop large" — même série d'entrée
+    (`ctx_width_pct`, la largeur du canal Extreme Channel en % de sa médiane,
+    calculée une seule fois par `backtest_phase2_v7.py::prepare` puis
+    transmise aux deux), même fenêtre (`PCTL_WINDOW`), même construction
+    causale (`.shift(1)` avant le rolling : la bougie courante n'entre JAMAIS
+    dans le calcul de son propre seuil), même comparaison stricte (`>`).
+    Seul le percentile change (`WIDE_PCTL` au lieu de `EXCESS_PCTL`) — ce
+    n'est donc pas une nouvelle définition du canal ni une nouvelle notion de
+    "large", c'est la même graduée à un cran moins extrême.
+
+    NaN (warmup : moins de `window` bougies d'historique, ou largeur non
+    calculable) -> False, c'est-à-dire "pas très large" -> règle STANDARD
+    ("Stop Loss = taille du canal"), jamais la règle de volatilité. Même
+    esprit de défaut prudent que "en cas de doute, toujours RANGE" du manuel
+    (ci-dessus) : en cas de doute, on ne modifie pas le dimensionnement."""
+    w = pd.Series(np.asarray(ctx_width_pct, dtype=float)).reset_index(drop=True)
+    thresh = w.shift(1).rolling(window).quantile(pctl)
+    return (w > thresh).fillna(False).to_numpy(dtype=bool)
 
 
 if __name__ == "__main__":

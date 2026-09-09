@@ -100,8 +100,17 @@ def attach_context_level(df_low: pd.DataFrame, df_high: pd.DataFrame,
     """Un seul niveau de contexte, factorisé pour être appelé N fois (une
     par niveau supérieur voulu) — même jointure `merge_asof` sans lookahead
     que `backtest_phase2_v7.py::attach_higher_context`, pour UNE colonne de
-    contexte à la fois plutôt que les 3 colonnes fixes de la version v7."""
-    high = df_high[["date", "score", "regime", "ctx_support"]].copy()
+    contexte à la fois plutôt que les 3 colonnes fixes de la version v7.
+
+    `ctx_width_pct` (largeur du canal Extreme Channel de ce niveau, produite
+    par `backtest_phase2_v7.py::prepare`) est joint EN PLUS depuis l'ajout de
+    la règle de volatilité "Stop Loss = taille du canal" -- STRICTEMENT
+    ADDITIF (une clé de plus dans le dict retourné, aucun appelant existant
+    n'en dépend), par LA MÊME jointure sans lookahead que les 3 autres
+    colonnes, pour que la largeur lue soit toujours celle du MÊME niveau que
+    le `ctx_support` qui porte le stop (H-Canal-Large-2, cf.
+    `position_engine.py`)."""
+    high = df_high[["date", "score", "regime", "ctx_support", "ctx_width_pct"]].copy()
     high["available_at"] = high["date"] + closure_delay
     high = high.sort_values("available_at")
     merged = pd.merge_asof(
@@ -112,6 +121,7 @@ def attach_context_level(df_low: pd.DataFrame, df_high: pd.DataFrame,
         "score": merged["score"].values,
         "regime": merged["regime"].values,
         "ctx_support": merged["ctx_support"].values,
+        "ctx_width_pct": merged["ctx_width_pct"].values,
     }
 
 

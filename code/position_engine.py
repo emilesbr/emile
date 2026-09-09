@@ -102,15 +102,196 @@ source sous-spécifiée, PAS inventé en silence) :
     générique. De même, `record_trace=True` ne trace PAS les jambes reverse
     (reste un non-goal de ce cycle, `funding_rate_exact.py` n'est pas mis à
     jour pour un coût de funding sur une position short).
+
+================================================================================
+"STOP LOSS = TAILLE DU CANAL" -- règle de volatilité (réduction symétrique
+stop + position sur canal TRÈS LARGE). Catégorie B, item (ii) de l'audit
+exhaustif du corpus (`COUVERTURE_ENSEIGNEMENTS.md` section "Audit exhaustif
+du corpus complet", `PLAN.md` backlog item 11).
+================================================================================
+CITATION EXACTE, reproduite mot pour mot pour traçabilité
+(`TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md`, source #5, §5 "Gestion
+tactique -- Stop Loss et objectifs (règles mathématiques précises)") :
+
+    **Dimensionnement du Stop Loss** :
+    - Règle standard : **Stop Loss = taille du canal de tendance**
+    - Règle de volatilité (symétrie du risque) : si canal très large ->
+      **Taille du Canal / 2 = Taille du Stop Loss ET Taille de Position / 2**
+      simultanément (préserve une exposition capital constante)
+
+Confirmée comme règle OBLIGATOIRE par la checklist pré-trade de la même
+source (§ "Checklist de pré-trade complète") :
+
+    - [ ] Dimensionnement : stop loss indexé sur le canal (ajusté selon
+      volatilité) ?
+
+La "Règle standard" est DÉJÀ en place dans ce projet depuis v4 (le stop est
+indexé sur le canal "Extreme Channel" -- `stop_price = min(ctx_support[j],
+...)` ci-dessous, cf. H4 de `trend_table.py` et la ligne "Extreme Channel"
+de `PHASE2_V4_IMPLEMENTATION_COMPLETE.md`). Seule la "Règle de volatilité"
+manquait : c'est ce que ce bloc ajoute.
+
+Relecture intégrale de la source faite AVANT d'écrire une ligne de code, et
+recherche exhaustive du reste du corpus (17 sources + `RULES_EXTRACTION.md`)
+pour un éventuel seuil chiffré de "très large" : AUCUN n'existe. Les deux
+seules autres références de largeur de canal du corpus sont (a)
+`TRADING_LESSONS_ZONE_ACCUMULATION.md` -- *"Stop-loss = largeur moyenne du
+canal de tendance récent"* (une MOYENNE récente comme référence, pas un
+seuil de déclenchement) et (b) les seuils absolus du manuel (<1% squeeze,
+>12% excès) que ce projet a déjà explicitement refusé d'appliquer tels quels
+à notre approximation EMA±2xATR (largeur médiane ~17% sur crypto, cf.
+`REGIME_CLASSIFIER_RANGE_VS_TENDANCE.md`) et remplacés par des percentiles
+glissants causaux. Le seuil est donc une HYPOTHÈSE assumée (H-Canal-Large-3
+ci-dessous), pas une lecture littérale -- documentée comme telle, jamais
+inventée en silence (même discipline que H1-H12 de `trend_table.py`, que
+H-Reverse-Range ci-dessus et que H1 de `wall_street_pattern.py`).
+
+--------------------------------------------------------------------------
+H-Canal-Large-1 -- MÉCANIQUE EXACTE DES DEUX "/2" (quelle est la position de
+référence qu'on divise par deux ?). La phrase est ambiguë ; deux lectures
+possibles, tranchées par la parenthèse de la source elle-même :
+
+  (A) RETENUE. Le stop passe à la MOITIÉ de la distance standard, et la
+      position vaut la moitié de ce que la normalisation par le risque
+      donnerait À CE STOP RÉDUIT. Dans un moteur dimensionné par le risque
+      (`size_frac = risk_pct / stop_pct`, exactement le cas ici), les deux
+      divisions par 2 se COMPENSENT exactement :
+          size = (risk / (s/2)) / 2 = risk / s = size standard
+      -> la position (l'exposition notionnelle) est INCHANGÉE par rapport à
+      la règle standard, et le capital réellement risqué (distance au stop x
+      taille) est DIVISÉ PAR DEUX. C'est mot pour mot ce qu'affirme la
+      parenthèse de la source : *"(préserve une exposition capital
+      constante)"*, et c'est aussi ce que veut dire son intitulé "symétrie
+      du risque" (les deux réductions sont symétriques et s'annulent).
+  (B) ÉCARTÉE. Le stop passe à la moitié ET la position à la moitié de la
+      position STANDARD -> exposition notionnelle divisée par 2, capital
+      risqué divisé par 4. Lecture arithmétiquement possible de la phrase
+      seule, mais elle CONTREDIT frontalement la parenthèse (l'exposition ne
+      serait alors ni constante, ni symétrique). Écartée pour cette raison
+      précise, pas par préférence.
+
+  Corollaire d'implémentation (vérifié, pas supposé) : la réduction de
+  taille est appliquée à la taille DÉRIVÉE DU RISQUE, AVANT le plafond par
+  tranche `1/max_tranches` déjà en place. C'est ce qui rend la propriété
+  "exposition constante" exacte MÊME quand ce plafond mord :
+      min(cap, risk/(s/2) * 1/2) = min(cap, risk/s)  = taille standard
+  alors que l'appliquer après (`1/2 * min(cap, risk/(s/2))`) donnerait une
+  exposition réduite dès que le plafond mord -- donc une violation de la
+  parenthèse de la source dans exactement les cas les plus volatils. Le code
+  ci-dessous écrit malgré tout les DEUX divisions explicitement (plutôt que
+  la simplification "ne rien faire sur la taille, resserrer juste le stop"),
+  pour rester une transcription littérale de la phrase source et pour que le
+  jour où le facteur cesserait d'être 1/2 des deux côtés, le code reste juste.
+
+H-Canal-Large-2 -- DE QUEL CANAL PARLE-T-ON ? Du MÊME canal qui définit déjà
+  le stop dans ce projet -- l'"Extreme Channel" EMA(55) ± 2xATR(14)
+  (`backtest_phase2_v7.py::prepare`), dont la largeur `ctx_width_pct =
+  (2*2*atr)/ema_slow*100` est DÉJÀ calculée là-bas et DÉJÀ consommée par
+  `regime_classifier.add_regime`. Aucune nouvelle définition de "canal"
+  n'est introduite ici -- principe déjà établi dans ce projet ("même terme
+  'contexte'/'canal' = même définition partout, pas une nouvelle par
+  module", cf. `fibonacci.py::compute_context_position` qui a réutilisé à
+  l'identique `CONTEXT_DURATION="15D"` plutôt que d'en inventer une).
+  Précision de scope qui en découle : le canal mesuré est celui qui définit
+  le stop DU MOTEUR CONCERNÉ -- le canal H4 natif quand le moteur stoppe sur
+  H4 (`backtest_phase2_v7.py`, `use_mtf_stop=False`), le canal D1 (UT+1)
+  quand il stoppe sur D1 (`backtest_phase2_faithful.py`, règle littérale du
+  stop UT+1). Mesurer la largeur d'un canal autre que celui qui porte le
+  stop n'aurait aucun sens pour une règle qui redimensionne CE stop.
+  Limite honnête, déjà connue et non aggravée ici : `stop_pct` n'est pas
+  littéralement "la taille du canal" mais la distance de l'entrée à la BORNE
+  BASSE du canal (approximation en place depuis v4, cf. H4 de
+  `trend_table.py`). La règle de volatilité est appliquée à cette distance
+  de stop existante (divisée par deux), ce qui est sa transposition fidèle
+  À L'INTÉRIEUR de l'approximation déjà en place -- pas une approximation
+  nouvelle empilée par-dessus.
+
+H-Canal-Large-3 -- SEUIL "TRÈS LARGE" (aucun chiffre dans le corpus, cf.
+  ci-dessus). Retenu : `regime_classifier.compute_wide_channel`, c'est-à-dire
+  le percentile glissant CAUSAL (`PCTL_WINDOW=250`, `.shift(1)`) de la MÊME
+  série `ctx_width_pct`, au percentile `WIDE_PCTL = 0.80`. Chaîne de
+  justification (aucun maillon inventé) :
+    1. Il DOIT être strictement en dessous de `EXCESS_PCTL = 0.95` déjà
+       utilisé pour EXCES : "Bulle/Excès -> NE PAS TRADER" est une
+       ABSTENTION, alors que la règle de volatilité est un
+       DIMENSIONNEMENT ("ajusté selon volatilité" dans la checklist). Les
+       deux états doivent rester distincts, sinon la règle serait vacueuse
+       dans tout moteur qui refuse déjà d'entrer en régime EXCES (ce que
+       font tous les moteurs descendants de v7). Vérifié empiriquement sur
+       BTC/ETH/BNB/SOL avant de figer le chiffre : au percentile 0,80,
+       seules 26% à 40% des bougies "très larges" sont AUSSI en EXCES -- la
+       règle porte donc bien majoritairement sur des bougies réellement
+       tradables, elle n'est pas un doublon d'EXCES.
+    2. Il doit être strictement au-dessus de la seule autre référence de
+       largeur du corpus, la *"largeur moyenne du canal de tendance récent"*
+       de `TRADING_LESSONS_ZONE_ACCUMULATION.md` : un canal au p80 de sa
+       propre distribution récente est par construction plus large que sa
+       moyenne récente. 0,80 satisfait cette contrainte, 0,50 non.
+    3. Entre les deux, 0,80 est la fréquence la plus grossière que le corpus
+       lui-même emploie pour un état de marché DISTINGUÉ (non par défaut) :
+       le manuel chiffre ses régimes à Tendance ~20% et Bulle/Excès ~5% ; la
+       bande ~5% est déjà prise par EXCES, la bande ~20% est libre. Mesuré :
+       le détecteur se déclenche sur 12% à 22% des bougies selon l'actif et
+       selon le canal mesuré (H4 natif ou D1) -- cohérent avec cette bande.
+  Le seuil reste un PARAMÈTRE (`pctl=` de `compute_wide_channel`), jamais une
+  constante enfouie.
+
+  SENSIBILITÉ MESURÉE (même esprit que
+  `cluster_technique_threshold_robustness.py`), grille 0,70 / 0,80 (retenu) /
+  0,90, BTC/ETH/BNB/SOL x 4 profils, chiffres reproduits ici plutôt que
+  renvoyés à un document externe :
+    - banc ISOLÉ (`backtest_phase2_v7.py`, `use_wide_channel_halving`, canal
+      H4) -- retour moyen vs référence : 0,70 -14,6 pts / 0,80 -13,1 pts /
+      0,90 -10,1 pts ; drawdown moyen -0,5 / -0,6 / -0,7 pt. La règle DÉGRADE
+      le retour sur 16/16 couples à 0,70 et 0,80, 15/16 à 0,90.
+    - `backtest_phase2_faithful.py` (activation inconditionnelle, canal D1) --
+      retour moyen : 0,70 -1,9 pt / 0,80 -2,6 pts / 0,90 +0,9 pt ; signe
+      mixte selon l'actif (à 0,80 : 4 améliorés / 8 dégradés / 4 inchangés).
+    L'effet est MONOTONE en fonction du seuil (moins la règle se déclenche,
+    moins elle coûte) -- ce qui confirme que l'écart mesuré est bien imputable
+    à la règle et non à du bruit.
+  AVERTISSEMENT DE MÉTHODE, explicite : 0,80 n'est PAS le meilleur des trois
+  chiffres mesurés (0,90 l'est). Le seuil a été arrêté AVANT toute mesure, sur
+  la chaîne de justification 1-2-3 ci-dessus (cohérence avec les définitions
+  de canal déjà en place), et il n'est PAS révisé au vu du résultat : choisir
+  un paramètre de l'IP de Philippe pour la performance du proxy est exactement
+  le raisonnement que ce projet s'interdit ("nous ne nous fions pas aux
+  résultats du Proxy pour décider d'utiliser ou non la propriété
+  intellectuelle de Philippe, nous l'utilisons dans tous les cas").
+
+H-Canal-Large-4 -- PÉRIMÈTRE : table RANGE seulement (ce fichier), PAS la
+  table TENDANCE (`trend_table.py`). Ce n'est pas un oubli : la source #5
+  s'intitule *"Gradient de Risque et Anatomie du Range"*, son §1 est
+  *"Anatomie du pattern range"*, et le §5 qui porte cette règle donne des
+  objectifs explicitement typés range (*"Range Neutre = 76% Fibonacci de la
+  vague précédente ; Range Vendeur/Acheteur = débordement du point extrême
+  précédent"*). Le stop y est indexé sur le canal DE TENDANCE, mais pour un
+  trade DE RANGE -- exactement l'architecture de ce fichier (table "trade
+  spéculatif (range)", `RULES_EXTRACTION.md` §3), pas celle de
+  `trend_table.py` (table "trade de tendance", §4). Étendre la règle à
+  `trend_table.py` exigerait EN PLUS de trancher comment un stop divisé par
+  deux interagit avec ses propres unités de sizing (H1, "Renfort +X% de U")
+  et son plafond de risque de campagne (H3) -- une seconde décision de
+  conception que le corpus ne tranche nulle part. Laissée explicitement hors
+  périmètre et documentée ici, plutôt qu'appliquée en silence par analogie.
+================================================================================
 """
 import numpy as np
 import pandas as pd
+
+# Règle de volatilité "Stop Loss = taille du canal" (cf. le bloc dédié en tête
+# de fichier) : les deux "/2" littéraux de la source. Nommés séparément parce
+# que la source les énonce séparément ("Taille du Stop Loss" ET "Taille de
+# Position"), même s'ils valent tous deux 1/2 -- et parce qu'ils se compensent
+# exactement dans un moteur dimensionné par le risque (H-Canal-Large-1).
+WIDE_CHANNEL_STOP_FRAC = 0.5   # "Taille du Canal / 2 = Taille du Stop Loss"
+WIDE_CHANNEL_SIZE_FRAC = 0.5   # "ET Taille de Position / 2"
 
 
 def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v,
                           high, o, score, warmup, min_borders, max_tranches,
                           rule3_streak, rule3_size_mult, risk_pct, state,
-                          extra_gate_fn=None):
+                          extra_gate_fn=None, wide_channel_v=None):
     """Factory pour `open_tranche_fn`, dette de duplication réelle relevée
     dans la rétrospective (PLAN.md) : 9 moteurs `backtest_phase2_*.py`
     (v4/v5/v6/v7/ut2/patterns/capital_tiers/fib/recommended) portaient
@@ -158,6 +339,19 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
         avec `j = i - 1` (déjà décalé, comme `ctx_score[i-1]` etc. dans les
         moteurs d'origine) -- DOIT retourner un tuple `(fresh_extra,
         pyramid_extra)` de bool.
+      - `wide_channel_v` : array bool optionnel (défaut `None` -> AUCUN
+        changement de comportement ni de résultat numérique pour les 9
+        moteurs déjà en place), indexé comme les autres arrays et lu en
+        `[j] = [i-1]` comme eux (donc causal par construction, au même titre
+        que `ctx_support_v[j]`). Quand `wide_channel_v[j]` est vrai, la
+        règle de volatilité "Stop Loss = taille du canal" s'applique à cette
+        ouverture : stop divisé par deux ET taille divisée par deux
+        (cf. le bloc "STOP LOSS = TAILLE DU CANAL" en tête de fichier pour la
+        citation exacte et les hypothèses H-Canal-Large-1..4). Le détecteur
+        qui produit cet array est `regime_classifier.compute_wide_channel` --
+        cette factory ne le calcule PAS elle-même, exactement comme elle ne
+        calcule aucun autre indicateur (même discipline que `score`,
+        `ctx_support_v`, `n_borders_v` : des données déjà résolues en entrée).
 
     Retourne `open_tranche_fn(i, tranches, win_streak)`, prêt à passer tel
     quel à `run_position_engine`.
@@ -189,10 +383,23 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
         entry_price = o[i]
         stop_price = min(ctx_support_v[j], entry_price * 0.999)
         stop_pct = (entry_price - stop_price) / entry_price
+        # Règle de volatilité "si canal très large" (cf. bloc dédié en tête de
+        # fichier). Transcription littérale des deux moitiés de la phrase
+        # source, écrites séparément bien qu'elles se compensent
+        # (H-Canal-Large-1) : "Taille du Canal / 2 = Taille du Stop Loss"
+        # d'abord, "ET Taille de Position / 2" ensuite -- la seconde appliquée
+        # à la taille dérivée du risque, AVANT le plafond 1/max_tranches, ce
+        # qui est la seule façon de préserver exactement l'"exposition capital
+        # constante" que la source revendique, y compris quand ce plafond mord.
+        size_mult = 1.0
+        if wide_channel_v is not None and bool(wide_channel_v[j]):
+            stop_pct *= WIDE_CHANNEL_STOP_FRAC
+            stop_price = entry_price * (1.0 - stop_pct)
+            size_mult = WIDE_CHANNEL_SIZE_FRAC
         eff_risk = risk_pct
         if win_streak >= rule3_streak:
             eff_risk *= rule3_size_mult
-        size_frac = min(1.0 / max_tranches, eff_risk / stop_pct) if stop_pct > 0 else 0.0
+        size_frac = min(1.0 / max_tranches, eff_risk / stop_pct * size_mult) if stop_pct > 0 else 0.0
         if size_frac <= 0:
             return None
         state["last_pyramid_high"] = max(state["last_pyramid_high"], high[j]) if is_pyramid_add else high[j]

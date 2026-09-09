@@ -440,14 +440,24 @@ ci-dessous) : retour **+24,5%**, drawdown **-27,1%**. **RE-régénérés après 
 correction pyramidalisation-régime** (cf. section dédiée ci-dessous) : retour
 **+27,9%**, drawdown **-27,0%**. **RE-régénérés une 3e fois après la correction
 Conflit MTF** (cf. section 5quinquies) : retour **+22,0%**, drawdown **-25,2%**
-— mouvement modeste dans le même sens à chaque fois. Toujours le
-profil le plus faible des 16 combinaisons, mais plus catastrophique. **Approfondi par
-walk-forward (`code/walkforward_unified.py`)**, également régénéré : l'année
-2021, seule responsable du -72,5%/-45,9% agrégé, passe à **+5,2% de retour,
--9,5% de drawdown** (chiffres post Conflit MTF ; +6,1%/-8,8% après
-pyramidalisation-régime seule, +6,2%/-8,4% après EXCES-H4 seul). Conclusion actionnable révisée : **l'exclusion de
-BNB/TRES_AGRESSIF n'est plus justifiée** — conservé comme profil à
-surveiller en priorité, pas à exclure.
+— mouvement modeste dans le même sens à chaque fois. **RE-régénérés une 4e fois
+après l'ajout de "Stop Loss = taille du canal"** (cf. section 5septies
+ci-dessous) : retour **+12,2%**, drawdown **-30,5%** — cette fois un mouvement
+DÉFAVORABLE (stop resserré sur les bougies à canal très large, dont ce couple
+concentre une part disproportionnée). Toujours le
+profil le plus faible des 16 combinaisons, toujours pas catastrophique (loin du
+-72,5%/-42,6% d'origine), mais désormais à surveiller plus attentivement.
+**Approfondi par walk-forward (`code/walkforward_unified.py`)**, également
+régénéré : l'année 2021, seule responsable du -72,5%/-45,9% agrégé d'origine,
+reste à **+5,2% de retour, -9,5% de drawdown** (inchangée par l'ajout du Stop
+Loss = taille du canal — chiffres post Conflit MTF ; +6,1%/-8,8% après
+pyramidalisation-régime seule, +6,2%/-8,4% après EXCES-H4 seul) ; **la pire
+année, désormais 2024**, passe de **-4,0%/-22,6%** (post Conflit MTF) à
+**-11,7%/-27,2%** (post Stop Loss = taille du canal) — dégradation notable sur
+cette seule année. Conclusion actionnable révisée : **l'exclusion de
+BNB/TRES_AGRESSIF reste non justifiée** (2024 à -27,2% reste loin de l'ancien
+-72,5%/2021) — conservé comme profil à surveiller en priorité, avec une
+vigilance accrue depuis la dernière correction.
 
 **Recherche systématique d'autres combinaisons dangereuses, faite (mobilisation
 multi-agents, AVANT la correction EXCES-H4)** : `code/cross_stress_test_faithful_gates.py` (faithful.py +
@@ -705,16 +715,18 @@ simultanément, sur le même actif/historique, `unified_protocol.py`
 (RANGE+TENDANCE) et `diversification.py` (Pattern A + Pattern B), et
 calcule le risque nominal agrégé bougie par bougie — répond à la limite
 laissée ouverte en section 5bis. Sa réplique interne du gate RANGE a été
-patchée trois fois (EXCES-H4, pyramidalisation-régime, Conflit MTF, cf.
-`PLAN.md`) pour rester cohérente avec le
-vrai `_run_core_unified`. **Résultat honnête, RE-régénéré après la 3e correction**
+patchée quatre fois (EXCES-H4, pyramidalisation-régime, Conflit MTF, Stop
+Loss = taille du canal, cf. `PLAN.md`) pour rester cohérente avec le
+vrai `_run_core_unified`. **Résultat honnête, RE-régénéré après la 4e correction**
 (`risk_aggregation_full_history.csv` + `risk_aggregation_walkforward.csv`,
 BTC/ETH/BNB/SOL × 4 profils) : risque agrégé maximal observé **17,00%**
-(BTC/TRES_AGRESSIF, 2020-11-28, inchangé à travers les 3 corrections — le pic
+(BTC/TRES_AGRESSIF, 2020-11-28, inchangé à travers les 4 corrections — le pic
 est atteint pendant une phase déjà en régime TENDANCE), très au-dessus du plafond global 5%
-documenté (`RULES_EXTRACTION.md` §5) ; 66/112 combinaisons année×actif×profil
-(68/112 avant toute correction, 67/112 après pyramidalisation-régime seule)
-le dépassent en walk-forward. **Root cause** : le pyramidage RANGE seul
+documenté (`RULES_EXTRACTION.md` §5) ; 64/112 combinaisons année×actif×profil
+(68/112 avant toute correction, 67/112 après pyramidalisation-régime seule,
+66/112 après Conflit MTF) le dépassent en walk-forward — amélioration
+apportée par "Stop Loss = taille du canal" (capital risqué réduit sur les
+bougies à canal très large). **Root cause** : le pyramidage RANGE seul
 (3 tranches × 5% = 15% en TRES_AGRESSIF) dépasse déjà le plafond avant toute
 combinaison — ce n'est pas la combinaison de systèmes qui casse le plafond.
 **Volontairement pas comblé par un plafond inventé** : le corpus ne spécifie
@@ -752,6 +764,28 @@ Réponse directe à "reste-t-il de l'IP de Philippe non implémentée ?" : 3 age
 **Catégorie B, item (i) traité, PUIS CORRIGÉ (vérification adversariale dédiée, 6e round de mobilisation)** — **"Règle des 50%" du Pull-Back** (`TRADING_LESSONS_PULLBACK_MATURITE.md`, #13) : condition COMPOSITE à 2 volets cumulatifs, retracement ≥23% ET pénétration dans les 50% inférieurs du canal de contexte. `code/fibonacci.py` citait cette règle verbatim depuis sa création mais n'en codait que le premier volet. Comblé : `compute_context_position`/`classify_regle_50` (canal de contexte `CONTEXT_DURATION="15D"`, MÊME définition que `trend_table.py::add_trend_context`/`accum_retracement_frac` — PAS `backtest_phase2_v7.py::prepare`, référence corrigée après vérification : ce fichier ne calcule ni `ctx_high` ni `ctx_low` — recalculée localement pour ne pas créer de dépendance nouvelle, H6 de `trend_table.py` préservé), colonnes `fib_context_position`/`fib_regle_50` sur `add_fibonacci_columns`, câblé comme nouvelle variante `use_fib_regle_50` de `backtest_phase2_fib.py::run_v7_fib` (même pattern que `use_fib_optimal` déjà existant). **Bug réel trouvé et corrigé par la vérification adversariale** : la version initiale ne plafonnait pas le retracement par le haut, supprimant de fait le Red Flag #10 que le fichier documente lui-même comme invalidant au-delà de 61,8% — mesuré : la version buguée était en réalité PLUS LARGE que `fib_favorable` en nombre de bougies (2642 vs 2388 sur BTC H4), contredisant la prétention "beaucoup plus restrictive" affirmée initialement. Plafond `FAVORABLE_MAX` ajouté ; `fib_regle_50` est désormais un sous-ensemble STRICT vérifié de `fib_favorable`. **Nuance sur la distinction avec H7** (corrigée — l'affirmation initiale d'une séparation nette entre les deux règles était une justification a posteriori fragile) : la tension avec l'hypothèse H7 de `trend_table.py` (phrase similaire — "retour min 50% contexte", RULES_EXTRACTION.md §1 — interprétée là-bas comme "recovery_frac ≥ 0.50") N'EST PAS réconciliée ; les deux décrivent très probablement la même étape Pull-Back de la même table compressée. H7 n'est pas modifiée (hors périmètre), mais la tension est désormais tracée dans `trend_table.py` lui-même, à côté de H7.
 
 Résultat mesuré honnête (`phase2_fib_results.csv`, variante `fib_regle_50`, régénéré après correction) : 2 à 13 trades selon l'actif (vs **80-137**, chiffre corrigé — "80-167" cité initialement n'existait dans aucune variante réellement mesurée, ni avant ni après ce cycle) ; rendement absolu négatif sur 15/16 couples actif×profil (seul SOL/FAIBLE positif, +0,5 pt de retour) mais **dégradé vs `baseline_v7` sur 16/16** (delta -21 à -201 pts selon le couple — l'ancienne formulation "dégrade sur 15/16" confondait le signe absolu du rendement avec la comparaison à la baseline, corrigée). **Implémenté intégralement malgré ce résultat** — conforme au principe inviolable du projet : la performance du proxy ne décide jamais si un élément littéralement documenté de l'IP de Philippe doit être implémenté. 3 nouveaux tests à vérité terrain, `code/test_fibonacci.py` désormais 8/8 (dont un dédié au cas `retracement>61,8%` qui aurait révélé le bug initial).
+
+## 5septies. "Stop Loss = taille du canal" — implémenté (catégorie B, item ii, 6e round de mobilisation multi-agents)
+
+Citation exacte, `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` (#5) §5 : *"Dimensionnement du Stop Loss — Règle standard : Stop Loss = taille du canal de tendance. Règle de volatilité (symétrie du risque) : si canal très large → Taille du Canal / 2 = Taille du Stop Loss ET Taille de Position / 2 simultanément (préserve une exposition capital constante)"* — érigée en OBLIGATION par la checklist pré-trade de la même source (*"Dimensionnement : stop loss indexé sur le canal (ajusté selon volatilité) ?"*). La "règle standard" est déjà en place depuis v4 ; seule la "règle de volatilité" manquait.
+
+**4 hypothèses documentées AVANT tout code** (bloc "STOP LOSS = TAILLE DU CANAL", tête de `code/position_engine.py`), aucun seuil chiffré n'existant nulle part dans le corpus pour "très large" :
+- **H-Canal-Large-1 (mécanique des deux "/2")** : le stop passe à la moitié de la distance standard, et la position vaut la moitié de ce que la normalisation par le risque donnerait à CE stop réduit — dans un moteur `size_frac = risk/stop_pct`, les deux divisions se COMPENSENT exactement (`size = (risk/(s/2))/2 = risk/s`), donc l'exposition (position notionnelle) reste INCHANGÉE et le capital réellement risqué est divisé par deux. C'est mot pour mot ce qu'affirme la parenthèse de la source. Lecture alternative (les deux "/2" cumulés, exposition ÷2, risque ÷4) écartée car elle contredit cette parenthèse. Vérifié par recalcul manuel indépendant de ce document.
+- **H-Canal-Large-2 (quel canal)** : le même "Extreme Channel" EMA(55)±2×ATR(14) qui porte déjà le stop, mesuré au niveau qui porte CE stop (H4 natif ou D1 selon le moteur) — aucune nouvelle définition de "canal".
+- **H-Canal-Large-3 (seuil "très large")** : percentile glissant causal p80 de la largeur du canal (`WIDE_PCTL`, `regime_classifier.py`), strictement en-dessous du p95 déjà utilisé pour EXCES (sinon la règle serait vacueuse dans tout moteur qui refuse déjà d'entrer en régime EXCES — vérifié : seules 26-40% des bougies "très larges" sont aussi EXCES). Hypothèse assumée et documentée, jamais inventée en silence.
+- **H-Canal-Large-4 (périmètre)** : table RANGE seulement (`position_engine.py`) — la source #5 s'intitule "Anatomie du Range" et son §5 donne des objectifs typés range. `trend_table.py` (table TENDANCE) volontairement hors périmètre : l'étendre exigerait une 2e décision de conception (interaction avec les unités U/H1 et le plafond de campagne H3 propres à cette table) que le corpus ne tranche nulle part.
+
+**Activé sans condition** dans `backtest_phase2_faithful.py`/`unified_protocol.py` (côté RANGE, canal D1) — même statut que le stop UT+1 et l'abstention Wall Street. Mesuré comme banc de sensibilité isolé (`use_wide_channel_halving`, défaut `False`) dans `backtest_phase2_v7.py`.
+
+**Résultat mesuré honnête, y compris défavorable** (recalculé indépendamment depuis les CSV avant/après, pas seulement repris du rapport de l'agent) :
+- Banc isolé (`backtest_phase2_v7.py`, un seul paramètre change) : retour moyen -13,1 pts au seuil retenu (p80), dégrade 16/16 couples actif×profil. Effet monotone en fonction du seuil (p70 -14,6 pts / p80 -13,1 pts / p90 -10,1 pts) — imputable à la règle, pas au bruit.
+- `backtest_phase2_faithful.py` (activation inconditionnelle, canal D1) : retour **-2,6 pts en moyenne** (recalculé indépendamment : BTC -1,3 à -13,5 pts, BNB -1,8 à -13,5 pts dégradés ; SOL +0,6 à +8,1 pts amélioré ; ETH **exactement inchangé**, ses seules sorties au stop ne tombent sur aucune bougie à canal très large). Drawdown quasi inchangé en moyenne. 33-43% des tranches ouvertes le sont sur une bougie à canal très large — la règle n'est pas vacueuse.
+- Effet de bord réel identifié : sur BTC le nombre de trades MONTE (239→256) — un stop plus serré referme plus tôt une tranche dont le stop standard n'aurait jamais été touché, libérant un emplacement de pyramidage plus tôt.
+- Impact sur le risque agrégé (favorable) : dépassements du plafond §5 en walk-forward **66/112 → 64/112** (capital risqué réduit sur les bougies à canal large).
+- Impact sur BNB/TRES_AGRESSIF (le couple le plus fragile déjà suivi, cf. section 5bis) : DÉFAVORABLE — retour agrégé +22,0%→+12,2%, drawdown -25,2%→-30,5% ; pire année walk-forward (2024) -4,0%/-22,6%→-11,7%/-27,2%. Reste loin du -72,5%/-42,6% d'origine (avant EXCES-H4), mais mérite une vigilance accrue.
+- **Seuil p80 non révisé** malgré p90 mesurant mieux (-10,1 pts au lieu de -13,1) — choisir un paramètre de l'IP pour la performance du proxy est exactement le raisonnement que ce projet s'interdit.
+
+**Implémenté intégralement malgré ce résultat globalement défavorable** — conforme au principe inviolable du projet. 10 nouveaux tests à vérité terrain (`test_position_engine.py` 8→13, `test_regime_classifier.py` 10→15). Détail complet, citations exactes, chiffres complets par actif/profil/seuil : `PLAN.md` backlog item 11 catégorie B et section "6e application".
 
 ---
 
