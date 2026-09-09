@@ -16,6 +16,7 @@ from fractions import Fraction as F
 from trend_table import (
     add_leg, make_campaign, step_campaign, try_open_campaign, step_reverse,
     PROFILES_TREND, MAX_CAMPAIGN_RISK_PCT,
+    free_room_frac, breakout_space_ok, attach_obstacle_level, CLOSURE_DELAY,
 )
 
 
@@ -320,6 +321,195 @@ def test_regime_excess_abandons_accumulation():
     assert fclose(fee_frac2, 0.25)
 
 
+# ---------------------------------------------------------------------------
+# Test 7 : sémantique de `free_room_frac` (H16) -- un niveau DÉJÀ SOUS le prix
+# n'est pas un obstacle (marge non bornée), un niveau inconnu reste inconnu.
+# ---------------------------------------------------------------------------
+def test_free_room_frac_semantics():
+    """prix=100 : niveau 110 -> marge 10/100 = 0.10 (vérifié par Fraction,
+    pas en reformulant la formule) ; niveau 95 ou 100 -> déjà franchi ->
+    +inf ; niveau NaN -> NaN (vérification impossible, PAS 'espace libre')."""
+    assert fclose(free_room_frac(110.0, 100.0), float(F(10, 100)))
+    assert fclose(free_room_frac(101.5, 100.0), float(F(15, 1000)))
+    assert free_room_frac(95.0, 100.0) == float("inf"), "niveau sous le prix = plus un obstacle"
+    assert free_room_frac(100.0, 100.0) == float("inf"), "niveau AU prix = déjà atteint, plus un obstacle"
+    nan_room = free_room_frac(float("nan"), 100.0)
+    assert nan_room != nan_room, "niveau inconnu -> NaN, jamais +inf"
+    nan_room2 = free_room_frac(110.0, 0.0)
+    assert nan_room2 != nan_room2, "prix invalide -> NaN"
+
+
+# ---------------------------------------------------------------------------
+# Test 8 : gate "espace libre" MTF avant breakout (H13-H16), Ratio 1:1
+# ---------------------------------------------------------------------------
+def test_breakout_space_ok_ratio_1_1():
+    """Prix de cassure 100, amplitude du range local 8 -> rendement escompté
+    = 8/100 = 0.08 (H15). Au Ratio 1:1 (mult=1.0) il faut donc >= 8% de
+    marge SUR CHACUN des deux niveaux supérieurs. Tous les seuils ci-dessous
+    sont calculés à la main via Fraction, pas repris de la fonction."""
+    exp_ret = float(F(8, 100))
+    needed = exp_ret  # mult = 1.0
+
+    # UT+1 à 110 (marge 10%) et UT+2 à 130 (marge 30%) : 10% et 30% >= 8% -> OK
+    assert float(F(10, 100)) >= needed and float(F(30, 100)) >= needed
+    assert breakout_space_ok(100.0, exp_ret, (110.0, 130.0)) is True
+
+    # UT+1 à 107 (marge 7% < 8%) : bloqué, même si l'UT+2 est très dégagée
+    assert float(F(7, 100)) < needed
+    assert breakout_space_ok(100.0, exp_ret, (107.0, 130.0)) is False
+
+    # UT+2 à 105 (marge 5% < 8%) : bloqué aussi -> la condition est bien un ET
+    assert breakout_space_ok(100.0, exp_ret, (130.0, 105.0)) is False
+
+    # Niveau déjà franchi (95 < 100) : ce n'est plus un obstacle (H16) -> OK
+    assert breakout_space_ok(100.0, exp_ret, (95.0, 130.0)) is True
+    assert breakout_space_ok(100.0, exp_ret, (95.0, 92.0)) is True
+
+    # Donnée manquante sur un niveau -> ÉCHEC (on ne peut pas "vérifier")
+    assert breakout_space_ok(100.0, exp_ret, (float("nan"), 130.0)) is False
+    # Rendement escompté inexploitable -> ÉCHEC
+    assert breakout_space_ok(100.0, float("nan"), (110.0, 130.0)) is False
+    assert breakout_space_ok(100.0, 0.0, (110.0, 130.0)) is False
+
+    # Sensibilité du multiplicateur : à 1.5x il faut 12% -> 10% ne suffit plus
+    assert breakout_space_ok(100.0, exp_ret, (110.0, 130.0), mult=1.5) is False
+    assert breakout_space_ok(100.0, exp_ret, (113.0, 130.0), mult=1.5) is True
+    # À 0.5x il faut 4% -> 105 (5%) suffit
+    assert breakout_space_ok(100.0, exp_ret, (105.0, 130.0), mult=0.5) is True
+
+
+# ---------------------------------------------------------------------------
+# Test 9 : effet du gate DANS la machine à états, et non-régression de tout
+# appelant qui ne fournit pas la clé (H13 : `unified_protocol.py` réplique ce
+# dict `ev` sans elle et doit rester bit-à-bit identique)
+# ---------------------------------------------------------------------------
+def test_step_campaign_breakout_space_gate():
+    p = PROFILES_TREND["MODERE"]  # accum_frac=0.25, breakout_frac=1.00
+
+    def fresh():
+        campaign = make_campaign(entry=100.0, stop=95.0)
+        add_leg(campaign, p["accum_frac"], 100.0)
+        assert fclose(campaign["remaining"], 0.25)
+        return campaign
+
+    base_ev = {"regime_excess": False, "breakout_raw": True}
+
+    # (a) Gate ABSENT de `ev` -> comportement historique : le breakout passe.
+    c_a = fresh()
+    closed, fee_a, realized, rev = step_campaign(
+        c_a, 0, o=[102.0], high=[103.0], low=[101.0], c=[102.5], ev=dict(base_ev), profile=p)
+    assert closed is False and realized is None and rev is None
+    assert c_a["stage"] == "POST_BREAKOUT", "sans la clé, le gate ne doit RIEN changer"
+    assert fee_a > 0.0
+
+    # (b) Gate présent et VRAI -> strictement identique à (a)
+    c_b = fresh()
+    _, fee_b, _, _ = step_campaign(
+        c_b, 0, o=[102.0], high=[103.0], low=[101.0], c=[102.5],
+        ev={**base_ev, "breakout_space_ok": True}, profile=p)
+    assert c_b["stage"] == "POST_BREAKOUT"
+    assert fclose(fee_b, fee_a) and fclose(c_b["remaining"], c_a["remaining"])
+    assert fclose(c_b["entry"], c_a["entry"])
+
+    # (c) Gate présent et FAUX -> le breakout est REFUSÉ : l'étape ne change
+    #     pas, aucune jambe n'est ajoutée, aucun frais n'est payé, et la
+    #     campagne reste vivante en Accumulation (pas clôturée).
+    c_c = fresh()
+    closed_c, fee_c, realized_c, rev_c = step_campaign(
+        c_c, 0, o=[102.0], high=[103.0], low=[101.0], c=[102.5],
+        ev={**base_ev, "breakout_space_ok": False}, profile=p)
+    assert closed_c is False and realized_c is None and rev_c is None
+    assert c_c["stage"] == "ACCUMULATION", "breakout sans espace libre -> on reste en Accumulation"
+    assert fee_c == 0.0, "aucun frais quand aucune jambe n'est ajoutée"
+    assert fclose(c_c["remaining"], 0.25) and fclose(c_c["entry"], 100.0)
+    assert "swing_high" not in c_c, "swing_high ne doit être initialisé qu'au vrai passage du breakout"
+
+
+# ---------------------------------------------------------------------------
+# Test 10 : `attach_obstacle_level` ne regarde JAMAIS une bougie supérieure
+# non encore clôturée (série synthétique à vérité terrain connue)
+# ---------------------------------------------------------------------------
+def test_attach_obstacle_level_no_lookahead():
+    """3 bougies "UT supérieure" datées 01/01, 02/01, 03/01 avec des
+    `ctx_resistance` distincts (10, 20, 30) et un délai de clôture de 1 jour
+    (CLOSURE_DELAY, cf. `backtest_phase2_ut2.py`) -> disponibles à partir du
+    02/01, 03/01, 04/01 respectivement. Vérité terrain attendue, calculée à
+    la main pour 5 instants de l'UT d'exécution."""
+    import pandas as pd
+    df_high = pd.DataFrame({
+        "date": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
+        "ctx_resistance": [10.0, 20.0, 30.0],
+    })
+    low_dates = pd.to_datetime([
+        "2024-01-01 12:00",   # aucune bougie supérieure encore close -> NaN
+        "2024-01-02 00:00",   # la 1re devient disponible pile maintenant -> 10
+        "2024-01-02 20:00",   # toujours la 1re -> 10
+        "2024-01-03 04:00",   # la 2e est close depuis 03/01 00:00 -> 20
+        "2024-01-05 00:00",   # la 3e (disponible 04/01) -> 30
+    ])
+    df_low = pd.DataFrame({"date": low_dates})
+    got = attach_obstacle_level(df_low, df_high, CLOSURE_DELAY)
+    assert got[0] != got[0], f"attendu NaN avant toute clôture supérieure, obtenu {got[0]}"
+    assert list(got[1:]) == [10.0, 10.0, 20.0, 30.0], f"vérité terrain violée : {got}"
+
+
+# ---------------------------------------------------------------------------
+# Test 11 : la réplique vectorisée utilisée par le DIAGNOSTIC du gate est
+# bien la même condition que celle du moteur (sur données réelles, bougie par
+# bougie -- pas une reformulation approchée)
+# ---------------------------------------------------------------------------
+def test_raw_breakout_candidates_matches_engine_expression():
+    import numpy as np
+    from backtest_phase2 import load_h1, resample
+    from backtest_phase2_v7 import prepare
+    from trend_table import (add_trend_context, load_volume, resample_volume,
+                              raw_breakout_candidates, VOLUME_MA_WINDOW, VOLUME_EXPANSION_MULT)
+    import pandas as pd
+
+    h1 = load_h1("BTCUSDT")
+    h4 = add_trend_context(prepare(resample(h1, "4h")))
+    vol = resample_volume(load_volume("BTCUSDT"), "4h")
+    got = raw_breakout_candidates(h4, vol)
+
+    # Vérité terrain = l'expression LITTÉRALE du moteur (`ev["breakout_raw"]`
+    # dans run_trend_table), réécrite ici en boucle scalaire.
+    c = h4["close"].values
+    local_high_v = h4["local_high"].values
+    score_v = h4["score"].values
+    vol_v = vol["volume"].values
+    vol_ma = pd.Series(vol_v).rolling(VOLUME_MA_WINDOW).mean().values
+    volume_expansion = vol_v > VOLUME_EXPANSION_MULT * np.roll(vol_ma, 1)
+    volume_expansion[0] = False
+    n_true = 0
+    for i in range(1, len(h4)):
+        expected = bool(c[i - 1] > local_high_v[i - 1] and volume_expansion[i - 1]
+                        and score_v[i - 1] >= 2)
+        assert bool(got[i]) == expected, f"divergence à i={i}: {got[i]} vs {expected}"
+        n_true += expected
+    assert n_true > 0, "aucune bougie candidate trouvée -- le test ne vérifierait rien"
+
+
+# ---------------------------------------------------------------------------
+# Test 12 : le gate exige EXPLICITEMENT les deux niveaux supérieurs -- il ne
+# se dégrade pas silencieusement en "un seul niveau" ou en "pas de gate"
+# (la citation porte sur UT+1 ET UT+2, cf. H13)
+# ---------------------------------------------------------------------------
+def test_breakout_space_gate_requires_both_levels():
+    import pandas as pd
+    from trend_table import run_trend_table
+    df = pd.DataFrame({"date": pd.to_datetime(["2024-01-01"]), "open": [1.0],
+                       "high": [1.0], "low": [1.0], "close": [1.0]})
+    vol = pd.DataFrame({"date": df["date"], "volume": [1.0]})
+    for kwargs in ({}, {"df_ut1": df}, {"df_ut2": df}):
+        try:
+            run_trend_table(df.copy(), vol.copy(), "MODERE",
+                            use_breakout_space_gate=True, **kwargs)
+        except ValueError as e:
+            assert "df_ut1" in str(e) and "df_ut2" in str(e)
+        else:
+            raise AssertionError(f"ValueError attendue pour kwargs={list(kwargs)}")
+
+
 TESTS = [
     test_add_leg_risk_cap,
     test_add_leg_blended_entry_price,
@@ -327,6 +517,12 @@ TESTS = [
     test_reverse_mechanism_tres_agressif,
     test_protective_stop_triggers_on_wick,
     test_regime_excess_abandons_accumulation,
+    test_free_room_frac_semantics,
+    test_breakout_space_ok_ratio_1_1,
+    test_step_campaign_breakout_space_gate,
+    test_attach_obstacle_level_no_lookahead,
+    test_raw_breakout_candidates_matches_engine_expression,
+    test_breakout_space_gate_requires_both_levels,
 ]
 
 

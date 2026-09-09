@@ -988,9 +988,13 @@ def main():
 
     Rapporte AUSSI, honnêtement, si des campagnes tendance se déclenchent
     RÉELLEMENT sur ce jeu de données (`n_trend_campaigns_opened`) -- rappel
-    du constat déjà documenté dans PLAN.md/COUVERTURE_ENSEIGNEMENTS.md :
-    `trend_table.py` seul n'a JAMAIS dépassé l'étape Accumulation dans son
-    propre backtest (100% des campagnes se referment en Accumulation). Si
+    du constat déjà documenté dans PLAN.md/COUVERTURE_ENSEIGNEMENTS.md,
+    CORRIGÉ au 10e round de mobilisation : `trend_table.py` seul ne dépasse
+    l'étape Accumulation que pour le profil FAIBLE (30 campagnes, dont 8
+    atteignent le Breakout, 5 la Divergence, 1 l'Excès final) ; pour
+    MODERE/AGRESSIF/TRES_AGRESSIF, 39 campagnes chacun et 0 Breakout. Le
+    raccourci "100% des campagnes se referment en Accumulation" écrit ici
+    était donc faux pour un profil sur quatre. Si
     ce chiffre est encore 0 ici, le protocole unifié ne peut STRUCTURELLEMENT
     rien changer au résultat chiffré par rapport à `recommended.py` seul --
     dit tel quel, pas maquillé en "aucune différence trouvée par hasard"."""
@@ -1040,7 +1044,8 @@ def main():
     print(f"Résultat identique à faithful.py seul sur toutes les combinaisons : {identical}")
     if total_campaigns == 0:
         print("Aucune campagne tendance déclenchée sur ce jeu de données -- cohérent avec le "
-              "constat déjà documenté (trend_table.py seul n'a jamais dépassé Accumulation) : "
+              "constat déjà documenté (trend_table.py seul ne depasse Accumulation que pour le "
+              "profil FAIBLE, cf. correction du 10e round) : "
               "le protocole unifié ne peut structurellement pas différer de recommended.py ici.")
 
 

@@ -78,14 +78,33 @@ tendance" à 5 étapes (`trend_table.py`) n'est toujours pas intégrée À CE
 FICHIER précis — reste structurellement incompatible avec
 `position_engine.py` (justifié en tête de `trend_table.py`, une machine à
 états différente, pas une question de performance). **Ce n'est PAS parce
-que son propre résultat mesuré (100% des campagnes closes en étape
-Accumulation, `phase2_trend_table_results.csv`) serait un motif de ne pas
-l'utiliser** — cf. correction de tête de document : la table de tendance
+que son propre résultat mesuré (`phase2_trend_table_results.csv`) serait un
+motif de ne pas l'utiliser** — cf. correction de tête de document : la table
+de tendance
 EST utilisée, sans condition, via `code/unified_protocol.py` (section 5bis
 ci-dessous), qui répond "oui" à la question "les moteurs sont-ils unifiés ?"
 — ce fichier (`backtest_phase2_recommended.py`) reste inchangé et continue
 de documenter le moteur RANGE seul, pour comparaison, pas parce que la
 table de tendance serait optionnelle.
+
+**CORRECTION (10e round de mobilisation)** : ce paragraphe affirmait jusqu'ici
+que la table de tendance closait "100% des campagnes en étape Accumulation".
+**C'est inexact et l'affirmation a été retirée** : compté par instrumentation
+du vrai moteur, c'est vrai pour les profils MODERE/AGRESSIF/TRES_AGRESSIF (39
+campagnes chacun, 0 Breakout) mais FAUX pour le profil FAIBLE (30 campagnes,
+dont **8 atteignent le Breakout, 5 la Divergence et 1 l'Excès final**) — les
+étapes 2 à 5 de la table SONT exercées empiriquement sur ce profil. Cause
+mécanique identifiée : FAIBLE a `accum_frac = 0.00`, donc son stop de
+protection (qui exige `remaining > 0`) ne peut pas clôturer la campagne avant
+le Breakout, contrairement aux 3 autres profils. Ajouté au même round :
+`trend_table.py` expose désormais la contrainte "espace libre" MTF avant
+breakout (`use_breakout_space_gate`, OFF par défaut, obstacles UT+1 D1 /
+UT+2 Hebdo) — règle littérale du corpus, mesurée mitigée à dégradée (1 couple
+amélioré, 3 dégradés, 12 inchangés), cf. `PLAN.md` section "10e application".
+Elle n'est PAS activée dans `unified_protocol.py` : ce routeur réplique le
+dict d'événements de `trend_table.py` sans cette clé et reste donc
+bit-à-bit identique — l'étendre au routeur est un choix de configuration
+distinct, non tranché ici plutôt que fait en silence.
 
 ---
 

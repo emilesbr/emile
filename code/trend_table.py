@@ -176,6 +176,99 @@ H12. **Une seule campagne active à la fois** ("un seul tracker actif",
     précédente entièrement close (et le "+Reverse" éventuel dénoué, règle
     transverse "jamais passer de haussier à baissier sans repasser par un
     range").
+H13. **Contrainte "espace libre" MTF avant le Breakout** (`use_breakout_space_gate`,
+    défaut `False` — le comportement historique de ce moteur est préservé
+    BIT-À-BIT quand le paramètre n'est pas passé). Citation de départ,
+    vérifiée mot pour mot dans `TRADING_LESSONS_BREAKOUT_RATIO11.md` ligne
+    17 (source #12) :
+
+        *"Contrainte Multi-Timeframe (MTF) : il est impératif de vérifier
+        l'absence d'obstacles sur les unités de temps supérieures (UT+1 et
+        UT+2). Le breakout doit disposer d'un 'rendement escompté'
+        suffisant, c'est-à-dire d'un espace libre de toute structure
+        majeure pour permettre l'épanouissement de la tendance."*
+
+    2e source INDÉPENDANTE du même mécanisme, `TRADING_LESSONS_PULLBACK_
+    MATURITE.md` ligne 14 (source #13, hiérarchie à 3 niveaux) : *"UT
+    Supérieure ('Le Potentiel') : vérifier qu'il reste assez de 'jus'
+    (marge de progression) pour un nouvel objectif"*.
+
+    **Pourquoi ce chantier est légitime ICI alors que l'amplitude
+    Validation/Confirmation cross-timeframe a été refusée pour la table
+    RANGE** (cf. `PLAN.md` section "7e application") : la raison de refus
+    n°1 de ce round-là était que le corpus ne budgète que 2 UT à la table
+    RANGE. La MÊME citation (`TRADING_LESSONS_MTF_SUIVI_TENDANCE.md` ligne
+    13, revérifiée mot pour mot) dit l'INVERSE pour la table TENDANCE —
+    celle de CE fichier : *"| Unités de temps | 2 UT (ex: Daily/H4)
+    [Range] | **3 UT impératives** (ex: Mensuel/Hebdo/Daily) [Tendance] |"*,
+    et ligne 15 : *"| Hiérarchie | Dépend de l'UT supérieure | Nécessite
+    validation sur **2 UT supérieures** |"*. La table de tendance a donc
+    explicitement DROIT à un UT+1 ET un UT+2 réels ; ce gate est le premier
+    endroit du projet où cette ligne du corpus est appliquée à la table
+    qu'elle vise.
+
+    Règle distincte, vérifiée, de deux règles MTF déjà implémentées — ce
+    n'est pas un doublon : (a) "Conflit MTF" (`TRADING_LESSONS_MAITRISE_
+    GRADIENT_RISQUE.md` ligne 7, *"Ne jamais trader une borne de range si
+    un range d'unité de temps supérieure est déjà actif"*) porte sur le
+    RÉGIME d'un trade de RANGE, pas sur la place disponible ; (b) "Rigueur
+    Multi-Timeframe" (même source #12, ligne 21, *"Si l'UT+1 est en fin de
+    cycle, le breakout local est un piège"*) porte sur la PHASE DE CYCLE de
+    l'UT+1, pas sur une distance.
+H14. **Ce qu'est une "structure majeure" sur UT+1/UT+2** : la borne HAUTE du
+    canal "Extreme Channel" de ce niveau (`ctx_resistance` = ema_slow +
+    2xATR, la définition déjà utilisée par ce fichier depuis
+    `add_trend_context`), calculée sur de VRAIES bougies D1 (UT+1) et
+    Hebdomadaires (UT+2) et transmise sans lookahead. **Aucun détecteur de
+    structure n'est inventé ici** (c'était le motif de refus du gate
+    Fibonacci RANGE) : c'est le miroir exact du `ctx_support` que le corpus
+    fait déjà servir de structure de référence pour le stop UT+1, et le
+    corpus traite lui-même la borne opposée du canal comme la structure que
+    le prix vient buter (`TRADING_LESSONS_ZONE_ACCUMULATION.md` ligne 40 :
+    *"Validation : prix atteint la borne opposée du canal de tendance"*).
+    **`ctx_high` (max glissant 15 jours) a été explicitement ÉCARTÉ** comme
+    candidat : mesuré ici, c'est un quasi no-op entre UT (marge médiane
+    jusqu'à l'obstacle 6,22% en H4 / 6,36% en D1 / 7,47% en Hebdo sur BTC),
+    exactement l'invariance par agrégation déjà mesurée au round précédent
+    pour `max(high)-min(low)`. `ctx_resistance`, path-dépendant (EMA+ATR),
+    ne l'est PAS : marge médiane 2,52% en H4 / 5,99% en D1 / 8,50% en Hebdo
+    (BTC), ratio médian D1/H4 = 2,1-2,4x et Hebdo/H4 = 2,8-5,5x selon
+    l'actif. Le gate mesure donc bien quelque chose de propre aux UT
+    supérieures, ce n'est pas le même nombre sous un autre nom.
+H15. **Ce qu'est le "rendement escompté" du breakout** : l'amplitude du range
+    d'accumulation local, c'est-à-dire l'objectif "Ratio 1:1 Tendance" que
+    la MÊME source définit 9 lignes plus haut (`TRADING_LESSONS_BREAKOUT_
+    RATIO11.md` ligne 8, vérifié : *"Phase de Validation (Ratio 1:1
+    Tendance) : projeter l'amplitude du range d'accumulation local (UT)"* —
+    UT LOCALE, point déjà vérifié au round précédent). Grandeur déjà
+    calculée par `backtest_phase2_v7.prepare` (`local_range`, fenêtre
+    LOCAL_DURATION sur l'UT d'exécution) et jusqu'ici simplement jamais lue
+    par ce fichier. Le multiplicateur `space_mult` vaut 1.0 par défaut
+    (= Ratio 1:1, la seule valeur citée par le corpus) et reste un
+    paramètre pour permettre une mesure de sensibilité — PAS pour être
+    calibré sur la performance.
+H16. **Un niveau ne compte comme OBSTACLE que s'il est AU-DESSUS du prix.**
+    S'il est déjà sous le prix au moment du breakout, il est franchi : il ne
+    borne plus l'espace au-dessus, la marge disponible de ce côté est donc
+    considérée comme non bornée (`+inf`). C'est la lecture littérale de
+    *"absence d'obstacles"* — et ce n'est pas un détail : mesuré sur les
+    bougies candidates au breakout, la borne haute du canal D1 n'est
+    au-dessus du prix que dans 41-51% des cas et celle de l'Hebdo dans
+    51-63% des cas selon l'actif. Un niveau INCONNU (NaN, warmup du niveau
+    supérieur) fait au contraire ÉCHOUER le gate — *"il est impératif de
+    VÉRIFIER"* ne peut pas être satisfait sans donnée, et c'est la
+    convention déjà en place partout ailleurs (`valid_inputs` ici,
+    `backtest_phase2_ut2._aligned`). En pratique inerte sur les données
+    testées : 0,00% de NaN sur D1 comme sur Hebdo une fois le warmup H4
+    passé (2117-2374 bougies D1, 303-340 bougies Hebdo selon l'actif).
+H17. **Portée du gate : l'étape Breakout UNIQUEMENT** (*"avant un
+    breakout"*), pas l'ouverture de campagne en Accumulation, pas le
+    renfort de Pull-Back, pas l'Excès final — le corpus ne parle d'espace
+    libre que pour le breakout. H11 (ce moteur est volontairement
+    mono-timeframe) reste vrai par défaut : le gate est OPTIONNEL et
+    désactivé par défaut, exactement comme `use_mtf_stop`/`use_fib_gate`
+    ailleurs, pour que la mesure isolée de la table de tendance reste
+    comparable à tout l'historique déjà publié.
 
 Correction faite EN COURS D'ÉCRITURE (pas après coup) : la première version
 de ce fichier n'accumulait pas le P&L des clôtures partielles (Divergence)
@@ -194,6 +287,12 @@ sys.path.insert(0, ".")
 sys.path.insert(0, "/home/user/emile/code")
 from backtest_phase2 import FEE, EMA_SLOW  # lecture seule, aucune modification
 from backtest_phase2_v7 import prepare, LOCAL_DURATION, CONTEXT_DURATION, MIN_BORDERS  # idem
+# UNE seule définition du délai de clôture réelle d'une bougie de niveau
+# supérieur dans tout le projet (1 jour pour D1 ET pour l'Hebdomadaire avec la
+# convention `resample()` de ce projet -- démonstration et vérification
+# bit-à-bit dans `backtest_phase2_ut2.py`/`test_ut2.py`) : réutilisée telle
+# quelle ici plutôt que redécidée, cf. H13/H16.
+from backtest_phase2_ut2 import CLOSURE_DELAY  # lecture seule, aucune modification
 
 # --- Constantes de détection des étapes (cf. hypothèses H5-H9 ci-dessus) ---
 ACCUM_RETRACEMENT_LOW, ACCUM_RETRACEMENT_HIGH = 0.38, 0.61        # RULES_EXTRACTION §1
@@ -202,6 +301,7 @@ PULLBACK_RECOVERY_FRAC = 0.50                                     # H7
 VOLUME_MA_WINDOW = 20
 VOLUME_EXPANSION_MULT = 1.5                                       # H9
 MAX_CAMPAIGN_RISK_PCT = 0.05                                      # H3, RULES_EXTRACTION §5
+BREAKOUT_SPACE_MULT = 1.0                                         # H15, "Ratio 1:1"
 
 # --- Table de money management "trade de tendance" (RULES_EXTRACTION §4) ---
 # accum_frac / breakout_frac / pullback_frac : fractions de l'unité U ajoutées
@@ -293,6 +393,71 @@ def add_leg(campaign: dict, add_frac: float, price: float) -> float:
     return actual_add
 
 
+def free_room_frac(level: float, price: float) -> float:
+    """Marge disponible (en fraction du prix) jusqu'à `level`, vu d'en dessous
+    (H16). Un niveau DÉJÀ SOUS le prix n'est plus un obstacle : la marge de ce
+    côté est non bornée (`+inf`). Un niveau INCONNU (NaN) rend la marge NaN --
+    l'appelant doit le traiter comme un échec de vérification, pas comme un
+    espace libre."""
+    if price <= 0 or level != level:      # prix invalide, ou level NaN
+        return float("nan")
+    if level <= price:
+        return float("inf")
+    return (level - price) / price
+
+
+def breakout_space_ok(price: float, expected_return_frac: float, obstacle_levels,
+                       mult: float = BREAKOUT_SPACE_MULT) -> bool:
+    """Contrainte "espace libre" MTF avant breakout (H13-H16), fonction PURE :
+    le breakout dispose-t-il, sur CHACUN des niveaux supérieurs fournis, d'un
+    espace libre d'au moins `mult` x son "rendement escompté" ?
+
+    `price` : clôture de la bougie de cassure (même bougie que celle qui
+    résout `breakout_raw`, cf. convention causale de `run_trend_table`).
+    `expected_return_frac` : "rendement escompté" du breakout en fraction du
+    prix = amplitude du range d'accumulation local / prix (H15).
+    `obstacle_levels` : niveaux de prix ABSOLUS des structures majeures des UT
+    supérieures ([UT+1, UT+2] en pratique, cf. H14) -- l'ordre et le nombre
+    n'importent pas, la condition est un ET sur tous.
+
+    Renvoie False si un niveau est inconnu (NaN) ou si le rendement escompté
+    n'est pas exploitable (NaN/<=0) : *"il est impératif de VÉRIFIER l'absence
+    d'obstacles"* ne peut pas être satisfait sans donnée (H16)."""
+    if expected_return_frac != expected_return_frac or expected_return_frac <= 0:
+        return False
+    needed = mult * expected_return_frac
+    for level in obstacle_levels:
+        room = free_room_frac(level, price)
+        if room != room:                 # NaN -> vérification impossible
+            return False
+        if room < needed:
+            return False
+    return True
+
+
+def attach_obstacle_level(df_low: pd.DataFrame, df_high: pd.DataFrame,
+                           closure_delay: pd.Timedelta = CLOSURE_DELAY) -> np.ndarray:
+    """Pour chaque bougie de `df_low` (UT d'exécution), le `ctx_resistance`
+    (borne HAUTE du canal Extreme Channel, H14) de la DERNIÈRE bougie de
+    `df_high` ENTIÈREMENT CLÔTURÉE à cet instant -- aucun lookahead.
+
+    Même jointure `merge_asof` et même `closure_delay` que
+    `backtest_phase2_ut2.attach_context_level` ; une fonction distincte
+    seulement parce que celle-ci joint `ctx_resistance` (borne haute, jamais
+    produite par `prepare`, calculée par `add_trend_context` de CE fichier) et
+    que `backtest_phase2_ut2.py` est un fichier partagé qu'on ne modifie pas.
+    `df_high` doit donc déjà être passé par `prepare` PUIS
+    `add_trend_context`."""
+    high = df_high[["date", "ctx_resistance"]].copy()
+    high["available_at"] = high["date"] + closure_delay
+    high = high.sort_values("available_at")
+    merged = pd.merge_asof(
+        df_low[["date"]].sort_values("date"), high,
+        left_on="date", right_on="available_at", direction="backward",
+    )
+    return merged["ctx_resistance"].values
+
+
 def make_campaign(entry: float, stop: float) -> dict:
     return {"stage": "ACCUMULATION", "entry": entry, "stop": stop, "remaining": 0.0, "pnl_accum": 0.0}
 
@@ -336,7 +501,11 @@ def step_campaign(campaign: dict, i: int, o, high, low, c, ev: dict, profile: di
                 campaign["remaining"] = 0.0
                 return True, fee_frac, realized, None
             return True, 0.0, None, None  # rien n'était engagé -- abandon silencieux, pas un "trade"
-        if ev["breakout_raw"]:
+        # `ev.get(..., True)` : contrainte "espace libre" MTF (H13-H17).
+        # Défaut True = ABSENCE de contrainte -> tout appelant qui ne fournit
+        # pas la clé (dont `unified_protocol.py::_campaign_ev`, qui réplique
+        # ce dict) garde un comportement BIT-À-BIT identique.
+        if ev["breakout_raw"] and ev.get("breakout_space_ok", True):
             actual_add = add_leg(campaign, profile["breakout_frac"], o[i])
             campaign["stage"] = "POST_BREAKOUT"
             campaign["swing_high"] = high[i]
@@ -429,7 +598,10 @@ def step_reverse(reverse_pos: dict, i: int, high, low, c) -> tuple:
 # Moteur complet : calcule les indicateurs/événements sur données réelles,
 # puis pilote step_campaign/step_reverse/try_open_campaign pas à pas.
 # ---------------------------------------------------------------------------
-def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str) -> dict:
+def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
+                     use_breakout_space_gate: bool = False,
+                     df_ut1: pd.DataFrame = None, df_ut2: pd.DataFrame = None,
+                     space_mult: float = BREAKOUT_SPACE_MULT) -> dict:
     """Rejoue la table de tendance à 5 étapes sur `df` (H4 ou toute UT unique,
     colonnes date/open/high/low/close), avec `vol` (DataFrame aligné, même
     longueur, colonne "volume" de la même UT — cf. `load_volume`/
@@ -438,12 +610,33 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str) -> d
     N'ouvre une campagne QUE si `regime` (calculé par `regime_classifier.
     add_regime`, réutilisé tel quel via `prepare`) vaut TENDANCE au moment de
     la détection Accumulation. Hors régime TENDANCE : aucune position ouverte
-    (H11)."""
+    (H11).
+
+    `use_breakout_space_gate` (défaut `False`, préserve BIT-À-BIT le
+    comportement historique de ce moteur — même convention que
+    `use_mtf_stop`/`use_fib_gate` ailleurs) : active la contrainte "espace
+    libre" MTF avant le Breakout (H13-H17). Exige alors `df_ut1` ET `df_ut2`,
+    les OHLC BRUTS des deux unités de temps supérieures (typiquement
+    `resample(h1, "1D")` et `resample(h1, "W")` pour une exécution H4) — ils
+    sont passés par `prepare` + `add_trend_context` ici, puis joints sans
+    lookahead par `attach_obstacle_level`. `space_mult` : multiplicateur du
+    rendement escompté, 1.0 = Ratio 1:1 (la seule valeur citée par le corpus,
+    H15) ; paramétrable pour la mesure de sensibilité uniquement."""
     p = PROFILES_TREND[profile_name]
     df = prepare(df)
     df = add_trend_context(df)
     n = len(df)
     assert len(vol) == n, "volume désaligné avec df (même resample requis)"
+
+    obstacle_ut1 = obstacle_ut2 = None
+    if use_breakout_space_gate:
+        if df_ut1 is None or df_ut2 is None:
+            raise ValueError(
+                "use_breakout_space_gate=True exige df_ut1 (UT+1) et df_ut2 (UT+2) — "
+                "la contrainte 'espace libre' porte explicitement sur les DEUX niveaux "
+                "(TRADING_LESSONS_BREAKOUT_RATIO11.md l.17, cf. H13)")
+        obstacle_ut1 = attach_obstacle_level(df, add_trend_context(prepare(df_ut1)))
+        obstacle_ut2 = attach_obstacle_level(df, add_trend_context(prepare(df_ut2)))
 
     o, high, low, c = df["open"].values, df["high"].values, df["low"].values, df["close"].values
     atr_v = df["atr"].values
@@ -457,6 +650,9 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str) -> d
     cycle_favorable_v = df["cycle_favorable"].values
     ema_trend_v = (df["close"].ewm(span=EMA_SLOW, adjust=False).mean()).values  # même filtre de fond que proxy_v2
     retr_v = df["accum_retracement_frac"].values
+    # "Rendement escompté" du breakout = amplitude du range d'accumulation
+    # local, déjà calculée par `prepare` (H15) et jusqu'ici jamais lue ici.
+    local_range_v = df["local_range"].values
 
     vol_v = vol["volume"].values
     vol_ma = pd.Series(vol_v).rolling(VOLUME_MA_WINDOW).mean().values
@@ -516,6 +712,13 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str) -> d
                 "reverse_stop": max(ctx_resistance_v[i - 1], c[i] * 1.001) if valid_inputs(i - 1) else c[i] * 1.03,
                 "reverse_target": ctx_support_v[i - 1] if valid_inputs(i - 1) else c[i] * 0.97,
             }
+            if use_breakout_space_gate:
+                # Évalué sur la MÊME bougie i-1 que `breakout_raw` ci-dessus
+                # (clôture de la bougie de cassure et niveaux supérieurs
+                # disponibles à cet instant) -- pas de lookahead ajouté.
+                ev["breakout_space_ok"] = breakout_space_ok(
+                    c[i - 1], local_range_v[i - 1] / c[i - 1] if c[i - 1] > 0 else float("nan"),
+                    (obstacle_ut1[i - 1], obstacle_ut2[i - 1]), space_mult)
             closed, fee_frac, realized, reverse_request = step_campaign(campaign, i, o, high, low, c, ev, p)
             if fee_frac > 0:
                 equity *= (1 - fee * fee_frac)
@@ -568,4 +771,102 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str) -> d
         if len(trades_arr) and (trades_arr < 0).any() else None,
         "avg_trade_%": round(trades_arr.mean() * 100, 3) if len(trades_arr) else None,
         "stage_time_%": {k: round(v / n * 100, 1) for k, v in stage_time.items()},
+    }
+
+
+# ---------------------------------------------------------------------------
+# Diagnostic du POUVOIR DISCRIMINANT du gate "espace libre", indépendant de la
+# performance
+# ---------------------------------------------------------------------------
+# Nécessaire pour une raison précise et déjà documentée : sur ce jeu de
+# données, 100% des campagnes de tendance se referment à l'étape Accumulation
+# et AUCUNE n'atteint jamais le Breakout (PLAN.md / COUVERTURE_ENSEIGNEMENTS.md
+# / `unified_protocol.py` main()). Le chiffre de performance du gate est donc
+# STRUCTURELLEMENT condamné à être un écart de 0,0 — ce qui ne dit rien de la
+# règle elle-même. Ce diagnostic mesure séparément, sur TOUTES les bougies, si
+# la condition mord ou si elle est INERTE — exactement la distinction que la
+# sensibilité MIN_BORDERS avait dû faire au round précédent (0,0 pt d'écart
+# mesuré, mais gate inerte, ce qui n'était PAS une preuve de robustesse).
+def raw_breakout_candidates(df: pd.DataFrame, vol: pd.DataFrame) -> np.ndarray:
+    """Réplique VECTORISÉE de l'expression `ev["breakout_raw"]` de
+    `run_trend_table` (clôture > plus haut local + expansion de volume +
+    score >= 2, tout évalué à la bougie i-1), pour TOUTES les bougies au lieu
+    des seules bougies où une campagne est active. `df` doit déjà être passé
+    par `prepare` + `add_trend_context`.
+
+    Réplique donc vérifiée, pas supposée : `test_trend_table.py::
+    test_raw_breakout_candidates_matches_engine_expression` compare cette
+    version bougie par bougie à l'expression scalaire du moteur sur données
+    réelles."""
+    n = len(df)
+    c = df["close"].values
+    local_high_v = df["local_high"].values
+    score_v = df["score"].values
+    vol_v = vol["volume"].values
+    vol_ma = pd.Series(vol_v).rolling(VOLUME_MA_WINDOW).mean().values
+    volume_expansion = vol_v > VOLUME_EXPANSION_MULT * np.roll(vol_ma, 1)
+    volume_expansion[0] = False
+    prev = np.arange(-1, n - 1)
+    cand = np.zeros(n, dtype=bool)
+    ok = prev >= 0
+    cand[ok] = (
+        (c[prev[ok]] > local_high_v[prev[ok]])
+        & volume_expansion[prev[ok]]
+        & (score_v[prev[ok]] >= 2)
+    )
+    return cand
+
+
+def breakout_space_binding_stats(df: pd.DataFrame, vol: pd.DataFrame,
+                                  df_ut1: pd.DataFrame, df_ut2: pd.DataFrame,
+                                  space_mult: float = BREAKOUT_SPACE_MULT) -> dict:
+    """Sur combien des bougies candidates au breakout le gate "espace libre"
+    passe-t-il / bloque-t-il, et pour quelle raison (obstacle UT+1, UT+2, ou
+    donnée manquante) ? `df`/`df_ut1`/`df_ut2` : OHLC BRUTS (passés par
+    `prepare` + `add_trend_context` ici)."""
+    df = add_trend_context(prepare(df))
+    obstacle_ut1 = attach_obstacle_level(df, add_trend_context(prepare(df_ut1)))
+    obstacle_ut2 = attach_obstacle_level(df, add_trend_context(prepare(df_ut2)))
+    cand = raw_breakout_candidates(df, vol)
+    c = df["close"].values
+    local_range_v = df["local_range"].values
+    n = len(df)
+    warmup = EMA_SLOW + 20
+
+    n_cand = n_pass = n_block_ut1 = n_block_ut2 = n_block_nan = 0
+    n_ut1_not_obstacle = n_ut2_not_obstacle = 0
+    for i in range(1, n):
+        if not cand[i] or i <= warmup:
+            continue
+        j = i - 1
+        n_cand += 1
+        price = c[j]
+        exp_ret = local_range_v[j] / price if price > 0 else float("nan")
+        r1 = free_room_frac(obstacle_ut1[j], price)
+        r2 = free_room_frac(obstacle_ut2[j], price)
+        if np.isinf(r1):
+            n_ut1_not_obstacle += 1
+        if np.isinf(r2):
+            n_ut2_not_obstacle += 1
+        if breakout_space_ok(price, exp_ret, (obstacle_ut1[j], obstacle_ut2[j]), space_mult):
+            n_pass += 1
+            continue
+        if r1 != r1 or r2 != r2 or exp_ret != exp_ret:
+            n_block_nan += 1
+            continue
+        needed = space_mult * exp_ret
+        if r1 < needed:
+            n_block_ut1 += 1
+        if r2 < needed:
+            n_block_ut2 += 1
+    return {
+        "space_mult": space_mult,
+        "n_breakout_candidates": n_cand,
+        "n_pass": n_pass,
+        "pass_%": round(100 * n_pass / n_cand, 1) if n_cand else None,
+        "n_blocked_by_ut1": n_block_ut1,
+        "n_blocked_by_ut2": n_block_ut2,
+        "n_blocked_missing_data": n_block_nan,
+        "ut1_level_not_an_obstacle_%": round(100 * n_ut1_not_obstacle / n_cand, 1) if n_cand else None,
+        "ut2_level_not_an_obstacle_%": round(100 * n_ut2_not_obstacle / n_cand, 1) if n_cand else None,
     }

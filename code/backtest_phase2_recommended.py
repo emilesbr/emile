@@ -100,8 +100,13 @@ La table "trade de tendance" à 5 étapes (`trend_table.py`) n'est PAS
 intégrée ici : structurellement incompatible avec `position_engine.py`
 (justifié en tête de `trend_table.py` lui-même -- machine à états
 différente), et son propre résultat mesuré (`phase2_trend_table_results.csv`)
-montre que 100% des campagnes se referment en étape Accumulation sur ce
-jeu de données -- les étapes 2-5 jamais exercées empiriquement. L'intégrer
+montre que les campagnes se referment en étape Accumulation sur ce jeu de
+données pour 3 profils sur 4 -- les étapes 2-5 ne sont exercées que par le
+profil FAIBLE (CORRECTION du 10e round de mobilisation : 30 campagnes, dont 8
+atteignent le Breakout, 5 la Divergence et 1 l'Excès final ; cette docstring
+disait "100% des campagnes", ce qui était une généralisation abusive de la
+mesure d'origine, correctement scopée aux 3 autres profils dans
+`COUVERTURE_ENSEIGNEMENTS.md`). L'intégrer
 à "la config recommandée" reviendrait à ajouter un second moteur parallèle
 sans preuve d'apport, contraire au principe "un chiffre de référence
 unique, pas une resucée à 15 flags" de cette tâche.
