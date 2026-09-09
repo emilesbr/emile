@@ -364,6 +364,155 @@ Ce qu'il faut savoir en lisant CE fichier, dans l'ordre d'importance :
    CONTEXTE, clôture EN DESSOUS, invalidation) : même piège terminologique que
    celui déjà documenté pour "Cluster technique".
 ================================================================================
+
+================================================================================
+"RÈGLE D'OR : CALCULS SUR CLÔTURES, JAMAIS SUR LES MÈCHES" (#15) vs
+`local_range`/`context_range` -- EXAMINÉE ET DÉLIBÉRÉMENT PAS APPLIQUÉE AUX
+AMPLITUDES. Note DOCUMENTAIRE (aucun comportement, aucune constante), même
+discipline que le bloc "RED FLAGS" ci-dessus : la décision doit être visible
+par le lecteur de CE fichier, pas seulement dans les documents de suivi.
+Décision complète, chiffres et citations : `PLAN.md` section "10e application",
+`COUVERTURE_ENSEIGNEMENTS.md` (catégorie C, item "règle d'or (#15)").
+================================================================================
+Cette note REMPLACE la "TENSION OUVERTE, NON RÉSOLUE" qui était écrite plus
+bas dans `make_open_tranche_fn` au 8e round : la tension est tranchée.
+
+Citation exacte, relue mot pour mot (`TRADING_LESSONS_PYRAMIDALISATION.md`,
+source #15) -- ligne 20 (titre de section), ligne 22, ligne 39 :
+
+    ## Patterns de pyramidalisation (règle d'or : calculs sur clôtures,
+    jamais sur les mèches)
+    **Variante 1 -- 3ème borne de range classique** : ... validation au
+    ratio 1:1 (report de l'amplitude du range en clôture).
+    - **Phase 1 (3-6 mois)** : ... identification visuelle des patterns et
+    ratios de validation en clôture
+
+L'item du 8e round demandait de basculer `local_range`/`context_range`
+(`backtest_phase2_v7.py::prepare` : `max(high) - min(low)` sur 5D/15D) en
+`max(close) - min(close)`. NON FAIT, pour 5 raisons vérifiées une par une.
+
+R1. LA CITATION EST RÉELLE MAIS SON OBJET EST AMBIGU, et le 8e round n'a
+    retenu qu'une des deux lectures du complément "en clôture" :
+      (a) l'AMPLITUDE se mesure sur les clôtures -- lecture de l'item ;
+      (b) la VALIDATION du ratio 1:1 se constate sur une clôture (pas sur
+          une mèche) -- lecture au moins aussi naturelle, appuyée par la
+          ligne 39 ("ratios DE VALIDATION en clôture") et par la formule du
+          titre ("jamais sur les mèches"), qui est la tournure stock du
+          corpus pour "ne pas valider sur une mèche" (#11:22 *"pas un simple
+          dépassement intra-bougie"* ; #14:28 *"les clôtures ... pour
+          VALIDER la structure"*).
+    La lecture (b) est DÉJÀ IMPLÉMENTÉE, exactement : `process_tranche`
+    ci-dessous déclenche Limite/Confirmation/Validation sur `c[i] >= ...`
+    (`PHASE2_CORRECTION_CLOSES.md`). Et c'est déjà la lecture que le projet
+    applique à cette phrase : le 8e round a lui-même rétabli #15 parmi les
+    sources de la correction des DÉCLENCHEMENTS. L'item revenait donc à
+    faire porter DEUX FOIS la même phrase, sur deux mécanismes différents.
+
+R2. LA LECTURE (a) CONTREDIT LA CONVENTION QUE LE CORPUS ÉNONCE PARTOUT
+    AILLEURS -- "le NIVEAU / la STRUCTURE vient des extrêmes, la CLÔTURE est
+    le TEST" -- vérifiée dans 5 passages distincts, tous relus :
+      - #14 `STRUCTURES_ALTERATIONS.md:28` -- *"zone de tolérance, pas une
+        ligne mathématique -- les mèches peuvent pénétrer l'ancien
+        territoire, mais les clôtures de bougies doivent rester à
+        l'extérieur pour valider la structure"* (l'énoncé le plus net) ;
+      - #16 `CLUSTERS_PRIX.md:30` -- *"sous le dernier creux structurel (bas
+        de clôture OU mèche)"* : le corpus refuse explicitement de trancher ;
+      - #10 `ZONE_ACCUMULATION.md:38` -- *"sous le POINT BAS de la 4ème
+        borne"* ;
+      - #5 `MAITRISE_GRADIENT_RISQUE.md:56` -- *"Objectifs : Range Neutre =
+        76% Fibonacci de la vague précédente ; Range Vendeur/Acheteur =
+        DÉBORDEMENT DU POINT EXTRÊME PRÉCÉDENT"* : c'est la SEULE phrase du
+        corpus qui dise comment se mesure un OBJECTIF de trade de range --
+        donc l'étape Limite, donc `lim_px` -- et elle dit "point extrême",
+        pas "clôture" ;
+      - `RULES_EXTRACTION.md:41` (le manuel officiel) -- *"Confirmation
+        (médiane canal contexte, CLÔTURÉE)"* : "clôturée" qualifie la façon
+        de CONSTATER le franchissement d'un niveau structurel, pas la façon
+        de mesurer ce niveau.
+    C'est exactement le raisonnement par lequel le 8e round a lui-même
+    REFUSÉ de détecter les bornes par clôtures. Adopter (a) ici retiendrait
+    la lecture INVERSE pour le même type d'objet (l'écart entre deux
+    extrêmes structurels).
+
+R3. LA LECTURE (a) CASSE LA FINALITÉ QUE LA SOURCE DU MÉCANISME LUI ASSIGNE,
+    ET C'EST MESURÉ. Le mécanisme codé (`val_px = entry + local_range`) vient
+    de #12 `BREAKOUT_RATIO11.md:8` -- *"Phase de Validation (Ratio 1:1
+    Tendance) : projeter l'amplitude du range d'accumulation local (UT).
+    Objectif = 'payer son stop loss' -- prise de profit partielle ... finance
+    statistiquement le risque initial. Le trade devient 'gratuit'"*. #12 ne
+    dit RIEN sur clôtures vs mèches (vérifié), mais il donne un critère
+    testable : la cible de Validation doit valoir ~1 R. Mesuré sur
+    BTC/ETH/BNB/SOL H4, `(val_px - entry) / (entry - stop_D1)`, médiane :
+        mèches   0,88 / 0,91 / 0,91 / 1,06   <- déjà calé sur le 1:1 de #12
+        clôtures 0,69 / 0,71 / 0,72 / 0,85
+    et part des bougies où R < 1 : 48-54% -> 55-62%. La lecture (a) ÉLOIGNE
+    la Validation du 1:1 dont #12 fait la définition même de l'étape : elle
+    dégrade la fidélité au lieu de l'améliorer.
+
+R4. REQUALIFICATION VERS `trend_table.py` EXAMINÉE ET ÉCARTÉE : il n'y a
+    rien à y requalifier. #15 décrit bien la pyramidalisation post-breakout
+    en contexte de TENDANCE, mais (i) la pyramidalisation de ce projet est
+    ICI (`MAX_TRANCHES=3`, `is_pyramid_add`), pas dans `trend_table.py`, qui
+    l'exclut explicitement (son H12 : *"pas de pyramidalisation de PLUSIEURS
+    campagnes ... contrairement à v4-v7 (`MAX_TRANCHES=3` sur des ENTRÉES
+    indépendantes)"*) ; et (ii) `trend_table.py` n'a AUCUNE projection
+    d'amplitude 1:1 -- ses étapes sont, de son propre aveu, *"des ÉVÉNEMENTS
+    DE STRUCTURE DE MARCHÉ détectés ..., pas des niveaux de prix fixes issus
+    de l'entrée"* (vérifié par grep : il ne consomme ni `val_px` ni
+    `local_range`, seulement `ctx_high`/`ctx_low`/`local_high`). La règle
+    d'or n'a donc aucune cible dans ce fichier.
+
+R5. #15 N'APPLIQUE PAS LUI-MÊME "jamais sur les mèches" À SES PROPRES
+    NIVEAUX D'ORDRE : sa Variante 1 entre par un *"ordre 'Stop Achat' au
+    niveau de la borne validée"* (un stop d'achat se remplit INTRABAR, donc
+    sur une mèche) et sa Variante 2 place son stop *"sous le dernier support
+    significatif"*. C'est précisément la convention déjà codée dans ce
+    fichier (stop sur la MÈCHE = ordre réel intrabar, cible sur la CLÔTURE,
+    cf. H-Reverse-Range). La règle d'or porte sur la lecture/validation de
+    la structure, pas sur la mesure des extrêmes.
+
+MESURES FAITES QUAND MÊME, pour ne pas décider à l'aveugle (monkeypatch
+jeté, aucun moteur modifié) :
+  - Ratio amplitude clôtures/mèches, REVÉRIFIÉ personnellement et conforme
+    au 8e round : médiane 0,786-0,808 (`local_range` H4), 0,862-0,876
+    (`context_range` H4), 0,552-0,578 / 0,720-0,752 en D1.
+  - Impact backtest complet si (a) était appliquée (BTC/ETH/BNB/SOL x 4
+    profils, un seul paramètre changé) : `backtest_phase2_v7.py` retour
+    +6,2 pts en moyenne mais 10/16 couples DÉGRADÉS (moyenne tirée par le
+    seul BTC/TRES_AGRESSIF, +72 pts), drawdown -2,21 pt (plus profond),
+    -10 trades ; `backtest_phase2_faithful.py` retour -0,9 pt, 9/16
+    dégradés, drawdown -1,38 pt, -13,6 trades. Signe mixte, drawdown
+    systématiquement plus profond -- la performance ne tranche pas, et de
+    toute façon ce projet s'interdit de trancher là-dessus.
+  - Invariante `val_px <= conf_px <= lim_px` : PRÉSERVÉE par construction
+    dans les DEUX définitions (fenêtre 5D incluse dans 15D => amplitude
+    locale <= amplitude contexte), 0 violation sur 55 171 bougies. Seul
+    artefact de (a) : exactement 1 bougie par actif où
+    `max(close)-min(close) = 0` (première barre, fenêtre d'une seule
+    bougie) -- déjà filtrée par la garde `local_range_v[j] > 0` de
+    `valid_inputs` ci-dessous, et située très avant `warmup`.
+  - Fenêtre de mesure : le corpus ne donne AUCUN chiffre de fenêtre pour ces
+    amplitudes (grep exhaustif "amplitude"/"projeter"/"report" sur les 17
+    sources + `RULES_EXTRACTION.md` : uniquement #12:8-9 et #15:16/22/24,
+    sans aucune durée). `LOCAL_DURATION`/`CONTEXT_DURATION` restent donc
+    l'hypothèse en place, inchangée.
+
+ITEM COMPAGNON TRANCHÉ EN MÊME TEMPS, ET PAS DANS LE SENS ANNONCÉ :
+`fibonacci.py::compute_retracement` n'est PAS un "hybride mèches/clôtures"
+accidentel -- c'est la transcription exacte de la convention R2. Cf. la note
+dédiée en tête de `code/fibonacci.py`.
+
+TROUVAILLE ANNEXE, non traitée ici (nouvel item de backlog) : le coefficient
+`1.5` de `lim_px = entry + 1.5 * context_range` ci-dessous n'a AUCUNE source
+dans le corpus (grep exhaustif : aucun "1,5" appliqué à un objectif) et
+n'est documenté NULLE PART, alors qu'il est recopié en littéral dans 7
+fichiers. Le corpus donne pourtant deux définitions littérales de l'objectif
+d'un trade de range (#5:56, citée en R2), typées par régime -- non
+implémentables telles quelles (elles exigent "76% Fibonacci de la vague
+précédente" et un "débordement du point extrême précédent", cf. le piège du
+76% déjà documenté dans `CONFIGURATION_RECOMMANDEE.md` §5quinquies), mais
+c'est le paramètre inventé le moins tracé de ce fichier.
+================================================================================
 """
 import numpy as np
 import pandas as pd
@@ -492,26 +641,21 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
         if size_frac <= 0:
             return None
         state["last_pyramid_high"] = max(state["last_pyramid_high"], high[j]) if is_pyramid_add else high[j]
-        # TENSION OUVERTE, NON RÉSOLUE (trouvée au 8e round de mobilisation,
-        # tracée ici pour qu'un futur lecteur de ces 3 lignes la voie —
-        # AUCUN changement de comportement, cf. `PLAN.md` section "8e
-        # application" et `COUVERTURE_ENSEIGNEMENTS.md` catégorie C) :
+        # TENSION TRANCHÉE au 10e round de mobilisation (elle était notée ici
+        # comme "OUVERTE, NON RÉSOLUE" au 8e) — AUCUN changement de
+        # comportement, ces 3 lignes restent des amplitudes MÈCHES.
         # `local_range_v`/`context_range_v` sont calculés en amont comme
         # `max(high) - min(low)` (`backtest_phase2_v7.py::prepare` et ses
-        # copies), donc des amplitudes PUREMENT MÈCHES, projetées telles
-        # quelles ci-dessous. Or `TRADING_LESSONS_PYRAMIDALISATION.md:20`
-        # (#15) en fait un titre de section : *"règle d'or : calculs sur
-        # clôtures, jamais sur les mèches"*, précisé l.22 — *"validation au
-        # ratio 1:1 (report de l'amplitude du range EN CLÔTURE)"*.
-        # `PHASE2_CORRECTION_CLOSES.md` avait basculé les DÉCLENCHEMENTS sur
-        # clôture (`process_tranche`) mais laissé les AMPLITUDES en mèches.
-        # Mesuré (BTC/ETH/BNB/SOL) : une amplitude en clôtures vaut 0,79-0,81
-        # de celle en mèches sur `local_range` H4 et 0,55-0,58 en D1 — donc
-        # des cibles val/conf/lim nettement plus proches, pas un no-op.
-        # Décision de conception requise avant tout code (le corpus ne dit
-        # pas si "amplitude du range" désigne la fenêtre glissante ou une
-        # structure de range identifiée) : NE PAS changer sans décision
-        # explicite documentée.
+        # copies), et c'est la lecture RETENUE : le "en clôture" de
+        # `TRADING_LESSONS_PYRAMIDALISATION.md:22` (#15) porte sur l'acte de
+        # VALIDER le ratio 1:1 (déjà implémenté — `process_tranche` déclenche
+        # sur `c[i]`), pas sur la mesure de l'amplitude ; 5 passages du corpus
+        # (#14:28, #16:30, #10:38, #5:56, `RULES_EXTRACTION.md:41`) placent le
+        # NIVEAU sur les extrêmes et la CLÔTURE comme TEST ; et la variante
+        # "amplitude en clôtures" éloigne mesurablement la Validation du 1:1
+        # que #12:8 assigne à cette étape (R médian 0,88-1,06 -> 0,69-0,85).
+        # Raisonnement complet, citations et chiffres : bloc "RÈGLE D'OR" en
+        # tête de ce fichier.
         return {
             "entry": entry_price, "stop": stop_price, "remaining": size_frac,
             "val_done": False, "conf_done": False, "pnl_accum": 0.0,

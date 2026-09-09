@@ -151,6 +151,41 @@ présent ailleurs dans le projet". Ce fichier réutilise désormais
 (mêmes primitives causales que `compute_ascending_lows`) : un swing n'est
 exploité par `compute_retracement` qu'une fois réellement confirmé (à
 l'instant + SWING_ORDER), pas au moment du swing lui-même.
+
+================================================================================
+"HYBRIDE MÈCHES/CLÔTURES" DE `compute_retracement` — ITEM EXAMINÉ AU 10e ROUND
+ET FERMÉ COMME **CONFORME**, PAS COMME DÉFAUT. Note documentaire, aucun
+comportement changé. Décision complète : `PLAN.md` section "10e application",
+`COUVERTURE_ENSEIGNEMENTS.md` (catégorie C), et le bloc "RÈGLE D'OR" en tête de
+`code/position_engine.py` (même décision, même cycle).
+================================================================================
+Le 8e round avait inscrit au backlog catégorie C : *"`compute_retracement` est
+hybride mèches/clôtures, non documenté comme tel — numérateur en clôture
+(conforme), dénominateur (`swing_high - swing_low`) en mèches ; à trancher avec
+l'item `local_range`/`context_range`, pas séparément"*. Tranché : ce n'est PAS
+un hybride accidentel, c'est la transcription EXACTE de la convention que le
+corpus énonce partout — **la STRUCTURE se mesure sur les extrêmes, la CLÔTURE
+est le TEST de position dans cette structure** :
+  - dénominateur (l'amplitude du dernier mouvement, donc ses extrêmes) :
+    #10 `ZONE_ACCUMULATION.md:38` *"sous le POINT BAS de la 4ème borne"* ;
+    #5 `MAITRISE_GRADIENT_RISQUE.md:56` *"76% Fibonacci de la VAGUE
+    précédente"* ; #14 `STRUCTURES_ALTERATIONS.md:28` *"les mèches peuvent
+    pénétrer l'ancien territoire, mais les clôtures doivent rester à
+    l'extérieur pour VALIDER la structure"* — le niveau vient des extrêmes ;
+    #16 `CLUSTERS_PRIX.md:30` refuse même explicitement de trancher pour un
+    creux structurel (*"bas de clôture OU mèche"*) ;
+  - numérateur (où se situe la clôture dans cette structure) :
+    #11 `TROISIEME_BORNE.md:23` *"uniquement si le prix maintient ses
+    CLÔTURES sous/sur le contexte"* ; #10 `ZONE_ACCUMULATION.md:46`
+    *"Retracement profond : CLÔTURE maintenue au-delà de 61% de LA
+    STRUCTURE"* — mot pour mot la formule codée ici, "la structure" étant le
+    dénominateur et "clôture" le numérateur.
+Passer le dénominateur en clôtures serait exactement le changement que le 8e
+round a lui-même REFUSÉ pour la détection des bornes (`PLAN.md` section "8e
+application"), et il n'existe aucune citation du corpus qui mesure une
+profondeur de retracement Fibonacci sur des clôtures (grep exhaustif des 17
+sources + `RULES_EXTRACTION.md`).
+================================================================================
 """
 import numpy as np
 import pandas as pd
