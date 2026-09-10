@@ -1,0 +1,6 @@
+variante,n_tranches,pct_niveau_sous_entry,pct_niveau_sous_val_px,dist_mediane_%,n_val,n_conf_atteinte,delai_val_conf_median,pct_delai_<=1_bougie
+REFERENCE_amplitude_figee,4076,0.0,0.0,,212,176,43.0,4.5
+A_hl_H4,4076,91.4,100.0,-6.57,212,212,0.0,98.1
+B_ema_H4,4076,96.2,100.0,-4.27,212,212,0.0,100.0
+C_ema_D1,4076,98.8,100.0,-15.58,212,212,0.0,100.0
+D_hl_D1,4076,92.0,100.0,-7.26,212,212,0.0,98.1

@@ -17,7 +17,10 @@ import sys
 sys.path.insert(0, ".")
 from backtest_phase2 import FEE, load_h1, resample, atr, EMA_SLOW, ATR_LEN
 from proxy_v2 import add_proxy_v2_score, compute_swing_low_confirmed
-from position_engine import run_position_engine, make_open_tranche_fn
+from position_engine import (
+    run_position_engine, make_open_tranche_fn,
+    context_channel_median, make_structural_conf_update_fn,
+)
 from regime_classifier import add_regime, compute_wide_channel
 
 LOCAL_DURATION = "5D"
@@ -55,6 +58,18 @@ def prepare(df: pd.DataFrame) -> pd.DataFrame:
     ts = df.set_index("date")
     df["local_range"] = (ts["high"].rolling(LOCAL_DURATION).max() - ts["low"].rolling(LOCAL_DURATION).min()).values
     df["context_range"] = (ts["high"].rolling(CONTEXT_DURATION).max() - ts["low"].rolling(CONTEXT_DURATION).min()).values
+    # MÉDIANE du canal de contexte -- niveau structurel ABSOLU de l'étape
+    # Confirmation (`RULES_EXTRACTION.md:41`, "médiane canal contexte,
+    # clôturée" ; #5:55, "la médiane (50%) du contexte"). STRICTEMENT ADDITIF :
+    # colonne nouvelle, aucun consommateur existant ne la lit, aucun résultat
+    # numérique changé (vérifié par non-régression bit-à-bit). Consommée
+    # uniquement quand `use_structural_confirmation=True` -- cf. le bloc
+    # "CONFIRMATION = MÉDIANE DU CANAL DE CONTEXTE" en tête de
+    # `position_engine.py` (hypothèses H-Conf-Struct-1..5).
+    # À NE PAS CONFONDRE avec `context_range` juste au-dessus : celle-ci est
+    # une AMPLITUDE (max-min, sans `.shift(1)`), celle-là un NIVEAU DE PRIX
+    # (médiane des deux bornes, avec `.shift(1)` causal).
+    df["ctx_median"] = context_channel_median(df, CONTEXT_DURATION)
 
     # CAUSAL depuis le traitement de la réserve P0-bis (COUVERTURE_ENSEIGNEMENTS.md
     # / PLAN.md occurrence #4) : un swing low n'entre dans le compte de bornes
@@ -95,7 +110,8 @@ def attach_higher_context(df_low: pd.DataFrame, df_high: pd.DataFrame, high_dura
 
 def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: bool = True,
            use_mtf_stop: bool = False, record_trace: bool = False, reverse_at_limit: bool = False,
-           use_wide_channel_halving: bool = False) -> dict:
+           use_wide_channel_halving: bool = False,
+           use_structural_confirmation: bool = False) -> dict:
     """`use_mtf_stop` (défaut False, préserve le comportement historique de
     v7) : si True, le stop ("Extreme Channel") utilisé à l'entrée est celui
     calculé sur le VRAI D1 (`ctx_support` D1, transmis sans lookahead par
@@ -126,7 +142,21 @@ def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: 
     UT+1 et l'abstention Wall Street.
 
     La largeur mesurée est celle du canal QUI PORTE LE STOP (H-Canal-Large-2)
-    : `ctx_width_pct` du D1 quand `use_mtf_stop=True`, du H4 natif sinon."""
+    : `ctx_width_pct` du D1 quand `use_mtf_stop=True`, du H4 natif sinon.
+
+    `use_structural_confirmation` (défaut False, préserve le comportement
+    historique de v7 -- même pattern que les trois paramètres ci-dessus) :
+    l'étape Confirmation devient le NIVEAU STRUCTUREL ABSOLU du manuel
+    (`RULES_EXTRACTION.md:41`, *"Confirmation (médiane canal contexte,
+    clôturée)"* ; #5:55, *"clôture d'une bougie sous/au-dessus la médiane
+    (50%) du contexte"*), relu EN DIRECT à chaque bougie, au lieu de la
+    distance `entry + context_range` figée à l'entrée (lecture #12:9, Ratio
+    1:1 Contexte). Citations, décompte des sources, hypothèses
+    H-Conf-Struct-1..5 et raison MESURÉE pour laquelle le défaut reste OFF
+    (le niveau est déjà franchi à l'entrée dans 9 cas sur 10, ce qui
+    collapserait Confirmation sur Validation et détruirait la règle du
+    break-even différé) : bloc dédié en tête de `position_engine.py`.
+    Ce moteur-ci est le banc de MESURE isolé de la règle."""
     p = PROFILES_V4[profile_name]
     h4 = prepare(h4)
     d1 = prepare(d1)
@@ -177,6 +207,10 @@ def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: 
         val_close_frac=p["val_close"], conf_close_frac=p["conf_close"],
         conf_to_be=True, max_tranches=MAX_TRANCHES, fee=FEE,
         record_trace=record_trace, reverse_at_limit=reverse_at_limit,
+        update_levels_fn=(
+            make_structural_conf_update_fn(h4["ctx_median"].values)
+            if use_structural_confirmation else None
+        ),
     )
     result = {
         "n_trades": raw["n_trades"], "max_dd_%": raw["max_dd_%"],

@@ -861,6 +861,27 @@ Citation exacte (`TRADING_LESSONS_ZONE_ACCUMULATION.md:13`, vérifiée mot pour 
 
 ---
 
+## 5decies. "Confirmation = médiane du canal de contexte, clôturée" — IMPLÉMENTÉE, défaut **OFF** (catégorie C, 16e round)
+
+**Décision ON/OFF : `use_structural_confirmation = False` par défaut, dans `backtest_phase2_v7.py` comme dans `backtest_phase2_faithful.py`.** C'est la **11e** décision de configuration du document, et la seule à mériter un avertissement de méthode aussi explicite — parce que c'est la **seule règle littérale du corpus implémentée mais non activée sans condition dans `backtest_phase2_faithful.py`**, dont le contrat est pourtant "toutes les règles littérales, sans condition". L'exception est signalée en tête de ce fichier-là aussi, pas seulement ici.
+
+**La règle** (citations vérifiées mot pour mot). `RULES_EXTRACTION.md:41`, manuel officiel, §3 — la table même que `position_engine.py` implémente : *"4 étapes : **Validation** (borne opposée canal tendance) → **Confirmation** (médiane canal contexte, clôturée) → **Invalidation** (cassure forte canal tendance) → **Limite** (target atteinte)"*. Corroborée, et **chiffrée**, par `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md:55` (#5) : *"Confirmation (**structurelle**) : clôture d'une bougie sous/au-dessus **la médiane (50%)** du contexte"*. Le code actuel implémente à la place une **amplitude projetée figée à l'entrée** (`conf_px = entry + context_range`), qui est la lecture de #12:9 (*"Ratio 1:1 Contexte"*) — une source BREAKOUT/TENDANCE, là où les deux sources "médiane" sont RANGE.
+
+**Pourquoi ce n'est PAS un OFF de performance** (le raisonnement que ce projet s'interdit). Mesuré sur **4 076 tranches** (BTC/ETH/BNB/SOL × 4 profils, `code/structural_confirmation_diagnostic.csv`), pour les **4** lectures possibles de "canal de contexte" présentes dans ce projet **sans exception** : le niveau structurel est **sous `val_px` dans 100,0% des cas** (et sous le prix d'entrée dans 91-99%). Conséquence mécanique sur les 212 tranches qui atteignent la Validation : la Confirmation se déclencherait **dès la bougie suivante dans 98,1 à 100% des cas** — délai médian **0 bougie**, contre **43** aujourd'hui. Comme `conf_to_be=True`, cela ferait passer le stop au break-even quasi immédiatement après la Validation, c'est-à-dire **collapser deux étapes que le corpus exige de dissocier** : #12:11 (*"L'erreur fatale, responsable de la majorité des échecs…"*), #13:9 (*"impératif de DISSOCIER deux étapes cruciales"*), #15:28, #16:32 — *"la correction la mieux étayée de tout le corpus"* (`TRADING_LESSONS_INDEX.md:35`). **Le motif est donc la fidélité au corpus, arbitrée entre deux règles littérales dont l'une est nettement mieux établie** — même famille d'arbitrage que le canal manuel D1 (§5quater), jamais un chiffre de backtest.
+
+**Effet backtest, publié parce que la méthode l'exige, et sans rôle dans la décision** (`code/structural_confirmation_results.csv`, OFF→ON) :
+
+| Moteur | Δ retour moyen | Δ drawdown moyen | améliorés / dégradés | trades |
+|---|---|---|---|---|
+| `backtest_phase2_faithful.py` | -4,14 pt | +1,95 pt (moins profond, 10/16) | 5 / 11 | 4 113 → 4 533 |
+| `backtest_phase2_v7.py` (banc isolé) | -17,16 pt | +1,96 pt (moins profond, 9/16) | 2 / 14 | 7 132 → 7 244 |
+
+Signe cohérent avec le mécanisme : un break-even quasi immédiat coupe les pertes (drawdown moins profond sur 19/32 couples) **et** les gains (retour dégradé sur 25/32), et libère des emplacements de pyramidage plus tôt. Deux exceptions dans l'autre sens : ETH/TRES_AGRESSIF (+6,3 pt / +38,5 pt) et BNB/TRES_AGRESSIF (+8,6 pt).
+
+**Ce que la config recommandée doit retenir** : ne rien changer aujourd'hui — **aucun chiffre de ce document n'est affecté**, le défaut OFF produit des résultats **identiques bit-à-bit** (vérifié par rejeu réel de `backtest_phase2_faithful.py` et `backtest_phase2_v7.py`, `git diff` vide sur les deux CSV). **Condition explicite de bascule à ON** (pas "jamais") : que le projet se dote d'un canal de tendance géométrique emboîté dans le canal de contexte **et** d'un gate d'entrée "partie basse du canal" (`RULES_EXTRACTION.md:17`, règle de base #2, aujourd'hui non implémentée — et violée 9 fois sur 10 par le signal, mesuré). Le jour où ces deux briques existent, le niveau structurel redevient un jalon réel et le défaut doit repasser à ON **sans nouvelle discussion de performance**.
+
+---
+
 ## 6. Pour aller plus loin (documents à consulter, pas à dupliquer)
 
 - **Détail complet des preuves citées section 1** : `COUVERTURE_ENSEIGNEMENTS.md`

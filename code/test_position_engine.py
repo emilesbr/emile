@@ -7,18 +7,24 @@ attendu" dans chaque test).
 Aucune donnée réelle n'est utilisée. Exécution : `python3 test_position_engine.py`.
 Affiche PASS/FAIL par test et sort avec un code non-nul si un test échoue.
 
-13 tests (5 historiques Validation/Confirmation/Limite/Invalidation/
+19 tests (5 historiques Validation/Confirmation/Limite/Invalidation/
 pyramidalisation + 3 pour le mécanisme "+Reverse" du profil Très Agressif,
 table RANGE, RULES_EXTRACTION.md §3 -- cf. le bloc dédié en tête de
 `position_engine.py`, hypothèse H-Reverse-Range -- + 5 pour la règle de
 volatilité "Stop Loss = taille du canal", TRADING_LESSONS_MAITRISE_GRADIENT_
-RISQUE.md §5, hypothèses H-Canal-Large-1..4 du même fichier).
+RISQUE.md §5, hypothèses H-Canal-Large-1..4 du même fichier -- + 6 pour
+"Confirmation = médiane du canal de contexte, clôturée", RULES_EXTRACTION.md
+§3 ligne 41 et TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md ligne 55,
+hypothèses H-Conf-Struct-1..5 du même fichier).
 """
 import numpy as np
+
+import pandas as pd
 
 from position_engine import (
     process_tranche, process_reverse, run_position_engine, make_open_tranche_fn,
     WIDE_CHANNEL_STOP_FRAC, WIDE_CHANNEL_SIZE_FRAC,
+    CONTEXT_MEDIAN_FRAC, context_channel_median, make_structural_conf_update_fn,
 )
 
 
@@ -505,6 +511,133 @@ def test_wide_channel_fractions_are_the_two_halves_of_the_source():
         f"'ET Taille de Position / 2'")
 
 
+# ---------------------------------------------------------------------------
+# "Confirmation = médiane du canal de contexte, clôturée"
+# (RULES_EXTRACTION.md:41 ; TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md:55)
+# Hypothèses H-Conf-Struct-1..5, cf. le bloc dédié en tête de
+# `position_engine.py`. 5 tests, tous à vérité terrain CALCULÉE À LA MAIN.
+# ---------------------------------------------------------------------------
+def test_context_channel_median_is_the_midpoint_hand_computed():
+    """Vérité terrain calculée à la main, avec le `.shift(1)` causal.
+
+    5 bougies journalières, fenêtre "3D" :
+      i=0 : pas d'historique antérieur -> NaN
+      i=1 : fenêtre = {bougie 0}              -> high 10, low  2 -> médiane 6
+      i=2 : fenêtre = {0,1}                   -> high 20, low  2 -> médiane 11
+      i=3 : fenêtre = {0,1,2} (3 jours)       -> high 20, low  2 -> médiane 11
+      i=4 : fenêtre = {1,2,3} (3 jours)       -> high 20, low  4 -> médiane 12
+    """
+    df = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=5, freq="D"),
+        "high": [10.0, 20.0, 12.0, 16.0, 30.0],
+        "low":  [2.0,  6.0,  4.0,  9.0,  1.0],
+    })
+    med = context_channel_median(df, "3D")
+    assert np.isnan(med[0]), f"i=0 doit être NaN (shift(1) sans historique), got {med[0]}"
+    expected = [6.0, 11.0, 11.0, 12.0]
+    for k, exp in zip(range(1, 5), expected):
+        assert abs(med[k] - exp) < 1e-12, f"i={k} attendu {exp}, obtenu {med[k]}"
+    # la bougie courante n'entre JAMAIS dans son propre canal : le high 30 de
+    # i=4 (le plus haut de la série) ne remonte aucune médiane.
+    assert max(med[1:]) == 12.0
+
+
+def test_structural_conf_uses_moving_level_read_at_i_minus_1():
+    """H-Conf-Struct-2 : le niveau est lu à `[i - 1]` et comparé à `c[i]`.
+
+    Contrôle POSITIF et NÉGATIF sur la même tranche, à la main :
+      conf_px figé (amplitude) = 200 -> jamais atteint par une clôture à 105.
+      niveau structurel = [_, 300, 100, 100] -> à i=2 le hook lit
+      ctx_median[1] = 300 > close 105 : PAS de Confirmation ; à i=3 il lit
+      ctx_median[2] = 100 <= close 105 : Confirmation.
+    """
+    ctx_median_v = np.array([np.nan, 300.0, 100.0, 100.0])
+    upd = make_structural_conf_update_fn(ctx_median_v)
+    tr = make_tranche(100.0, 90.0, 1.0, val_px=101.0, conf_px=200.0, lim_px=999.0)
+    tr["val_done"] = True     # Validation déjà acquise à une bougie antérieure
+    c = np.array([100.0, 102.0, 105.0, 105.0])
+    o = c.copy(); low = c.copy()
+
+    upd(tr, 2)
+    assert tr["conf_px"] == 300.0, tr["conf_px"]
+    process_tranche(tr, 2, o, low, c, True, 0.0, 0.0, True)
+    assert not tr["conf_done"], "contrôle NÉGATIF : 105 < 300, pas de Confirmation"
+
+    upd(tr, 3)
+    assert tr["conf_px"] == 100.0, tr["conf_px"]
+    process_tranche(tr, 3, o, low, c, True, 0.0, 0.0, True)
+    assert tr["conf_done"], "contrôle POSITIF : 105 >= 100, Confirmation atteinte"
+    assert tr["stop"] == 100.0, f"break-even attendu à l'entrée, got {tr['stop']}"
+
+
+def test_structural_conf_nan_level_is_unreachable():
+    """H-Conf-Struct-3 : niveau inconnu (NaN) -> `+inf`, donc la Confirmation
+    ne peut PAS être déclarée atteinte (convention "un niveau inconnu fait
+    échouer le test", déjà retenue par H15 de `trend_table.py`)."""
+    upd = make_structural_conf_update_fn(np.array([np.nan, np.nan, 50.0]))
+    tr = make_tranche(100.0, 90.0, 1.0, val_px=101.0, conf_px=101.0, lim_px=999.0)
+    tr["val_done"] = True
+    c = np.array([100.0, 1e9, 1e9])
+    o = c.copy(); low = np.array([100.0, 100.0, 100.0])
+    upd(tr, 1)
+    assert tr["conf_px"] == np.inf
+    process_tranche(tr, 1, o, low, c, True, 0.0, 0.0, True)
+    assert not tr["conf_done"], "un niveau NaN ne doit jamais être 'atteint'"
+
+
+def test_structural_conf_only_moves_conf_px():
+    """Le hook ne touche QUE `conf_px` -- `val_px`, `lim_px`, `stop`,
+    `remaining` restent ceux posés par `make_open_tranche_fn` (aucun autre
+    niveau du manuel n'est structurel : Validation et Limite sont des
+    projections, #12:8 et #5:56)."""
+    upd = make_structural_conf_update_fn(np.array([1.0, 7.0]))
+    tr = make_tranche(100.0, 90.0, 0.5, val_px=105.0, conf_px=110.0, lim_px=120.0)
+    before = {k: tr[k] for k in ("entry", "stop", "remaining", "val_px", "lim_px")}
+    upd(tr, 1)
+    assert tr["conf_px"] == 1.0
+    for k, v in before.items():
+        assert tr[k] == v, f"{k} modifié : {before[k]} -> {tr[k]}"
+
+
+def test_structural_conf_off_by_default_is_bit_identical():
+    """Non-régression : `update_levels_fn=None` (le défaut) doit produire un
+    résultat STRICTEMENT identique à un appel sans le paramètre -- garde-fou
+    direct contre une activation accidentelle du mécanisme."""
+    n = 40
+    o = np.linspace(100.0, 140.0, n)
+    c = o + 0.5
+    high = c + 1.0
+    low = o - 1.0
+    long_signal = np.ones(n, dtype=bool)
+
+    def make_engine(**kw):
+        state = {"last_pyramid_high": -np.inf}
+        fn = make_open_tranche_fn(
+            np.full(n, 2.0), o * 0.9, np.full(n, 5.0), np.full(n, 12.0),
+            np.full(n, 9.0), high, o, np.full(n, 3.0), 3, 3, 1, 3, 0.5, 0.02, state,
+        )
+        return run_position_engine(n, o, high, low, c, long_signal, fn,
+                                   val_close_frac=0.25, conf_close_frac=0.25,
+                                   conf_to_be=True, max_tranches=1, fee=0.0004, **kw)
+
+    a = make_engine()
+    b = make_engine(update_levels_fn=None)
+    for k in ("n_trades", "final_equity", "max_dd_%", "total_return_%"):
+        assert a[k] == b[k], f"{k} : {a[k]} != {b[k]}"
+    assert np.array_equal(a["equity_curve"], b["equity_curve"])
+
+
+def test_context_median_frac_is_the_literal_50_percent():
+    """Garde-fou de traçabilité, même esprit que
+    `test_wide_channel_fractions_are_the_two_halves_of_the_source` : le 0,5
+    n'est pas un réglage à nous, c'est le chiffre littéral de
+    `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md:55` (*"la médiane (50%) du
+    contexte"*), cohérent avec *"médiane canal contexte"* du manuel §3."""
+    assert CONTEXT_MEDIAN_FRAC == 0.5, (
+        f"CONTEXT_MEDIAN_FRAC={CONTEXT_MEDIAN_FRAC}, la source dit "
+        f"'la médiane (50%) du contexte'")
+
+
 TESTS = [
     test_validation_confirmation_limite_sequence,
     test_immediate_stop_loss,
@@ -519,6 +652,12 @@ TESTS = [
     test_wide_channel_none_and_all_false_are_identical,
     test_wide_channel_is_read_at_j_equals_i_minus_1_causal,
     test_wide_channel_fractions_are_the_two_halves_of_the_source,
+    test_context_channel_median_is_the_midpoint_hand_computed,
+    test_structural_conf_uses_moving_level_read_at_i_minus_1,
+    test_structural_conf_nan_level_is_unreachable,
+    test_structural_conf_only_moves_conf_px,
+    test_structural_conf_off_by_default_is_bit_identical,
+    test_context_median_frac_is_the_literal_50_percent,
 ]
 
 

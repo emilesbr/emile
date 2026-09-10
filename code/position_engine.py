@@ -513,6 +513,325 @@ précédente" et un "débordement du point extrême précédent", cf. le piège 
 76% déjà documenté dans `CONFIGURATION_RECOMMANDEE.md` §5quinquies), mais
 c'est le paramètre inventé le moins tracé de ce fichier.
 ================================================================================
+"SIZING 1-1,5% / R:R 1:5 SPÉCIFIQUE AUX TRADES D'ACCUMULATION" (#10) --
+INVESTIGUÉ À LA 17e APPLICATION, PAS IMPLÉMENTÉ. Note DOCUMENTAIRE
+(aucun comportement, aucune constante), même discipline que la note "Red
+Flags" ci-dessus. Décision complète : `PLAN.md` section "17e
+application", `COUVERTURE_ENSEIGNEMENTS.md`, `STATUS.md`.
+================================================================================
+CITATIONS, VÉRIFIÉES MOT POUR MOT (`TRADING_LESSONS_ZONE_ACCUMULATION.md`,
+seule source du corpus à porter ces deux nombres -- grep exhaustif "1:5",
+"1,5 %", "R:R", "sizing", "taille de position" sur les 17 sources +
+`RULES_EXTRACTION.md`) :
+
+    :36  - **Taux de réussite moyen accepté : 50%** (nombreux trades
+           clôturés à Break-Even) en échange d'un **ratio R:R élevé, cible
+           moyenne 1:5**
+    :37  - Taille de position en conséquence : **1 à 1,5% du capital**
+           (modérée, car l'espérance de gain est déjà élevée grâce au R:R)
+    :50  *"Tenir une position à Break-Even sans céder à la tentation
+         d'encaisser prématurément de petits gains est le prix à payer pour
+         capturer les tendances majeures qui offrent des ratios SUPÉRIEURS
+         À 1:5."*
+
+Précision de statut, qui pèse dans tout ce qui suit : :36 et :37 sont des
+PUCES DE SYNTHÈSE (pas de guillemets, pas de bloc `>`), :50 est la SEULE
+citation verbatim -- et c'est celle qui dit "supérieurs à".
+
+A. L'ITEM SE TROMPE DE SOURCE, ET SUR LE MOT "SPÉCIFIQUE".
+   L'énoncé de l'item soupçonnait `MAITRISE_GRADIENT_RISQUE.md` (#5) : #5 ne
+   contient NI "1:5" NI "1-1,5%" (vérifié) -- son sizing est "Stop Loss =
+   taille du canal" + "/2 si canal très large", déjà implémenté ici
+   (`WIDE_CHANNEL_STOP_FRAC`/`WIDE_CHANNEL_SIZE_FRAC`). Surtout, AUCUN des
+   chiffres de sizing du corpus n'est scopé par TYPE DE TRADE ; ils sont
+   scopés par EXPÉRIENCE ou par UNITÉ D'AGRÉGATION :
+     - `RULES_EXTRACTION.md:63` (manuel)  jamais >5% du capital, tous profils
+     - `RULES_EXTRACTION.md:64` (manuel)  <=1% pendant les 6 premiers mois
+     - `RULES_EXTRACTION.md:65` (manuel)  gradient expérience x profil
+                                          psychologique, table à 4 niveaux
+     - #15:28   max 2% de risque PAR POSITION (nominal)
+     - #15:40-41  0,5% (apprentissage) -> 2% (expertise)
+     - #16:40-41  jamais >2% PAR ZONE DE PRIX ; 1% + 1% sur deux patterns
+     - #10:37   1 à 1,5%
+   Le "spécifique à l'accumulation" est un artefact du document où la puce se
+   trouve, pas une clause du texte : #10:37 donne lui-même sa raison, et elle
+   n'est pas le type de trade -- *"car l'espérance de gain est déjà élevée
+   grâce au R:R"*. Le sizing y est indexé sur le R:R, pas sur l'accumulation.
+
+B. LE SIZING EST DÉJÀ COUVERT SOUS UN AUTRE NOM (motif (d)), ET C'EST MESURÉ,
+   PAS AFFIRMÉ. Le profil FAIBLE vaut `risk_pct = 0.01` -- exactement la borne
+   basse de la fourchette [1% ; 1,5%] de #10:37, et exactement le <=1% que le
+   manuel recommande. Forcer `risk_pct = 0.010` sur les 4 profils de
+   `backtest_phase2_v7.py` est un NO-OP BIT-À-BIT sur exactement les 4 couples
+   FAIBLE (BTC/ETH/BNB/SOL, écart de rendement 0,0 pt, 0 trade d'écart) : la
+   borne basse de #10 est littéralement déjà en production.
+
+C. IMPLÉMENTER LE SIZING SACRIFIERAIT DEUX MÉCANISMES MIEUX ÉTABLIS (motif
+   (c)), tous deux issus du MANUEL (autorité la plus haute), contre une puce
+   non-verbatim d'UNE source vidéo :
+   C1. `RULES_EXTRACTION.md:54-59` §4 donne DÉJÀ le sizing de l'étape
+       Accumulation, profil par profil -- "Attente / Renfort +25% / +50% /
+       +100%" -- et il est implémenté tel quel dans
+       `trend_table.py::PROFILES_TREND` (`accum_frac` = 0.00 / 0.25 / 0.50 /
+       1.00, correspondance exacte des 4 lignes). Un 1-1,5% fixe à
+       l'accumulation ÉCRASERAIT cette ligne du manuel et rendrait les 4
+       profils identiques à cette étape -- il supprimerait notamment
+       l'"Attente" de FAIBLE et le "+100%" de TRES_AGRESSIF.
+   C2. `RULES_EXTRACTION.md:65-66` fait de l'agressivité une fonction de
+       l'EXPÉRIENCE, du PROFIL PSYCHOLOGIQUE et du PALIER DE CAPITAL --
+       mécanisme porté par le choix de profil utilisateur et par
+       `capital_tiers.py` (qui se refuse explicitement à "modifier le choix de
+       profil de risque fait par l'utilisateur"). Un littéral 1-1,5% câblé
+       dans le moteur retirerait ce choix.
+
+D. "R:R 1:5" N'EST PAS EN CONFLIT AVEC LE RATIO 1:1 -- LE SOUPÇON DE L'ITEM
+   EST INFIRMÉ PAR LE CORPUS LUI-MÊME. Le "Ratio 1:1" de #12:8-9
+   (`BREAKOUT_RATIO11.md`) n'est pas un ratio risque/récompense : c'est le
+   REPORT D'AMPLITUDE d'un range (`val_px = entry + local_range`), et #15:24
+   le dit expressément -- *"Le ratio 1:1 n'est pas un objectif de profit mais
+   un point de validation mathématique du trade."* Un point de validation à
+   1:1 et un ratio de sortie à 1:5 sont deux objets compatibles. Le conflit
+   redouté par l'énoncé de l'item N'EXISTE PAS, et n'est donc PAS le motif de
+   non-implémentation retenu ici.
+
+E. LE VRAI MOTIF SUR LA MOITIÉ "R:R 1:5" : (b) puis (c).
+   E1. (b) LE "5" N'EST PAS TRANSPOSABLE : il n'a de sens que relativement au
+       stop de #10, et ce n'est pas le stop de ce moteur. #10:38 définit son
+       propre stop -- *"largeur moyenne du canal de tendance récent, OU sous
+       le point bas de la 4ème borne"* -- deux définitions, la source ne
+       tranche pas. Le moteur, lui, utilise l'"Extreme Channel" UT+1 (#16:28 +
+       #12:7, deux sources concordantes, mieux établi). Or le R dépend
+       entièrement de ce choix -- MESURÉ sur les bougies d'entrée réelles
+       (BTC/ETH/BNB/SOL H4, gate MTF v7), médianes :
+                                   stop H4 natif      stop D1 (UT+1)
+           Validation   (val_px)      1,21-1,26 R        0,53-0,58 R
+           Confirmation (conf_px)     1,93-2,10 R        0,90-0,93 R
+           Limite       (lim_px)      2,89-3,15 R        1,35-1,40 R
+       Le MÊME niveau vaut 3,15 R ou 1,40 R selon le stop : un facteur 2,3.
+       Transplanter le nombre 5 de #10 sur un dénominateur que #10 n'emploie
+       pas ne serait pas une implémentation littérale, ce serait un chiffre
+       recalé sur un autre objet.
+   E2. (c) #10:50 -- la SEULE citation verbatim -- demande de capturer des
+       ratios *"SUPÉRIEURS à 1:5"*. Un take-profit dur à 5 R rendrait ">5 R"
+       impossible par construction : il contredirait la phrase dont il est
+       tiré. La lecture fidèle de #10:50 serait de RETIRER le plafond, pas de
+       le fixer à 5 -- et retirer le plafond supprimerait l'étape "**Limite**
+       (target atteinte) -> TP100%" que `RULES_EXTRACTION.md:41` et la table
+       :43-48 prescrivent explicitement pour les 4 profils. Manuel contre puce
+       vidéo : le manuel prime.
+   E3. #15:30 donne d'ailleurs un AUTRE nombre pour le même type d'énoncé --
+       *"ratio moyen visé 1:4"* -- et #15:31 *"l'expert vise à terme le 1:4
+       complet"*. Deux sources, deux valeurs (1:4 et 1:5), toutes deux
+       formulées comme des moyennes visées. Retenir 5 plutôt que 4 serait
+       arbitraire.
+
+F. LE PROCESSUS de #10 EST DÉJÀ IMPLÉMENTÉ, LUI. #10:39-42 ("Connective
+   Tissue") -- Validation -> stop réduit ; Confirmation -> Break-Even ;
+   *"transformer le trade en 'option gratuite'"* -- est exactement l'échelle
+   `val_px` / `conf_px` / `conf_to_be` de `process_tranche` ci-dessous. Ce que
+   l'item ajoutait, ce sont les deux ANNOTATIONS CHIFFRÉES de ce processus,
+   pas le processus.
+
+G. MESURES FAITES QUAND MÊME, POUR NE PAS DÉCIDER À L'AVEUGLE (monkeypatch
+   jeté, aucun moteur modifié ; v7, 4 actifs x 4 profils, un seul paramètre
+   changé à la fois) :
+     - "R:R 1:5" (`lim_px = entry + 5*(entry-stop)`) : rendement moyen
+       +3,71 pt, 12/16 couples AMÉLIORÉS, 4/16 dégradés, drawdown moyen
+       +0,74 pt (moins profond), -7,2 trades, win rate -0,17 pt. Dispersion
+       énorme : ETH/TRES_AGRESSIF -70,9 pt, BTC/TRES_AGRESSIF +50,9 pt.
+     - risk_pct forcé à 1,0% : -51,94 pt de moyenne, 12/16 dégradés, 4/16
+       IDENTIQUES (les 4 FAIBLE, cf. B).
+     - risk_pct forcé à 1,5% : -35,61 pt de moyenne, 12/16 dégradés.
+   /!\\ À LIRE CORRECTEMENT : la variante "R:R 1:5" est mesurée LÉGÈREMENT
+   FAVORABLE. Elle n'est donc PAS écartée pour cause de dégradation -- ce
+   projet s'interdit ce motif -- mais elle n'est pas non plus retenue PARCE
+   QU'elle améliore : la règle du projet interdit symétriquement de laisser le
+   Proxy décider de la fidélité au corpus. Les motifs sont E1 (b) et E2 (c),
+   et eux seuls. Le sens du chiffre est reporté ici uniquement pour que la
+   décision soit vérifiable et non aveugle.
+
+H. CE QUE CETTE INVESTIGATION APPORTE AU BACKLOG (et qu'elle ne referme pas) :
+   la 17e application a testé #10:36 comme source possible du
+   coefficient `1.5` de `lim_px`, signalé SANS SOURCE au 12e round et recopié
+   en littéral dans 7 fichiers. RÉPONSE : NON, #10:36 n'en est pas la source
+   -- les deux grandeurs ne sont pas dans la même unité (`1.5` multiplie un
+   `context_range`, "1:5" multiplie un RISQUE), et la conversion n'est pas
+   stable : pour que `lim_px` vaille 5 R il faudrait un coefficient médian de
+   2,38-2,60 sur le stop H4 natif, mais de 5,38-5,57 sur le stop D1 (UT+1).
+   Le `1.5` reste donc un paramètre inventé, non tracé, et l'item de backlog
+   correspondant reste OUVERT.
+================================================================================
+
+================================================================================
+"CONFIRMATION = MÉDIANE DU CANAL DE CONTEXTE, CLÔTURÉE" (RULES_EXTRACTION.md
+§3 + source #5) -- NIVEAU STRUCTUREL ABSOLU relu EN DIRECT, par opposition à
+la distance `entry + context_range` FIGÉE à l'entrée. Item de catégorie C
+requalifié au 7e round de mobilisation, traité à la 16e. IMPLÉMENTÉ
+ici (mécanisme réel, testé, mesuré) mais DÉSACTIVÉ PAR DÉFAUT -- pour un
+motif de FIDÉLITÉ AU CORPUS mesuré, jamais de performance (H-Conf-Struct-5).
+Décision complète et chiffres : `PLAN.md` section "16e application",
+`COUVERTURE_ENSEIGNEMENTS.md`, `CONFIGURATION_RECOMMANDEE.md`.
+================================================================================
+CITATIONS, VÉRIFIÉES PERSONNELLEMENT MOT POUR MOT (relecture intégrale des
+deux sources + grep, aucune confiance dans la classification déjà écrite) :
+
+  `RULES_EXTRACTION.md` ligne 41 -- LE MANUEL OFFICIEL, autorité la plus
+  haute du projet, et c'est LA table que ce fichier implémente (§3 "Money
+  management -- Trade spéculatif (range)") :
+
+      4 étapes : **Validation** (borne opposée canal tendance) ->
+      **Confirmation** (médiane canal contexte, clôturée) ->
+      **Invalidation** (cassure forte canal tendance) -> **Limite** (target
+      atteinte)
+
+  `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` ligne 55 (#5, §5 "Gestion
+  tactique", sous-titre "Phases de la position") -- corroboration
+  INDÉPENDANTE, et plus précise encore que le manuel puisqu'elle CHIFFRE la
+  médiane et QUALIFIE l'étape de "structurelle" :
+
+      - Validation (tactique) : atteinte du canal de tendance opposé ->
+        sécuriser (breakeven ou réduction du risque)
+      - Confirmation (structurelle) : clôture d'une bougie sous/au-dessus
+        la médiane (50%) du contexte
+      - Objectifs : Range Neutre = 76% Fibonacci de la vague précédente ;
+        Range Vendeur/Acheteur = débordement du point extrême précédent
+
+Les deux sources sont RANGE-scopées (le manuel l'écrit dans le titre de §3 ;
+#5 s'intitule "Anatomie du Range", son §1 est "Anatomie du pattern range" --
+et ce projet a DÉJÀ retenu ce scope pour CETTE source exacte, cf.
+H-Canal-Large-4 ci-dessus). La lecture concurrente actuellement codée
+(`conf_px = entry + context_range`, une AMPLITUDE PROJETÉE figée) vient de
+#12 `BREAKOUT_RATIO11.md:9` (*"Phase de Confirmation (Ratio 1:1 Contexte) :
+utiliser l'UT+2 pour projeter l'amplitude du range de contexte principal"*)
+et de #15, deux sources BREAKOUT/TENDANCE. Recompté personnellement sur les
+6 sources qui disent quelque chose de l'étape Confirmation : **4
+structurelles** (manuel §3:41 ; #5:55 ; #13 `PULLBACK_MATURITE.md:9`,
+*"Confirmation : le prix retourne et clôture dans le contexte opposé"* ;
+#10 `ZONE_ACCUMULATION.md:41`, *"Confirmation : clôture franche à
+l'intérieur du contexte OU sortie confirmée du range de départ -> position
+mise à Break-Even"*) contre **2 en amplitude projetée** (#12:9 ; #15:22 et
+:28). Le décompte "4 sur 6" du 7e round est donc JUSTE, mais sa LISTE était
+fausse d'un membre : il citait #16 `CLUSTERS_PRIX.md`, qui ne définit
+structurellement que la **Validation** (l.29, *"Validation : atteinte du
+contexte vendeur opposé (résistance)"*) et ne donne AUCUN niveau pour la
+Confirmation ; la 4e source structurelle réelle est #10.
+
+--------------------------------------------------------------------------
+H-Conf-Struct-1 -- QUEL CANAL ? Le canal de contexte DÉJÀ défini par ce
+  projet, jamais un nouveau : `[ctx_low, ctx_high]` = min/max glissant sur
+  `CONTEXT_DURATION` ("15D") avec `.shift(1)` causal -- la construction
+  exacte de `trend_table.py::add_trend_context` ET de
+  `fibonacci.py::compute_context_position`, cette dernière ayant DÉJÀ
+  tranché la même question de vocabulaire ("Le contexte ... est interprété
+  comme LE MÊME canal de contexte déjà établi par `trend_table.py` ... PAS
+  une nouvelle définition inventée ici"). Sa médiane est
+  `(ctx_high + ctx_low) / 2`, c'est-à-dire très exactement le niveau où
+  `fibonacci.py::compute_context_position == 0.50` -- ce projet manipule
+  donc déjà ce niveau sous un autre nom (`REGLE_50_CONTEXT_MIN = 0.50`,
+  "moitié basse du canal"), mais pour une règle DIFFÉRENTE (le Pull-Back de
+  §1, pas la Confirmation de §3) : ce n'est donc PAS un doublon.
+  **Aucune définition ni aucun paramètre inventé** : le "50%" est donné
+  littéralement par #5, la fenêtre est celle déjà en place partout.
+
+H-Conf-Struct-2 -- CAUSALITÉ / INDEXATION. Le niveau est lu à `[i - 1]`
+  (`ctx_median_v[i - 1]`) et comparé à `c[i]` par `process_tranche` -- MÊME
+  convention que `trend_table.py::excess_raw` (`c[i] > ctx_high_v[i - 1]`),
+  pas une convention nouvelle. Comme `ctx_median` porte DÉJÀ un `.shift(1)`
+  interne, le canal n'utilise aucune bougie postérieure à `i - 2` : double
+  marge, aucun lookahead possible. Le déclenchement reste SUR CLÔTURE
+  (`c[i] >= tr["conf_px"]`, inchangé), ce qui est exactement le mot
+  "clôturée" du manuel et le "clôture d'une bougie" de #5.
+
+H-Conf-Struct-3 -- NIVEAU INCONNU (NaN) -> `conf_px = +inf` : un niveau non
+  encore calculable ne peut pas être déclaré atteint. Même convention que le
+  gate "espace libre" de `trend_table.py` (H15, *"un niveau inconnu (NaN)
+  fait ÉCHOUER le gate"*), transposée à une cible. N'arrive qu'à la toute
+  première bougie (`.shift(1)` sans historique), très en amont du `warmup`
+  de tous les moteurs.
+
+H-Conf-Struct-4 -- ARCHITECTURE : AUCUNE REFONTE, ET UNE PRÉMISSE DU 7e
+  ROUND CORRIGÉE. Ce round avait écrit que *"`position_engine.py` ne
+  recalcule aujourd'hui aucun seuil après l'ouverture"* -- c'est FAUX :
+  `run_position_engine` expose depuis le refactor d'origine un hook
+  `update_levels_fn(tr, i)`, appelé pour chaque tranche ouverte AVANT
+  `process_tranche`, et ce hook est EXERCÉ EN PRODUCTION par
+  `backtest_phase2.py` (qui recalcule Validation/Confirmation/Limite à
+  chaque pas depuis l'ATR courant). Un niveau ABSOLU relu en direct passe
+  donc par ce hook **sans toucher une seule ligne de `process_tranche`** :
+  les latches one-shot `val_done`/`conf_done` fonctionnent tels quels contre
+  un niveau MOBILE ("le prix touche une bande qui se déplace" était déjà
+  exprimable). La séquentialité Validation -> Confirmation est elle aussi
+  préservée telle quelle (l'étape 4 exige `val_done`, que seule l'étape 5
+  d'une bougie ANTÉRIEURE peut poser). Conséquence : `make_open_tranche_fn`
+  n'est PAS modifiée -- une tranche ouverte au pas `i` n'est traitée qu'au
+  pas `i + 1`, après le hook, donc son `conf_px` initial (l'amplitude) n'est
+  jamais lu quand le mode est actif.
+
+H-Conf-Struct-5 -- POURQUOI LE DÉFAUT RESTE OFF (motif de FIDÉLITÉ, PAS de
+  performance ; c'est le point décisif de l'investigation, et il est MESURÉ,
+  pas déduit). Appliqué à nos briques, le niveau structurel est DÉJÀ FRANCHI
+  avant même que l'étape n'existe : sur les 4 076 tranches ouvertes par
+  `backtest_phase2_faithful.py` (BTC/ETH/BNB/SOL x 4 profils, historique
+  complet), la médiane du canal de contexte est SOUS le prix d'entrée sur
+  89,6-94,3% des ouvertures et SOUS `val_px` sur **100,0%**. Conséquence
+  mécanique, mesurée sur les 212 tranches qui atteignent réellement la
+  Validation : la Confirmation se déclencherait dès la bougie qui suit la
+  Validation sur **98,1%** d'entre elles (délai médian **0 bougie**, contre
+  **43 bougies** aujourd'hui), et 212/212 la franchiraient (contre 176/212
+  aujourd'hui). Les 4 lectures possibles de "canal de contexte" présentes
+  dans ce projet donnent le MÊME verdict -- ce n'est donc pas un artefact du
+  choix de canal :
+
+      variante de "canal de contexte"          <= entry  <= val_px  délai<=1
+      A (ctx_high+ctx_low)/2, 15D, H4 [retenue]  91,4%    100,0%      98,1%
+      B médiane Extreme Channel H4 (= EMA55)     96,2%    100,0%     100,0%
+      C médiane Extreme Channel D1 (UT+1)        98,8%    100,0%     100,0%
+      D (ctx_high+ctx_low)/2, 15D, D1 (UT+1)     92,0%    100,0%      98,1%
+
+  Or `conf_to_be=True` : la Confirmation est LE point (et le seul) où le
+  stop passe au break-even. L'activer par défaut ferait donc passer le stop
+  au BE une bougie après la Validation dans 98-100% des cas, c'est-à-dire
+  COLLAPSER Confirmation sur Validation -- ce que le corpus interdit avec sa
+  plus grande insistance : #12 `BREAKOUT_RATIO11.md:11` (*"L'erreur fatale,
+  responsable de la majorité des échecs en suivi de tendance, consiste à
+  remonter son stop loss au point d'entrée (Breakeven) prématurément"*),
+  #13 `PULLBACK_MATURITE.md:9` (*"Il est impératif de DISSOCIER deux étapes
+  cruciales ... Validation : ... À ce stade, le trade progresse mais il est
+  formellement interdit de passer au 'Break-even'"*), #15:28, #16:32, et
+  `TRADING_LESSONS_INDEX.md:35` qui la nomme *"la correction la mieux étayée
+  de tout le corpus"* (4 sources concordantes). Sacrifier CETTE règle-là
+  pour appliquer littéralement celle-ci ferait perdre en fidélité, pas
+  gagner -- exactement l'arbitrage déjà retenu au 7e round, ici appuyé sur
+  une mesure et non sur une estimation.
+
+  ORIGINE DU CONFLIT, dite honnêtement : il n'est PAS interne au corpus, il
+  vient de NOS BRIQUES. La géométrie que le manuel suppose est EMBOÎTÉE --
+  on achète le BAS du canal de TENDANCE, la Validation est à sa borne
+  OPPOSÉE, et ce canal de tendance tient dans la MOITIÉ BASSE du canal de
+  CONTEXTE (plus large, UT au-dessus), si bien que la médiane du contexte
+  est encore DEVANT le prix à la Validation. Notre proxy ne reproduit pas
+  cet emboîtement, pour deux raisons mesurées : (i) le signal `score >= 2`
+  entre dans la moitié HAUTE du canal de contexte 9 fois sur 10 -- ce qui
+  contrevient d'ailleurs à `RULES_EXTRACTION.md:17` (*"Ne jamais vendre la
+  partie basse du canal de tendance / acheter la partie haute"*, règle de
+  base #2, JAMAIS implémentée comme gate d'entrée : nouvel item de backlog
+  ouvert par cette investigation) ; (ii) `val_px = entry + local_range`
+  projette une amplitude 5D de +17,2% à +28,2% (médiane par actif) au-dessus
+  de l'entrée, ce qui saute par-dessus la médiane 15D même dans les 6-9% de
+  cas où l'entrée était sous elle. Rendre ce niveau non dégénéré exigerait
+  donc DEUX changements couplés supplémentaires -- un vrai canal de tendance
+  géométrique emboîté (`manual_trend_channel.py` existe mais a été mesuré
+  puis explicitement NON adopté, cf. `PLAN.md` "Canal manuel D1") et un gate
+  d'entrée "partie basse du canal" -- dont aucun n'est fourni par le corpus
+  sous forme codable pour la table RANGE.
+
+  Le mécanisme est donc CODÉ, TESTÉ et MESURÉ ici (il ne manque rien d'autre
+  qu'un `use_structural_confirmation=True` pour l'exercer, cf.
+  `backtest_phase2_v7.py` et `backtest_phase2_faithful.py`), et son défaut
+  reste OFF -- même discipline que le gate "espace libre" du 10e round
+  (*"gardé OPTIONNEL et désactivé par défaut pour une raison de méthode, pas
+  de performance"*), et NON un rejet fondé sur le backtest.
+================================================================================
 """
 import numpy as np
 import pandas as pd
@@ -524,6 +843,66 @@ import pandas as pd
 # exactement dans un moteur dimensionné par le risque (H-Canal-Large-1).
 WIDE_CHANNEL_STOP_FRAC = 0.5   # "Taille du Canal / 2 = Taille du Stop Loss"
 WIDE_CHANNEL_SIZE_FRAC = 0.5   # "ET Taille de Position / 2"
+
+# "Confirmation (médiane canal contexte, clôturée)" -- RULES_EXTRACTION.md:41,
+# corroboré par TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md:55 qui CHIFFRE la
+# médiane ("la médiane (50%) du contexte"). Le 0.5 est donc littéral, pas un
+# paramètre à nous : nommé plutôt qu'enfoui, comme WIDE_CHANNEL_*_FRAC.
+CONTEXT_MEDIAN_FRAC = 0.5
+
+
+def context_channel_median(df, duration):
+    """Médiane du canal de contexte `[ctx_low, ctx_high]` (H-Conf-Struct-1).
+
+    MÊME construction que `trend_table.py::add_trend_context` et
+    `fibonacci.py::compute_context_position` -- min/max glissant sur
+    `duration` (fenêtre CALENDAIRE, d'où l'exigence d'une colonne `date`),
+    `.shift(1)` causal : la bougie courante n'entre jamais dans son propre
+    canal de référence. AUCUNE nouvelle définition de "contexte" n'est
+    introduite ici (principe déjà établi dans ce projet : "même terme
+    'contexte'/'canal' = même définition partout, pas une nouvelle par
+    module").
+
+    NB : ce n'est PAS `backtest_phase2_v7.py::prepare::context_range`, qui
+    est une AMPLITUDE scalaire (`max(high) - min(low)`, SANS `.shift(1)`) et
+    non un couple de bornes -- distinction déjà relevée par
+    `fibonacci.py::compute_context_position`.
+
+    Retourne un array numpy aligné sur `df` (NaN à la première bougie).
+    """
+    ts = df.set_index("date")
+    ctx_high = ts["high"].rolling(duration).max().shift(1)
+    ctx_low = ts["low"].rolling(duration).min().shift(1)
+    return (ctx_low + (ctx_high - ctx_low) * CONTEXT_MEDIAN_FRAC).values
+
+
+def make_structural_conf_update_fn(ctx_median_v):
+    """Retourne un `update_levels_fn(tr, i)` qui fait de la Confirmation un
+    NIVEAU STRUCTUREL ABSOLU relu EN DIRECT à chaque bougie -- la lecture
+    littérale de `RULES_EXTRACTION.md:41` ("médiane canal contexte,
+    clôturée") et de `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md:55` --
+    au lieu de la distance `entry + context_range` figée à l'ouverture.
+    Cf. le bloc "CONFIRMATION = MÉDIANE DU CANAL DE CONTEXTE" en tête de
+    fichier pour les citations et les hypothèses H-Conf-Struct-1..5.
+
+    À passer tel quel en `update_levels_fn=` de `run_position_engine`.
+    Ne touche QUE `conf_px` : `val_px`, `lim_px` et le stop restent gérés
+    exactement comme avant (aucun autre niveau n'est structurel dans le
+    manuel -- Validation et Limite y sont des projections, cf. #12:8 et
+    #5:56).
+
+    - `ctx_median_v` : array du niveau, indexé comme les prix. Produit par
+      `context_channel_median` ci-dessus.
+    - Lecture à `[i - 1]`, comparée à `c[i]` par `process_tranche`
+      (H-Conf-Struct-2 : même convention que `trend_table.py::excess_raw`).
+    - Niveau inconnu (NaN) -> `+inf`, donc Confirmation inatteignable tant
+      que le canal n'est pas calculable (H-Conf-Struct-3).
+    """
+    def update_levels_fn(tr, i):
+        m = ctx_median_v[i - 1]
+        tr["conf_px"] = np.inf if (m is None or np.isnan(m)) else float(m)
+
+    return update_levels_fn
 
 
 def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v,
@@ -618,8 +997,21 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
         if not (is_fresh_entry or is_pyramid_add):
             return None
 
-        entry_price = o[i]
-        stop_price = min(ctx_support_v[j], entry_price * 0.999)
+        new_tr = _build_tranche(o[i], min(ctx_support_v[j], o[i] * 0.999), j, win_streak)
+        if new_tr is None:
+            return None
+        state["last_pyramid_high"] = max(state["last_pyramid_high"], high[j]) if is_pyramid_add else high[j]
+        return new_tr
+
+    def _build_tranche(entry_price, stop_price, j, win_streak):
+        """Dimensionne et construit une tranche à partir d'un prix d'entrée et
+        d'un stop DÉJÀ décidés par l'appelant. Extrait tel quel du corps de
+        `open_tranche_fn` (mêmes opérations, même ordre, donc mêmes flottants
+        au bit près -- vérifié par la suite de tests et par la régénération à
+        l'identique de `phase2_v7_mtf_results.csv`).
+
+        Retourne `None` si la taille calculée est nulle (comportement d'origine).
+        """
         stop_pct = (entry_price - stop_price) / entry_price
         # Règle de volatilité "si canal très large" (cf. bloc dédié en tête de
         # fichier). Transcription littérale des deux moitiés de la phrase
@@ -640,7 +1032,6 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
         size_frac = min(1.0 / max_tranches, eff_risk / stop_pct * size_mult) if stop_pct > 0 else 0.0
         if size_frac <= 0:
             return None
-        state["last_pyramid_high"] = max(state["last_pyramid_high"], high[j]) if is_pyramid_add else high[j]
         # TENSION TRANCHÉE au 10e round de mobilisation (elle était notée ici
         # comme "OUVERTE, NON RÉSOLUE" au 8e) — AUCUN changement de
         # comportement, ces 3 lignes restent des amplitudes MÈCHES.

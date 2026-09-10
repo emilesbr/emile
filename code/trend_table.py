@@ -324,6 +324,312 @@ H17. **Portée du gate : l'étape Breakout UNIQUEMENT** (*"avant un
     ailleurs, pour que la mesure isolée de la table de tendance reste
     comparable à tout l'historique déjà publié.
 
+-----------------------------------------------------------------------------
+NOTE DOCUMENTAIRE — "Altérations de structure Vague 1 / Vague 5" (#14,
+`TRADING_LESSONS_STRUCTURES_ALTERATIONS.md`) : INVESTIGUÉ à la 14e
+application, PAS IMPLÉMENTÉ, item FERMÉ. **Zéro comportement** : ce bloc ne
+fait que documenter une décision, aucune ligne exécutable n'est ajoutée.
+-----------------------------------------------------------------------------
+Item de catégorie C énoncé par `COUVERTURE_ENSEIGNEMENTS.md` comme *"Overlap,
+stratégie 'Rivière', prises de profit partielles Vague 5 — cadre de type
+Elliott non repris, ne correspond pas au modèle 5 étapes déjà en place"*.
+
+**La 2e moitié de cet énoncé est FAUSSE, et c'est le point le plus important
+de l'investigation.** La source #14 ne propose PAS un cadre concurrent du
+modèle 5 étapes : elle DÉCRIT ce modèle, et le désigne comme la norme. Ses
+lignes 5-11, vérifiées mot pour mot :
+
+    l.5  "## « La Maison de la Tendance » — modèle canonique (Vague 3
+          étendue = la norme)"
+    l.6  "5 briques constitutives, cohérent avec le cycle à 6 phases de la
+          source #13 :"
+    l.7-11  Accumulation / Breakout / Divergence / Pullback / Excès Final
+
+C'est, nom pour nom et dans le même ordre, la séquence de `RULES_EXTRACTION.md`
+§4 (*"5 étapes : Accumulation → Breakout → Divergence → Pull-Back → Excès
+final"*) et §1 l.23 — donc EXACTEMENT ce que ce fichier implémente. La
+"Vague 3 étendue" du vocabulaire de #14 est le nom que cette source donne au
+cas canonique DÉJÀ codé ici ; "Vague 1 étendue" et "Vague 5 étendue" sont
+deux ALTÉRATIONS de ce même modèle, pas un formalisme rival. Le mot
+"Elliott" n'apparaît d'ailleurs NULLE PART dans le corpus (grep exhaustif
+des 17 sources + `RULES_EXTRACTION.md` : 0 occurrence) — c'est une glose du
+projet, pas le vocabulaire de Philippe, et elle ne peut donc pas servir de
+motif d'écartement.
+
+Les autres contenus de #14 hors altérations sont eux aussi DÉJÀ couverts :
+l.13 (*"maturité du range (min. 3 bornes testées)"*) = `MIN_BORDERS = 3`,
+source déjà citée comme telle par `min_borders_sensitivity.py` ; l.17 (*"Loi
+de l'Unité de Temps Supérieure"*) = 5e confirmation de la famille MTF, déjà
+implémentée (gates UT+1/UT+2) ; l.21-23 (maturation du Bitcoin) est une note
+de calibration documentaire, pas une règle.
+
+Restent les 3 éléments réellement non couverts, tranchés un par un.
+
+(1) **Règle de l'Overlap (l.28) — DÉJÀ IMPLÉMENTÉE, sous un autre nom, et
+    mesurément ACTIVE** (motif (d) de la règle inviolable). Citation :
+
+        "Règle de l'Overlap : l'ancienne résistance devient support. C'est
+         une zone de tolérance, pas une ligne mathématique — les mèches
+         peuvent pénétrer l'ancien territoire, mais les clôtures de bougies
+         doivent rester à l'extérieur pour valider la structure."
+
+    Son contenu opératoire est exactement la convention de `breakout_raw`
+    (`c[i-1] > local_high_v[i-1]`) et d'`excess_raw` (`c[i] > ctx_high_v[i-1]`)
+    : le NIVEAU est un extrême (`local_high`/`ctx_high` = max glissant des
+    HAUTS, `add_trend_context`), la CLÔTURE est le test, la mèche ne
+    déclenche rien. Ce n'est pas une conformité de façade : mesuré sur
+    BTC/ETH/BNB/SOL H4 (historique complet), valider sur la mèche au lieu de
+    la clôture ferait passer les cassures de 307/287/296/253 à
+    453/438/465/374 — la clause "clôtures" REJETTE **32,2% à 36,3%** des
+    candidates au Breakout et **43,5% à 46,7%** de celles de l'Excès final.
+    Verrouillé par `test_trend_table.py::
+    test_overlap_convention_already_in_breakout_raw` (contrôles positif ET
+    négatif ; le test échoue bien si l'on bascule le moteur sur la mèche).
+    C'est aussi, déjà, la lecture que les 8e et 12e rounds avaient tirée de
+    cette même ligne 28 pour un sujet différent (clôtures vs mèches).
+
+    La seule lecture NON couverte est la validité CONTINUE ("après la
+    cassure, les clôtures doivent RESTER au-dessus du niveau"). Écartée pour
+    deux raisons, la seconde mesurée :
+      (a) la source ne dit PAS quoi faire quand la condition cesse d'être
+          vraie — "pour valider la structure" qualifie une lecture
+          graphique, jamais un ordre de sortie ni de réduction. En faire un
+          mécanisme de clôture exigerait d'inventer l'action (motif (b)).
+      (b) l'action la plus naturelle (sortir) reviendrait à REMPLACER le
+          stop littéral du corpus par un stop bien plus serré. Mesuré : le
+          niveau cassé se situe à **−0,11 à −0,13 R** de l'entrée (médiane,
+          R = distance entrée→stop) — donc SOUS l'entrée, à ~12% seulement
+          du chemin vers le stop, et **jamais** au-dessus du break-even
+          (0,0% des cas sur les 4 actifs). Il serait touché AVANT le stop
+          réel dans **85,8% à 90,9%** des cassures, en 4 à 7,5 bougies
+          (médiane). Autrement dit : un stop ~8× plus serré que celui que
+          le corpus prescrit littéralement (*"Stop-loss = clôture la plus
+          basse du canal de tendance de l'UT+1"*, #12:7, confirmé #16:28,
+          #10:38) — sacrifier un élément MIEUX établi au profit d'une
+          lecture plus ambiguë, soit exactement le motif (c).
+
+(2) **Stratégie de la "Rivière" (l.30) — objet réellement distinct, mais
+    action non fournie par le corpus** (motif (b)). Citation :
+
+        "Pour les plus expérimentés, le point de retournement (« River ») se
+         cherche au contact de la ligne de tendance reliant les deux sommets
+         précédents, pas sur le contexte horizontal."
+
+    Vérifié : cette ligne n'a AUCUN équivalent ailleurs dans le corpus
+    (grep "Rivière"/"River" sur les 17 sources + le manuel : 1 occurrence,
+    celle-ci). L'objet géométrique, lui, est constructible sans rien
+    inventer, en réutilisant les primitives existantes
+    (`proxy_v2.compute_swing_high_confirmed`, `SWING_ORDER`, exactement ce
+    que `manual_trend_channel.py` H1 fait pour les creux) : mesuré,
+    couverture **99,8-99,9%** des bougies, et c'est bien un objet NOUVEAU
+    (écart médian **2,9-5,4%** vs `ctx_resistance`, **3,7-7,2%** vs la
+    résistance du canal manuel Supports→Apex→Tangente, **4,5-9,3%** vs
+    `ctx_high` ; distinct aussi de `andrews_pitchfork.py`, qui part de
+    pivots ALTERNÉS creux/sommet, pas de deux sommets consécutifs).
+
+    Ce qui bloque n'est donc pas la faisabilité, c'est le DÉCLENCHEUR : le
+    corpus dit où *"se cherche"* le point de retournement, jamais ce qui le
+    confirme ni ce qu'on en fait. Et le "contact" seul ne peut pas tenir
+    lieu de signal — mesuré, le haut de la bougie atteint cette ligne sur
+    **30,1% à 32,1%** des bougies, soit près d'une sur trois. Toute règle
+    utilisable exigerait d'inventer un critère de confirmation absent du
+    corpus. S'y ajoutent deux restrictions explicites de la source
+    elle-même : *"Pour les plus expérimentés"*, et une portée limitée à la
+    Vague 1 étendue en phase de "double excès" (cf. (3) sur l'impossibilité
+    d'identifier ces états). Le reste de la l.30 est du conseil
+    comportemental déjà couvert : *"attendre le pullback technique"* est
+    l'étape PULLBACK_WATCH de ce fichier, et *"ne pas courir après le prix"*
+    est structurel (ce moteur n'entre que sur déclencheurs définis).
+
+(3) **Prises de profit partielles "Vague 5" (l.37) — mécanisme déjà en
+    place, jeu d'objectifs non définissable** (motifs (d) puis (b)).
+    Citation :
+
+        "Il faut déclencher des prises de profit partielles systématiques
+         sur objectifs prédéfinis : niveaux de résistance équivalents,
+         extensions de Fibonacci, chiffres ronds (niveaux psychologiques)."
+
+    Le MÉCANISME (sortir par fractions plutôt qu'en une fois) est déjà
+    implémenté et l'est d'après une autorité plus haute que #14 : la table
+    §4 du manuel (`div_close_frac` = TP50%/TP25% à la Divergence, TP100% à
+    l'Excès final ; côté RANGE, `val_close_frac`/`conf_close_frac` pour §3).
+    Ce qui diffère est le DÉCLENCHEUR : #14 propose des OBJECTIFS DE PRIX
+    là où le manuel prescrit des ÉTAPES DE STRUCTURE. Or aucun des trois
+    objectifs cités n'est définissable à partir du corpus :
+      - *"extensions de Fibonacci"* : **aucun ratio d'extension n'existe
+        dans tout le corpus** (grep 127 / 138 / 161 / 261 sur les 17 sources
+        + `RULES_EXTRACTION.md` : 0 occurrence). Tous les nombres Fibonacci
+        du corpus sont des RETRACEMENTS (23/38/50/61/76), déjà traités par
+        `fibonacci.py` — qui signale d'ailleurs depuis sa création que #14
+        parle d'extensions "pour la PRISE DE PROFIT en Vague 5", sans
+        pouvoir les chiffrer.
+      - *"niveaux de résistance équivalents"* : expression unique dans tout
+        le corpus, jamais définie.
+      - *"chiffres ronds (niveaux psychologiques)"* : aucune granularité
+        donnée (1 000 $ ? 10 000 $ ? un ordre de grandeur relatif ?).
+      - et la FRACTION à sortir sur chaque objectif n'est jamais donnée non
+        plus.
+    Quatre paramètres à inventer pour une règle dont le mécanisme est déjà
+    couvert : c'est le motif (b) sous sa forme la plus nette, et le même
+    refus que celui déjà opposé au gate Fibonacci RANGE (2 définitions
+    manquantes) depuis plusieurs rounds.
+
+    **Point mesuré à ne pas cacher, car il va CONTRE la thèse commode** :
+    on aurait pu croire la question sans objet, la Vague 5 (euphorie) étant
+    déjà exclue par le régime EXCES que `RULES_EXTRACTION.md` §1 interdit de
+    trader. C'est FAUX. Mesuré sur les bougies du centile supérieur de
+    rendement sur 30 bougies H4 (diagnostic d'accélération parabolique, pas
+    une règle) : seulement **40,6% à 55,0%** sont étiquetées EXCES, tandis
+    que **35,7% à 51,0%** sont en TENDANCE, donc tradables (base de
+    comparaison : 17,1-19,6% d'EXCES toutes bougies confondues). La
+    population existe bel et bien ; ce n'est donc PAS la redondance qui
+    tranche ici, c'est uniquement l'absence de définitions.
+
+    S'y ajoute un blocage amont, indépendant : la source subordonne
+    explicitement tout cela à une identification préalable — l.54, *"Identifiez
+    d'abord la structure, déterminez le type d'extension, et seulement
+    ensuite, appliquez vos outils de gestion du risque"* — et exige de
+    distinguer Vague 5 étendue et Bulle (l.39 : *"une Vague 5 étendue déplace
+    la valeur d'un point A vers un point B et stabilise un nouveau range ;
+    une bulle est un écart irrationnel à la valeur réelle"*), distinction que
+    `regime_classifier.add_regime` ne porte pas (EXCES = canal trop large OU
+    trop étroit, rien qui sépare les deux) et que le corpus ne rend nulle
+    part calculable.
+
+**Direction de l'effet, dite honnêtement** : non mesurée, parce qu'aucune des
+3 variantes n'est implémentable sans inventer au moins un paramètre — il n'y
+a donc pas de "variante fidèle" dont on pourrait mesurer le rendement. Le
+seul chiffre de performance qui aurait pu être produit (l'Overlap comme
+sortie) est écarté par (1)(b) sur un motif de corpus, pas de performance.
+Aucun CSV n'est régénéré : rien ne change numériquement.
+
+================================================================================
+NOTE (15e application) — "Cluster technique" de la MÊME source #12
+(l.29) : EXAMINÉ, DÉLIBÉRÉMENT PAS IMPLÉMENTÉ. Zéro comportement, aucune
+ligne exécutable ajoutée par cette note.
+================================================================================
+Cette note existe pour qu'un futur lecteur de `breakout_raw` voie que la
+règle a été examinée et pourquoi elle n'est pas ici — pas pour qu'il croie
+à un oubli. Même discipline que la note Red Flags de `position_engine.py`
+et la note H7 ci-dessus.
+
+CITATION, vérifiée mot pour mot (`TRADING_LESSONS_BREAKOUT_RATIO11.md`
+ligne 29, section *"Critères de maturité avant breakout"*) :
+
+    - **Cluster technique** : le breakout ne se traite pas sur un niveau
+      isolé, mais sur la convergence de plusieurs informations (trendlines
+      majeures, bornes de canaux de contexte, limites de range) en une
+      même zone
+
+PRÉMISSE DE L'ITEM : EXACTE, contrairement aux 7e/8e/9e/11e rounds.
+`breakout_raw` (ci-dessous) teste bien UN SEUL niveau de prix —
+`c[i-1] > local_high_v[i-1]` — accompagné de deux conditions qui ne sont
+pas des structures de prix (expansion de volume H9, `score >= 2`). Le gate
+H13-H17 ajouté au 10e round vient de la même source mais mesure l'espace
+LIBRE AU-DESSUS (obstacles UT+1/UT+2), pas une convergence AU niveau cassé :
+ce n'est pas un doublon, et le manque signalé est réel.
+
+À NE PAS CONFONDRE — le corpus emploie "cluster" pour TROIS choses
+distinctes, dont deux sont déjà codées sous d'autres noms (piège
+terminologique de la même famille que les trois "MA20" documentées au
+9e round) :
+  (1) ICI (#12:29) : convergence de STRUCTURES DE PRIX en une zone, AVANT
+      le breakout. Non implémenté (cette note).
+  (2) #16 (`TRADING_LESSONS_CLUSTERS_PRIX.md:19`) : le "Cluster Technique"
+      MA20 + Zone de Demande, APRÈS le breakout, comme signal d'ENTRÉE en
+      mean-reversion — implémenté dans `cluster_technique.py`, consommé
+      par `diversification.py` (Pattern B). Sa propre docstring (H2)
+      nomme déjà sa conjonction *"confluence de deux techniques au même
+      endroit"* : le PRINCIPE de confluence existe donc dans le projet,
+      mais pour les composants de #16, à son moment à elle.
+  (3) #10:25 (*"Retracement dans un cluster 38-50%"*) et #13:48
+      (*"Cluster Fibonacci | Entre 23% et 38%"*) : "cluster" y désigne une
+      BANDE de retracement, pas une convergence — déjà implémenté
+      (`ACCUM_RETRACEMENT_LOW/HIGH` ici, `fibonacci.py`).
+Voisin utile, dans le sens de (1) : #5:66 (*"Zone spéculative : prix dans
+le cluster (Fibonacci + zone graphique) ?"*) — cette convergence-là est
+déjà, de fait, ce que `try_open_campaign` exige à l'Accumulation
+(retracement 38-61% ET rejet du canal sur la même bougie).
+
+POURQUOI PAS IMPLÉMENTÉ — 4 raisons, chacune vérifiée ou mesurée :
+
+1. DEUX PARAMÈTRES SERAIENT À INVENTER, et le corpus n'en donne aucun.
+   *"plusieurs informations"* ne dit pas COMBIEN ; *"en une même zone"* ne
+   dit pas à quelle DISTANCE. Grep exhaustif des 17 sources +
+   `RULES_EXTRACTION.md` sur `convergen`/`confluen`/`cluster`/`trendline`/
+   `tolérance`/`proximité`/`distance` : aucun chiffre nulle part pour cette
+   règle, et le manuel officiel — l'autorité la plus haute du projet — ne
+   contient **aucune occurrence** de convergence/confluence/cluster/
+   trendline. Le seul énoncé voisin du corpus sur la largeur d'une zone
+   refuse explicitement de la chiffrer (#14:28, *"zone de tolérance, pas
+   une ligne mathématique"*). C'est le motif de refus déjà retenu pour le
+   gate Fibonacci RANGE §1 ("débordement"/"triangle") et pour le Red
+   Flag 2 ("maintenue" non chiffré).
+
+2. MESURÉ : CE SONT CES DEUX PARAMÈTRES INVENTÉS, PAS LA RÈGLE, QUI
+   DÉCIDERAIENT DU RÉSULTAT — même schéma décisif que le niveau de
+   contexte de Conflit MTF (89% vs 12-19%) et que le 13e round. Sur les
+   264-312 bougies candidates au breakout de BTC/ETH/BNB/SOL H4, en
+   prenant les 3 familles CITÉES par la source, chacune déjà calculée par
+   le projet (limites de range = `ctx_high` ; bornes de canaux de contexte
+   = `ctx_resistance`, H14 ; trendlines majeures = `channel_resistance` de
+   `manual_trend_channel.py`), la part de candidates ACCEPTÉES par un gate
+   de convergence balaie **tout l'espace des résultats possibles** :
+
+       tolérance      N>=1        N>=2        N>=3
+       0,25 %      59,8-65,1 %  3,0-4,7 %   0,0-0,7 %
+       1 %         80,3-90,4 %  14,0-32,4 % 1,5-6,1 %
+       5 %         98,9-100 %   75,0-90,7 % 33,7-65,4 %
+
+   En exprimant plutôt la tolérance dans la seule unité de "zone" que le
+   projet possède déjà (la demi-largeur du canal, k x ATR) : de 1,0-4,2 %
+   d'acceptation (N>=3, 0,5xATR) à 99,6-100 % (N>=1, 2xATR). Aucun
+   argument textuel ne permet de choisir un point dans cet intervalle.
+
+3. UNE DES TROIS FAMILLES CITÉES N'EST PAS INDÉPENDANTE DU NIVEAU CASSÉ,
+   dans les approximations de ce projet. `local_high` (le niveau que
+   `breakout_raw` franchit) et `ctx_high` (les "limites de range") sont
+   deux maxima de LA MÊME série de HAUTS sur des fenêtres EMBOÎTÉES
+   (LOCAL_DURATION 5D ⊂ CONTEXT_DURATION 15D) : mesuré, `ctx_high >=
+   local_high` sur **100,0 %** des candidates et **exactement égal sur
+   51,9-56,9 %** d'entre elles. Compter `ctx_high` comme une information
+   qui "converge" reviendrait donc, une fois sur deux, à compter le niveau
+   de référence avec lui-même. Propriété verrouillée par
+   `test_trend_table.py::test_range_limit_is_not_independent_of_the_broken_level`
+   (vérité terrain synthétique, contrôle positif ; non-vacuité vérifiée par
+   contrôle négatif). Le 10e round avait déjà écarté `ctx_high` comme
+   candidat pour H14, pour une raison voisine (quasi no-op entre UT).
+
+4. IMPLÉMENTER SACRIFIERAIT UN ÉLÉMENT DU CORPUS MIEUX ÉTABLI — même
+   arbitrage qu'au 7e round. Mesuré en branchant le gate sur le hook
+   existant `use_breakout_space_gate` (mesure en scratchpad, aucun fichier
+   de production modifié) : le temps passé en POST_BREAKOUT par BTC/FAIBLE
+   — la SEULE instanciation empirique substantielle des étapes 2 à 5 de
+   `RULES_EXTRACTION.md` §4, le manuel officiel — tombe de **48,9 % à
+   0,0 %** pour tous les réglages testés SAUF les deux plus permissifs
+   (N>=1 et N>=2 à 2xATR, où il reste à 48,9 %). Autrement dit : c'est la
+   tolérance inventée, seule, qui décide si la table de tendance du manuel
+   continue d'exister empiriquement ou non. Sacrifier §4 (manuel, autorité
+   la plus haute) pour une puce de note vidéo sans chiffre n'est pas un
+   gain de fidélité. Honnêteté sur cette mesure : l'échantillon est très
+   mince (8 breakouts au total, profil FAIBLE seul, cf.
+   `COUVERTURE_ENSEIGNEMENTS.md`), donc le chiffre exact est fragile — la
+   raison 4 renforce les raisons 1-3, elle ne les remplace pas.
+
+NUANCE HONNÊTE, DANS L'AUTRE SENS (pour ne pas surcharger le refus) : la
+ligne 29 est une PUCE DE SYNTHÈSE rédigée par le preneur de notes, pas une
+phrase entre guillemets attribuée à Philippe — contrairement aux l.11/17/
+21/24/38 de la même source, dont l.17 que le 10e round a implémentée. Ce
+n'est PAS un motif de refus (le projet implémente ce que le corpus
+documente, quelle qu'en soit la forme) et ça n'a joué aucun rôle dans la
+décision ci-dessus ; c'est noté parce que la précision moindre de la
+formulation explique en partie l'absence de tout paramètre.
+
+CE QU'IL FAUDRAIT POUR ROUVRIR L'ITEM (pas "jamais", mais pas "à l'aveugle")
+: une citation du corpus donnant SOIT un nombre de structures, SOIT une
+tolérance de distance — ou une reformulation de la règle en un prédicat
+qui n'en exige aucun des deux.
+
 Correction faite EN COURS D'ÉCRITURE (pas après coup) : la première version
 de ce fichier n'accumulait pas le P&L des clôtures partielles (Divergence)
 dans une valeur unique avant de l'ajouter à la liste des trades -- un
@@ -360,6 +666,18 @@ BREAKOUT_SPACE_MULT = 1.0                                         # H15, "Ratio 
 # --- Table de money management "trade de tendance" (RULES_EXTRACTION §4) ---
 # accum_frac / breakout_frac / pullback_frac : fractions de l'unité U ajoutées
 # à chaque étape (H1). div_close_frac / div_to_be : action à la Divergence.
+#
+# NOTE DOCUMENTAIRE (17e application, AUCUN comportement) -- la colonne
+# `accum_frac` ci-dessous EST le sizing de l'étape Accumulation prescrit par le
+# manuel, `RULES_EXTRACTION.md:54-59` ("Attente" / "Renfort +25%" / "+50%" /
+# "+100%" -> 0.00 / 0.25 / 0.50 / 1.00, correspondance exacte des 4 lignes).
+# C'est à ce titre qu'elle a servi de motif (c) au refus d'implémenter l'item
+# "sizing 1-1,5% spécifique aux trades d'accumulation" (#10:37) : un 1-1,5%
+# fixe écraserait cette ligne du manuel et rendrait les 4 profils identiques à
+# l'accumulation (perte de l'"Attente" de FAIBLE et du "+100%" de
+# TRES_AGRESSIF). Décision complète, citations vérifiées et mesures : bloc
+# dédié en tête de `position_engine.py`, `PLAN.md` section "17e
+# application", `COUVERTURE_ENSEIGNEMENTS.md`, `STATUS.md`.
 PROFILES_TREND = {
     "FAIBLE":        {"risk_pct": 0.01, "accum_frac": 0.00, "breakout_frac": 1.00,
                        "div_close_frac": 0.50, "div_to_be": True,  "pullback_frac": 0.00, "reverse": False},

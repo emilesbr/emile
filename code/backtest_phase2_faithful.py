@@ -88,6 +88,36 @@ VÉRIFIÉ SOURCE PAR SOURCE (pas supposé) :
 
 CE QUI RESTE VOLONTAIREMENT NON COMBINÉ ICI (limite documentée, pas une
 invention silencieuse) :
+  - **Confirmation comme NIVEAU STRUCTUREL ABSOLU** (`use_structural_
+    confirmation`, AJOUTÉ à la 16e mobilisation, défaut `False`) --
+    LA SEULE règle littérale de ce projet qui soit implémentée mais PAS
+    activée sans condition dans ce fichier, donc l'exception au contrat
+    énoncé en tête ; elle est signalée ici explicitement plutôt que laissée
+    silencieuse. `RULES_EXTRACTION.md:41` (§3, LA table que ce moteur
+    implémente) dit *"Confirmation (médiane canal contexte, clôturée)"* et
+    `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md:55` (#5) le confirme en le
+    chiffrant : *"Confirmation (structurelle) : clôture d'une bougie
+    sous/au-dessus la médiane (50%) du contexte"*. Le mécanisme est
+    entièrement CODÉ et TESTÉ (`position_engine.make_structural_conf_
+    update_fn`), il suffit de passer `use_structural_confirmation=True`.
+    **Motif du défaut OFF, mesuré et NON lié à la performance** : sur nos
+    briques, ce niveau est déjà SOUS `val_px` à l'entrée dans **100,0%** des
+    cas (4 076 tranches, 4 actifs x 4 profils ; et sous le prix d'entrée
+    lui-même dans 89,6-94,3%), si bien que la Confirmation se déclencherait
+    dès la bougie suivant la Validation dans **98,1%** des cas (délai médian
+    0 bougie contre 43 aujourd'hui). Comme `conf_to_be=True`, l'activer
+    ferait passer le stop au break-even quasi immédiatement après la
+    Validation -- c'est-à-dire supprimer en substance la règle que
+    `TRADING_LESSONS_INDEX.md:35` appelle *"la correction la mieux étayée de
+    tout le corpus"* (#12:11 *"L'erreur fatale ... remonter son stop loss au
+    point d'entrée prématurément"*, #13:9 *"impératif de DISSOCIER deux
+    étapes cruciales"*, #15:28, #16:32). Le conflit ne vient PAS du corpus
+    (dont la géométrie emboîtée est cohérente) mais de nos briques : notre
+    signal entre dans la moitié HAUTE du canal de contexte 9 fois sur 10, et
+    `val_px = entry + local_range` projette +17 à +28% au-dessus de
+    l'entrée. Décompte des sources (4 structurelles contre 2 en amplitude),
+    citations complètes et hypothèses H-Conf-Struct-1..5 : bloc dédié en
+    tête de `position_engine.py`.
   - **Canal manuel comme stop** (`manual_trend_channel.py`) : lecture
     littérale elle aussi (construction géométrique Supports->Apex->Tangente,
     `TRADING_LESSONS_ALTERNATIVE_MANUELLE.md` #3), mais mesurée jusqu'ici
@@ -286,7 +316,9 @@ from backtest_phase2_v7 import (
 )
 from backtest_phase2_ut2 import attach_multi_context, CLOSURE_DELAY
 from backtest_phase2_recommended import run_recommended, WARMUP
-from position_engine import run_position_engine, make_open_tranche_fn
+from position_engine import (
+    run_position_engine, make_open_tranche_fn, make_structural_conf_update_fn,
+)
 from wall_street_pattern import add_wall_street_column
 from capital_tiers import effective_sizing
 from regime_classifier import compute_wide_channel
@@ -343,6 +375,12 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         "ctx_support_d1": ctx["D1"]["ctx_support"],   # stop UT+1, littéral -- toujours utilisé ici
         "local_range": h4["local_range"].values,
         "context_range": h4["context_range"].values,
+        # Niveau structurel ABSOLU de l'étape Confirmation
+        # (`RULES_EXTRACTION.md:41`). Colonne produite par `prepare`,
+        # STRICTEMENT ADDITIVE : lue seulement si
+        # `use_structural_confirmation=True` (défaut OFF, cf.
+        # H-Conf-Struct-5 dans `position_engine.py`).
+        "ctx_median": h4["ctx_median"].values,
         "n_borders": h4["n_borders"].values,
         "gate_score": gate_score,
         "gate_regime": gate_regime,
@@ -359,7 +397,8 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
 
 
 def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
-              start: int = 0, end: int = None, record_trace: bool = False) -> dict:
+              start: int = 0, end: int = None, record_trace: bool = False,
+              use_structural_confirmation: bool = False) -> dict:
     """Même structure que `backtest_phase2_recommended.py::_run_core`, avec
     3 différences NON CONDITIONNELLES (cf. tête de fichier) : stop = D1
     (UT+1, jamais le canal H4 natif), abstention Wall Street (bloque entrée
@@ -386,6 +425,18 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
     regime_d1_v = feat["regime_d1"][start_:end]
     wall_street_v = feat["wall_street_active"][start_:end]
     wide_channel_v = feat["wide_channel"][start_:end]   # littéral, non conditionnel
+    # OPTIONNEL (défaut OFF) : la clé n'est LUE que si le mode structurel est
+    # demandé, pour qu'un appelant qui construit son propre `feat` (tests
+    # synthétiques, harnais externes) ne soit jamais cassé par l'ajout de
+    # cette clé. Si le mode est demandé sans la clé, échec EXPLICITE plutôt
+    # que dégradation silencieuse (même discipline que le gate "espace libre"
+    # de `trend_table.py`, qui lève aussi une ValueError si on l'active sans
+    # les données requises).
+    if use_structural_confirmation and "ctx_median" not in feat:
+        raise ValueError(
+            "use_structural_confirmation=True exige la clé 'ctx_median' dans "
+            "`feat` (produite par `_prepare_features`, via `prepare`)")
+    ctx_median_v = feat["ctx_median"][start_:end] if use_structural_confirmation else None
     n = end - start_
 
     local_warmup = max(0, WARMUP - start_)
@@ -438,6 +489,10 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
         val_close_frac=p["val_close"], conf_close_frac=p["conf_close"],
         conf_to_be=True, max_tranches=MAX_TRANCHES, fee=FEE,
         record_trace=record_trace, reverse_at_limit=reverse_at_limit,
+        update_levels_fn=(
+            make_structural_conf_update_fn(ctx_median_v)
+            if use_structural_confirmation else None
+        ),
     )
     result = {
         "n_trades": raw["n_trades"], "max_dd_%": raw["max_dd_%"],
@@ -453,7 +508,8 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
 
 def run_faithful(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profile_name: str,
                   capital_eur: float = None, record_trace: bool = False,
-                  use_mtf_gate: bool = True) -> dict:
+                  use_mtf_gate: bool = True,
+                  use_structural_confirmation: bool = False) -> dict:
     """Point d'entrée principal -- moteur RANGE avec les 3 règles littérales
     du corpus activées SANS CONDITION (cf. tête de fichier). `capital_eur`
     (optionnel) : même paramètre de sizing que `recommended.py`, décision #9,
@@ -465,7 +521,8 @@ def run_faithful(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profi
     if capital_eur is not None:
         sizing = effective_sizing(capital_eur, profile_name, PROFILES_V4, MAX_TRANCHES)
         risk_pct = sizing.risk_pct
-    return _run_core(feat, profile_name, risk_pct=risk_pct, record_trace=record_trace)
+    return _run_core(feat, profile_name, risk_pct=risk_pct, record_trace=record_trace,
+                     use_structural_confirmation=use_structural_confirmation)
 
 
 def main():

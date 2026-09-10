@@ -111,6 +111,53 @@ H5. **"Gestion du stop après validation : remonté sous le dernier creux
 Ce module ne fait QUE PRODUIRE LE SIGNAL D'ENTRÉE causal (booléen par
 bougie) — comme `proxy_v2.add_proxy_v2_score` et `fibonacci.
 add_fibonacci_columns` — il ne gère aucune position (cf. H5 ci-dessus).
+
+================================================================================
+⚠️ HOMONYMIE À NE PAS CONFONDRE (15e application) — note documentaire,
+zéro comportement
+================================================================================
+Le corpus emploie le mot "cluster" pour TROIS règles distinctes. Ce fichier
+n'en implémente QU'UNE (la deuxième ci-dessous). Cette note existe pour
+qu'un lecteur qui arrive ici en cherchant "Cluster Technique" ne conclue pas
+que les deux autres sont couvertes par ce module :
+
+  (1) `TRADING_LESSONS_BREAKOUT_RATIO11.md:29` (#12) — *"**Cluster
+      technique** : le breakout ne se traite pas sur un niveau isolé, mais
+      sur la convergence de plusieurs informations (trendlines majeures,
+      bornes de canaux de contexte, limites de range) en une même zone"*.
+      MÊME NOM, RÈGLE DIFFÉRENTE : convergence de STRUCTURES DE PRIX,
+      évaluée AVANT/AU breakout, comme critère de maturité — là où ce
+      fichier détecte un rebond de mean-reversion APRÈS le breakout
+      (*"flux tendanciel établi (post-breakout)"*, H3). Les composants ne
+      se recouvrent que partiellement ("bornes de canaux de contexte" de
+      #12 ≈ la "Zone de Demande" de H2) ; #12 ne mentionne jamais la MA20,
+      et #16 ne mentionne ni trendlines ni limites de range.
+      **NON IMPLÉMENTÉE — décision prise, mesurée et documentée** : voir
+      le bloc "NOTE (15e application) — Cluster technique" en tête
+      de `code/trend_table.py` (le fichier où vit `breakout_raw`, le gate
+      qui serait concerné), et `PLAN.md` section "15e application".
+      Résumé du motif : le corpus ne donne NI le nombre de structures
+      ("plusieurs") NI la tolérance de distance ("en une même zone"), et
+      mesuré, ces deux paramètres inventés décideraient à eux seuls du
+      résultat (de 0,0 % à 100 % des bougies candidates acceptées).
+
+  (2) `TRADING_LESSONS_CLUSTERS_PRIX.md:19` (#16) — le "Cluster Technique"
+      MA20 + Zone de Demande : **c'est CE fichier**, cf. tout ce qui
+      précède. Noter que H2 qualifie déjà sa propre conjonction de
+      *"confluence de deux techniques au même endroit"* — le PRINCIPE de
+      confluence existe donc bien dans le projet ; c'est son application
+      aux composants et au moment de #12 qui n'existe pas.
+
+  (3) `TRADING_LESSONS_ZONE_ACCUMULATION.md:25` (#10, *"Retracement dans un
+      cluster 38-50%"*) et `TRADING_LESSONS_PULLBACK_MATURITE.md:48` (#13,
+      *"Cluster Fibonacci | Entre 23% et 38%"*) — ici "cluster" désigne une
+      BANDE de retracement, pas une convergence du tout. Déjà implémenté
+      ailleurs (`fibonacci.py`, `trend_table.py::ACCUM_RETRACEMENT_LOW/
+      HIGH`), sans rapport avec ce module.
+
+Même famille de piège que les trois "moyennes 20 périodes" distinctes du
+projet, documentées au 9e round (MA20 de prix/entrée ici, MA20 de VOLUME
+dans `trend_table.py` H9, MA20 de prix/contexte/invalidation du Red Flag 1).
 """
 import numpy as np
 import pandas as pd

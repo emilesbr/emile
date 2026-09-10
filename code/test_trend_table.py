@@ -510,6 +510,168 @@ def test_breakout_space_gate_requires_both_levels():
             raise AssertionError(f"ValueError attendue pour kwargs={list(kwargs)}")
 
 
+# ---------------------------------------------------------------------------
+# Test 13 : "Règle de l'Overlap" (#14 `STRUCTURES_ALTERATIONS.md:28`) — le
+# NIVEAU est tracé par les EXTRÊMES, la CLÔTURE est le TEST, les mèches sont
+# tolérées. Vérifie que c'est DÉJÀ la convention de `breakout_raw` (via sa
+# réplique certifiée `raw_breakout_candidates`), pas une règle à ajouter.
+#
+# Citation vérifiée mot pour mot :
+#   "Règle de l'Overlap : l'ancienne résistance devient support. C'est une
+#    zone de tolérance, pas une ligne mathématique — les mèches peuvent
+#    pénétrer l'ancien territoire, mais les clôtures de bougies doivent
+#    rester à l'extérieur pour valider la structure."
+#
+# Trois assertions, dont un CONTRÔLE POSITIF explicite (sans lui, un test qui
+# ne déclenche jamais passerait pour la mauvaise raison — même discipline que
+# `test_ut2.py::test_no_bearish_regime_exists...` au round précédent) :
+#   (a) niveau = extrêmes : `local_high` est le max glissant des HAUTS
+#       décalé de 1, jamais un max de clôtures ;
+#   (b) tolérance des mèches (contrôle NÉGATIF) : une bougie dont le HAUT
+#       dépasse le niveau mais dont la CLÔTURE reste en dessous ne déclenche
+#       RIEN ;
+#   (c) contrôle POSITIF : la même bougie, clôture portée au-dessus du
+#       niveau, déclenche bien.
+# ---------------------------------------------------------------------------
+def test_overlap_convention_already_in_breakout_raw():
+    import numpy as np
+    import pandas as pd
+    from trend_table import (add_trend_context, raw_breakout_candidates,
+                              VOLUME_MA_WINDOW, VOLUME_EXPANSION_MULT)
+
+    n = 120
+    dates = pd.date_range("2024-01-01", periods=n, freq="4h")
+
+    def frame(close_at_breakout: float) -> tuple:
+        """Série synthétique plate, puis UNE bougie qui pique au-dessus du
+        plus-haut local. `close_at_breakout` décide si la CLÔTURE dépasse ou
+        non le niveau — c'est la seule chose qui change entre (b) et (c)."""
+        high = np.full(n, 100.0)
+        low = np.full(n, 99.0)
+        close = np.full(n, 99.5)
+        # i = 100 : mèche à 110 (bien au-dessus du plus-haut local = 100),
+        # clôture pilotée par l'argument.
+        i = 100
+        high[i] = 110.0
+        close[i] = close_at_breakout
+        df = pd.DataFrame({
+            "date": dates, "open": close, "high": high, "low": low, "close": close,
+            # colonnes normalement posées par `prepare`, fournies directement
+            # ici : ce test porte sur la CONVENTION de validation, pas sur le
+            # proxy. `score >= 2` et l'expansion de volume sont donc rendus
+            # vrais partout pour les neutraliser.
+            "atr": np.full(n, 1.0),
+            "ctx_support": np.full(n, 90.0),
+            "score": np.full(n, 2.0),
+        })
+        df = add_trend_context(df)
+        vol = pd.DataFrame({"date": dates, "volume": np.full(n, 1.0)})
+        # expansion de volume : volume[i] > 1.5 * moyenne mobile décalée
+        vol.loc[i, "volume"] = 10.0
+        return df, vol, i
+
+    # --- (a) le niveau vient des EXTRÊMES, pas des clôtures ---
+    df, vol, i = frame(close_at_breakout=99.5)
+    ts = df.set_index("date")
+    expected_level = ts["high"].rolling("5D").max().shift(1).values
+    got_level = df["local_high"].values
+    m = np.isfinite(expected_level) & np.isfinite(got_level)
+    assert m.sum() > 0, "aucun niveau calculé -- le test ne vérifierait rien"
+    assert np.allclose(got_level[m], expected_level[m]), \
+        "`local_high` n'est pas le max glissant des HAUTS décalé de 1"
+    # et il vaut bien 100 (le haut), pas 99,5 (la clôture), avant la cassure
+    assert fclose(float(df["local_high"].values[i]), 100.0), \
+        f"niveau attendu 100.0 (extrême), obtenu {df['local_high'].values[i]}"
+
+    # --- (b) contrôle NÉGATIF : mèche à 110 mais clôture à 99,5 -> rien ---
+    cand_wick_only = raw_breakout_candidates(df, vol)
+    assert not bool(cand_wick_only[i + 1]), (
+        "une mèche qui pénètre le niveau ne doit RIEN déclencher "
+        "(#14:28, 'les mèches peuvent pénétrer l'ancien territoire')")
+    assert not cand_wick_only.any(), \
+        "aucune autre bougie ne devait déclencher dans ce scénario"
+
+    # --- (c) contrôle POSITIF : même bougie, clôture à 105 -> déclenche ---
+    df2, vol2, i2 = frame(close_at_breakout=105.0)
+    cand_close = raw_breakout_candidates(df2, vol2)
+    assert bool(cand_close[i2 + 1]), (
+        "une CLÔTURE au-dessus du niveau doit déclencher -- sans ce contrôle "
+        "positif, l'assertion (b) passerait pour la mauvaise raison")
+    assert cand_close.sum() == 1, \
+        f"exactement 1 déclenchement attendu, obtenu {int(cand_close.sum())}"
+
+    # Les deux scénarios ne diffèrent QUE par la clôture : le haut, le bas et
+    # le volume sont identiques. C'est donc bien la clôture, et elle seule,
+    # qui valide la structure -- la règle de l'Overlap, déjà implémentée.
+    assert np.array_equal(df["high"].values, df2["high"].values)
+    assert np.array_equal(df["low"].values, df2["low"].values)
+    assert np.array_equal(vol["volume"].values, vol2["volume"].values)
+
+
+# ---------------------------------------------------------------------------
+# Test 14 : "limites de range" et niveau cassé ne sont PAS deux informations
+#           indépendantes dans ce projet (prémisse du refus d'implémenter le
+#           "Cluster technique" de #12, cf. note dédiée en tête de
+#           `trend_table.py` et `PLAN.md` section "15e application").
+#
+# `local_high` (max glissant LOCAL_DURATION des HAUTS) et `ctx_high` (max
+# glissant CONTEXT_DURATION des mêmes HAUTS) sont deux maxima de LA MÊME
+# SÉRIE sur des fenêtres EMBOÎTÉES (5D ⊂ 15D) : `local_high <= ctx_high`
+# est vrai par construction, et les deux sont EXACTEMENT ÉGAUX dès que le
+# plus-haut des 15 jours tombe dans les 5 derniers -- ce qui est le cas
+# typique d'une bougie de cassure. Un gate de "convergence" qui compterait
+# `ctx_high` comme une structure convergeant vers `local_high` compterait
+# donc le niveau de référence avec lui-même.
+#
+# Ce test échouera si la définition de l'une des deux fenêtres change au
+# point de rompre l'emboîtement -- c'est voulu : la note de `trend_table.py`
+# s'appuie sur cette propriété.
+# ---------------------------------------------------------------------------
+def test_range_limit_is_not_independent_of_the_broken_level():
+    import numpy as np
+    import pandas as pd
+    from trend_table import add_trend_context
+
+    n = 150                                    # 25 jours en H4 (6 bougies/jour)
+    dates = pd.date_range("2024-01-01", periods=n, freq="4h")
+    high = np.full(n, 100.0)
+    spike = 60                                 # jour 10 : un plus-haut isolé
+    high[spike] = 200.0
+
+    df = pd.DataFrame({
+        "date": dates, "open": high, "high": high,
+        "low": np.full(n, 99.0), "close": np.full(n, 99.5),
+        "atr": np.full(n, 1.0), "ctx_support": np.full(n, 90.0),
+    })
+    df = add_trend_context(df)
+
+    lh = df["local_high"].values
+    ch = df["ctx_high"].values
+    both = ~np.isnan(lh) & ~np.isnan(ch)
+    assert both.sum() > 0, "aucune barre exploitable -- test vide"
+
+    # (a) L'invariant d'emboîtement, sur toutes les barres définies.
+    assert np.all(lh[both] <= ch[both] + 1e-12), (
+        "local_high > ctx_high sur au moins une barre : les fenêtres "
+        "LOCAL_DURATION/CONTEXT_DURATION ne sont plus emboîtées")
+
+    # (b) Égalité EXACTE tant que le pic est dans les deux fenêtres : c'est le
+    #     cas dégénéré qui rend la "convergence" triviale.
+    equal_at_spike = both & (lh == 200.0) & (ch == 200.0)
+    assert equal_at_spike.sum() > 0, (
+        "aucune barre où local_high == ctx_high == 200 : le cas dégénéré "
+        "que la note documente n'est plus reproduit")
+
+    # (c) CONTRÔLE POSITIF -- sans lui, (a) passerait pour la mauvaise raison
+    #     (par exemple si les deux colonnes étaient partout identiques).
+    #     Il existe bien des barres où le pic a quitté la fenêtre LOCALE mais
+    #     pas la fenêtre CONTEXTE : les deux grandeurs sont alors distinctes.
+    strictly_below = both & (lh == 100.0) & (ch == 200.0)
+    assert strictly_below.sum() > 0, (
+        "aucune barre où local_high (100) < ctx_high (200) : le test ne "
+        "distingue pas réellement les deux fenêtres, il est vacant")
+
+
 TESTS = [
     test_add_leg_risk_cap,
     test_add_leg_blended_entry_price,
@@ -523,6 +685,8 @@ TESTS = [
     test_attach_obstacle_level_no_lookahead,
     test_raw_breakout_candidates_matches_engine_expression,
     test_breakout_space_gate_requires_both_levels,
+    test_overlap_convention_already_in_breakout_raw,
+    test_range_limit_is_not_independent_of_the_broken_level,
 ]
 
 
