@@ -20,6 +20,7 @@ from proxy_v2 import add_proxy_v2_score, compute_swing_low_confirmed
 from position_engine import (
     run_position_engine, make_open_tranche_fn,
     context_channel_median, make_structural_conf_update_fn,
+    compute_squeezed_third_border, SQUEEZE_LIFETIME,
 )
 from regime_classifier import add_regime, compute_wide_channel
 
@@ -111,7 +112,9 @@ def attach_higher_context(df_low: pd.DataFrame, df_high: pd.DataFrame, high_dura
 def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: bool = True,
            use_mtf_stop: bool = False, record_trace: bool = False, reverse_at_limit: bool = False,
            use_wide_channel_halving: bool = False,
-           use_structural_confirmation: bool = False) -> dict:
+           use_structural_confirmation: bool = False,
+           use_squeezed_third_border: bool = False,
+           squeeze_lifetime: int = SQUEEZE_LIFETIME) -> dict:
     """`use_mtf_stop` (défaut False, préserve le comportement historique de
     v7) : si True, le stop ("Extreme Channel") utilisé à l'entrée est celui
     calculé sur le VRAI D1 (`ctx_support` D1, transmis sans lookahead par
@@ -156,7 +159,18 @@ def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: 
     (le niveau est déjà franchi à l'entrée dans 9 cas sur 10, ce qui
     collapserait Confirmation sur Validation et détruirait la règle du
     break-even différé) : bloc dédié en tête de `position_engine.py`.
-    Ce moteur-ci est le banc de MESURE isolé de la règle."""
+    Ce moteur-ci est le banc de MESURE isolé de la règle.
+
+    `use_squeezed_third_border` (défaut False, préserve le comportement
+    historique de v7, même convention que les paramètres ci-dessus) :
+    active la variante d'entrée "3ème borne squeezée" de
+    `TRADING_LESSONS_PYRAMIDALISATION.md` (#15, Variante 2) -- un SECOND
+    chemin d'ouverture par ordre "Limite Achat" au point médian du mouvement,
+    en plus de l'entrée au marché existante. Citation exacte, périmètre et
+    hypothèses H-Squeeze-1..8 : bloc dédié en tête de `position_engine.py`.
+    Ce moteur-ci est le banc de MESURE de la variante (comme
+    `reverse_at_limit`) ; `squeeze_lifetime` n'est exposé que pour la mesure
+    de sensibilité de H-Squeeze-6, jamais pour calibrer."""
     p = PROFILES_V4[profile_name]
     h4 = prepare(h4)
     d1 = prepare(d1)
@@ -172,6 +186,17 @@ def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: 
     context_range_v = h4["context_range"].values
     n_borders_v = h4["n_borders"].values
     high, low, o, c = h4["high"].values, h4["low"].values, h4["open"].values, h4["close"].values
+
+    # Variante 2 de #15 : les trois tableaux du détecteur, calculés UNE fois
+    # ici (le moteur de position ne recalcule aucun indicateur). La primitive
+    # de swing est la même que celle de `n_borders` ci-dessus, réutilisée
+    # telle quelle -- pas une seconde définition de "borne" (H-Squeeze-1).
+    squeeze_armed_v = squeeze_mid_v = squeeze_sup_v = squeeze_low_v = None
+    if use_squeezed_third_border:
+        is_swing_low = compute_swing_low_confirmed(low, order=SWING_ORDER)
+        squeeze_armed_v, squeeze_mid_v, squeeze_sup_v = compute_squeezed_third_border(
+            low, high, local_range_v, is_swing_low, SWING_ORDER)
+        squeeze_low_v = low
     n = len(h4)
     warmup = EMA_SLOW + 20
     long_signal = score >= 2
@@ -192,6 +217,9 @@ def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: 
         atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v, high, o, score,
         warmup, MIN_BORDERS, MAX_TRANCHES, RULE3_STREAK, RULE3_SIZE_MULT, p["risk_pct"], state,
         extra_gate_fn=gate_extra, wide_channel_v=wide_channel_v,
+        squeeze_armed_v=squeeze_armed_v, squeeze_mid_v=squeeze_mid_v,
+        squeeze_sup_v=squeeze_sup_v, low_v=squeeze_low_v,
+        squeeze_lifetime=squeeze_lifetime,
     )
 
     # NB : la sortie de signal (flip) doit aussi respecter le gate MTF pour
@@ -217,6 +245,13 @@ def run_v7(h4: pd.DataFrame, d1: pd.DataFrame, profile_name: str, use_mtf_gate: 
         "total_return_%": raw["total_return_%"], "win_rate_%": raw["win_rate_%"],
         "profit_factor": raw["profit_factor"],
     }
+    if use_squeezed_third_border:
+        # Diagnostic de la variante (bookkeeping pur, n'entre dans aucun
+        # calcul) : un mécanisme qui ne se déclenche jamais doit être
+        # distinguable d'un mécanisme qui se déclenche sans rien changer.
+        result["squeeze_armed_seen"] = state.get("squeeze_armed_seen", 0)
+        result["squeeze_orders"] = state.get("squeeze_orders", 0)
+        result["squeeze_fills"] = state.get("squeeze_fills", 0)
     if record_trace:
         # dates H4 (une par bougie, même longueur que o/high/low/c) -- pour
         # que l'appelant (funding_rate_exact.py) puisse aligner chaque

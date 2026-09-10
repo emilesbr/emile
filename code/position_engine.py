@@ -276,6 +276,124 @@ H-Canal-Large-4 -- PÉRIMÈTRE : table RANGE seulement (ce fichier), PAS la
   périmètre et documentée ici, plutôt qu'appliquée en silence par analogie.
 
 ================================================================================
+VARIANTE D'ENTRÉE "3ÈME BORNE SQUEEZÉE" (#15, Variante 2) -- IMPLÉMENTÉE ICI
+(`compute_squeezed_third_border` + branche "Limite Achat" de
+`make_open_tranche_fn`, toutes deux INERTES par défaut). Décision, mesures et
+raisonnement complets : `PLAN.md` section "18e application",
+`COUVERTURE_ENSEIGNEMENTS.md`.
+================================================================================
+Citation exacte, vérifiée mot pour mot
+(`TRADING_LESSONS_PYRAMIDALISATION.md` ligne 24, section "Patterns de
+pyramidalisation") :
+
+    **Variante 2 -- 3ème borne "squeezée" (marché très volatil)** : si le
+    marché explose et atteint le ratio 1:1 sans retracement préalable, la
+    3ème borne théorique se situe au milieu (50%) de l'amplitude du
+    mouvement -> ordre "Limite Achat" sur ce point médian. Stop loss sous le
+    dernier support significatif. Le ratio 1:1 n'est pas un objectif de
+    profit mais un **point de validation mathématique** du trade.
+
+POURQUOI CE FICHIER ET PAS `trend_table.py` (l'item d'audit disait l'inverse
+-- "mécanisme d'entrée alternatif absent de `trend_table.py`" -- et ce point
+de départ est FAUX, vérifié par grep, pas supposé) : la Variante 1 de la MÊME
+section, à laquelle la Variante 2 est l'alternative, est ici et nulle part
+ailleurs. Ses deux constituants nommés sont (i) *"la maturation de la 3ème
+borne"* = `mature = n_borders_v[j] >= min_borders` avec `MIN_BORDERS = 3`
+dans les 9 moteurs, et (ii) *"validation au ratio 1:1 (report de l'amplitude
+du range)"* = `val_px = entry + local_range_v[j]`, l'étape que #12:8 nomme
+elle-même *"Phase de Validation (Ratio 1:1 Tendance)"*. `trend_table.py` n'a
+NI l'un NI l'autre : il ne consomme `local_range` que pour le gate d'espace
+libre (H15) et n'a AUCUNE projection d'amplitude 1:1 (constat déjà établi au
+12e round, revérifié ici par grep de `val_px`/`local_range` dans ce
+fichier-là). Le foyer de la Variante 2 est donc la table RANGE, comme pour
+"+Reverse" (§3) avant elle.
+
+CE QUE LE MÉCANISME AJOUTE, EXACTEMENT : un SECOND chemin d'ouverture, en
+plus (jamais à la place) de l'entrée au marché existante -- un ordre "Limite
+Achat" en attente, posé sous le prix, qui ne se remplit que si le marché
+revient au point médian. C'est le premier endroit de ce moteur où une
+tranche n'entre PAS à `o[i]`. Rien n'est retiré : quand la branche est
+désactivée (défaut), le code retourne bit-à-bit ce qu'il retournait avant.
+
+H-Squeeze-1 -- ORIGINE DU MOUVEMENT (*"l'amplitude du mouvement"*, dont la
+  source ne donne pas les deux bouts) = le DERNIER CREUX DE SWING CONFIRMÉ
+  (`proxy_v2.compute_swing_low_confirmed`, primitive causale déjà en place
+  depuis P0-bis, passée en argument -- ce fichier ne recalcule aucun
+  indicateur, cf. sa philosophie de tête). Choisi plutôt qu'une fenêtre
+  glissante pour une raison mesurée, pas esthétique : `local_range` est
+  lui-même un `max(high) - min(low)` glissant sur 5 jours, donc prendre le
+  bas de cette même fenêtre comme origine rendrait la condition "le
+  mouvement vaut au moins un `local_range`" quasi TAUTOLOGIQUE (vraie par
+  construction dès que le prix fait un plus haut de 5 jours). Le creux de
+  swing est une structure, pas un bord de fenêtre -- et c'est aussi ce qui
+  donne son sens à "3ème borne" (les bornes de ce projet SONT ces creux
+  confirmés : `n_borders` les compte).
+H-Squeeze-2 -- *"atteint le ratio 1:1"* = `(plus haut depuis le creux) -
+  (creux) >= 1.0 x local_range`. Réutilise la SEULE amplitude 1:1 du projet
+  (`local_range`, celle de `val_px`), et le multiplicateur 1.0 est la seule
+  valeur citée par le corpus -- même discipline que `BREAKOUT_SPACE_MULT` de
+  `trend_table.py` (H15). La source précise elle-même que ce 1:1 *"n'est pas
+  un objectif de profit mais un point de validation mathématique"* : il sert
+  ici de DÉCLENCHEUR, jamais de cible -- la cible de la tranche reste
+  `val_px`/`conf_px`/`lim_px`, inchangée.
+H-Squeeze-3 -- *"sans retracement préalable"* = le plus grand repli observé
+  depuis le creux, rapporté à l'amplitude totale du mouvement, reste
+  STRICTEMENT sous 23%. 23% n'est pas inventé : c'est le seuil minimal de
+  retracement du corpus (`RULES_EXTRACTION.md` §1 *"Tendance : Retracement
+  >=23%"*, `TRADING_LESSONS_PULLBACK_MATURITE.md:27` *"Seuil minimal de
+  retracement pour valider l'entrée en zone"*), déjà codé ailleurs dans le
+  projet sous le nom `fibonacci.FAVORABLE_MIN = 0.23`. Sa négation est donc
+  la lecture la plus littérale disponible de "pas de retracement" : un repli
+  qui n'atteint même pas le minimum que le corpus exige pour COMPTER comme
+  un retracement. Normalisation par l'amplitude TOTALE (et non par l'avance
+  courante) : la seconde donne trivialement 1,0 sur la barre d'origine et
+  rendrait la condition impossible à satisfaire -- vérifié empiriquement
+  (0 déclenchement sur 4/4 actifs) avant d'être écartée comme artefact de
+  définition.
+H-Squeeze-4 -- *"le milieu (50%) de l'amplitude du mouvement"* = `creux +
+  0.50 x amplitude`. 50% est donné par la source. Remplissage sur la MÈCHE
+  (`low[i] <= point médian`) et au prix le plus favorable des deux
+  (`min(médian, o[i])`, cas du gap qui traverse le niveau) : c'est la
+  convention déjà établie de ce fichier pour un ORDRE RÉEL ("stop touché sur
+  la MÈCHE (ordre réel intrabar) ; cible atteinte sur la CLÔTURE"), pas une
+  troisième convention inventée. Causalité : le niveau est calculé en
+  `j = i-1`, l'ordre est donc posé AVANT la bougie `i` ; lire `low[i]` pour
+  le remplissage est exactement ce que fait déjà `process_tranche` pour le
+  stop.
+H-Squeeze-5 -- *"Stop loss sous le dernier support significatif"* = juste
+  sous ce même creux de swing (même garde `min(..., entry * 0.999)` que
+  partout ailleurs). Appuyé par le corpus, pas choisi par commodité :
+  `TRADING_LESSONS_CLUSTERS_PRIX.md:30` *"sous le dernier creux structurel
+  (bas de clôture ou mèche)"* et `TRADING_LESSONS_ZONE_ACCUMULATION.md:38`
+  *"sous le point bas de la 4ème borne"*. NOTER que ce stop n'est PAS
+  l'Extreme Channel utilisé par l'entrée standard : la Variante 2 est le
+  seul endroit du corpus qui prescrit explicitement un autre ancrage pour
+  CETTE entrée-là, on le suit.
+H-Squeeze-6 -- DURÉE DE VIE DE L'ORDRE : **la seule vraie invention de ce
+  chantier**, assumée comme telle (même statut que H-Reverse-Range, dont le
+  manuel ne donnait ni taille, ni stop, ni cible). La source ne dit pas
+  combien de temps l'ordre "Limite Achat" reste posé, et un ordre sans
+  échéance se remplirait des mois plus tard sur un événement sans rapport.
+  Valeur retenue : **30 bougies**, le SEUL délai d'attente chiffré de tout
+  le corpus (`RULES_EXTRACTION.md:20`, *"Breakout : target invalidée après
+  30 bougies"*) -- transposition explicite d'un objet à un autre (là une
+  cible, ici un ordre), donc paramétrable et testée en sensibilité
+  (10/30/90) plutôt que présentée comme littérale.
+H-Squeeze-7 -- ARMEMENT sous les gates NORMAUX du moteur (signal, gate
+  additionnel MTF/régime, `valid_inputs`) mais **sans exiger `mature`** :
+  exiger la maturité de la 3ème borne pour un mécanisme qui existe
+  précisément parce que cette 3ème borne ne s'est jamais formée serait
+  contradictoire. Une fois posé, l'ordre ne re-teste PAS le signal au
+  remplissage : un ordre limite réel s'exécute tout seul. Si le signal a
+  disparu entre-temps, la sortie "flip" de `process_tranche` s'en charge --
+  mécanisme déjà en place, pas un second à écrire.
+H-Squeeze-8 -- L'ouverture par ordre limite NE MET PAS À JOUR
+  `state["last_pyramid_high"]` (contrairement à l'entrée standard) : ce
+  compteur sert au pyramidage "sur nouveau plus haut" (la *"verticalité"* de
+  #9:40), une mécanique orthogonale que ce chemin ne doit ni nourrir ni
+  bloquer. Garantit que le mécanisme est strictement ADDITIF.
+
+================================================================================
 "RED FLAGS D'INVALIDATION PRÉCOCE" (#10) -- EXAMINÉS ET DÉLIBÉRÉMENT PAS
 AJOUTÉS ICI. Note DOCUMENTAIRE (aucun comportement, aucune constante) --
 même discipline que la note H7 de `trend_table.py` : la trouvaille doit être
@@ -904,11 +1022,95 @@ def make_structural_conf_update_fn(ctx_median_v):
 
     return update_levels_fn
 
+# Variante d'entrée "3ème borne squeezée" (#15 Variante 2, cf. le bloc dédié en
+# tête de fichier). Les trois premières valeurs sont CITÉES par le corpus, la
+# quatrième est la seule hypothèse libre du mécanisme (H-Squeeze-6).
+SQUEEZE_RATIO = 1.0             # H-Squeeze-2, "atteint le ratio 1:1"
+SQUEEZE_NO_RETRACE_MAX = 0.23   # H-Squeeze-3, "sans retracement préalable"
+SQUEEZE_MID_FRAC = 0.5          # H-Squeeze-4, "le milieu (50%) de l'amplitude"
+SQUEEZE_LIFETIME = 30           # H-Squeeze-6, durée de vie de l'ordre (bougies)
+
+
+def compute_squeezed_third_border(low, high, local_range_v, is_swing_low_confirmed,
+                                   swing_order, ratio=SQUEEZE_RATIO,
+                                   no_retrace_max=SQUEEZE_NO_RETRACE_MAX,
+                                   mid_frac=SQUEEZE_MID_FRAC):
+    """Détecteur PUR de la configuration "3ème borne squeezée" (#15 Variante 2
+    -- citation exacte, périmètre et hypothèses H-Squeeze-1..8 : bloc dédié en
+    tête de ce fichier). Ne recalcule AUCUN indicateur : `local_range_v` et
+    `is_swing_low_confirmed` sont produits en amont par l'appelant (mêmes
+    tableaux que ceux déjà utilisés par `make_open_tranche_fn` et par
+    `n_borders`), exactement comme `compute_wide_channel` reçoit sa largeur de
+    canal déjà calculée.
+
+    Retourne trois tableaux alignés sur `low` :
+      - `armed`   : bool, la configuration est réunie à cette bougie (le
+                    mouvement depuis le dernier creux confirmé vaut au moins
+                    `ratio` x `local_range` ET n'a jamais rendu
+                    `no_retrace_max` de son amplitude) ;
+      - `mid_px`  : le point médian où poser l'ordre "Limite Achat" (H-Squeeze-4) ;
+      - `sup_px`  : le "dernier support significatif" servant de stop (H-Squeeze-5).
+    `mid_px`/`sup_px` valent NaN là où `armed` est faux.
+
+    CAUSALITÉ : un creux de swing n'est pris en compte qu'à partir de la bougie
+    où il est CONFIRMÉ (`is_swing_low_confirmed[k]` vrai -> le creux est en
+    `k - swing_order`, déjà observé), jamais à l'instant du creux lui-même --
+    même convention que `compute_swing_low_confirmed` depuis P0-bis. Toutes les
+    autres grandeurs (plus haut, repli maximal) ne regardent que des bougies
+    <= à celle évaluée.
+    """
+    low = np.asarray(low, dtype=float)
+    high = np.asarray(high, dtype=float)
+    local_range_v = np.asarray(local_range_v, dtype=float)
+    n = len(low)
+    armed = np.zeros(n, dtype=bool)
+    mid_px = np.full(n, np.nan)
+    sup_px = np.full(n, np.nan)
+
+    trough_idx = -1
+    trough = np.nan
+    peak = -np.inf
+    max_abs_pullback = 0.0
+    for k in range(n):
+        if is_swing_low_confirmed[k] and k - swing_order >= 0:
+            # Nouveau creux confirmé : on repart de lui, en rattrapant les
+            # `swing_order` bougies déjà écoulées entre le creux et sa
+            # confirmation (elles sont observées, donc légitimes).
+            trough_idx = k - swing_order
+            trough = low[trough_idx]
+            # Le suivi du repli démarre APRÈS la barre du creux : sur la barre
+            # du creux elle-même, `peak - low` vaut sa propre amplitude, ce qui
+            # n'est pas un repli mais le début du mouvement. Compter cette
+            # amplitude comme un "retracement préalable" était un défaut réel
+            # de la première version, trouvé en écrivant le test à vérité
+            # terrain ci-contre et corrigé avant toute mesure publiée.
+            peak = high[trough_idx]
+            max_abs_pullback = 0.0
+            for t in range(trough_idx + 1, k + 1):
+                peak = max(peak, high[t])
+                max_abs_pullback = max(max_abs_pullback, peak - low[t])
+        elif trough_idx >= 0:
+            peak = max(peak, high[k])
+            max_abs_pullback = max(max_abs_pullback, peak - low[k])
+        if trough_idx < 0:
+            continue
+        move = peak - trough
+        lr = local_range_v[k]
+        if move <= 0 or not np.isfinite(lr) or lr <= 0:
+            continue
+        if move >= ratio * lr and (max_abs_pullback / move) < no_retrace_max:
+            armed[k] = True
+            mid_px[k] = trough + mid_frac * move
+            sup_px[k] = trough
+    return armed, mid_px, sup_px
+
 
 def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v,
                           high, o, score, warmup, min_borders, max_tranches,
                           rule3_streak, rule3_size_mult, risk_pct, state,
-                          extra_gate_fn=None, wide_channel_v=None):
+                          extra_gate_fn=None, wide_channel_v=None,
+                          squeeze_armed_v=None, squeeze_mid_v=None, squeeze_sup_v=None,
+                          low_v=None, squeeze_lifetime=SQUEEZE_LIFETIME):
     """Factory pour `open_tranche_fn`, dette de duplication réelle relevée
     dans la rétrospective (PLAN.md) : 9 moteurs `backtest_phase2_*.py`
     (v4/v5/v6/v7/ut2/patterns/capital_tiers/fib/recommended) portaient
@@ -969,10 +1171,31 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
         cette factory ne le calcule PAS elle-même, exactement comme elle ne
         calcule aucun autre indicateur (même discipline que `score`,
         `ctx_support_v`, `n_borders_v` : des données déjà résolues en entrée).
+      - `squeeze_armed_v` / `squeeze_mid_v` / `squeeze_sup_v` / `low_v` :
+        arrays optionnels de la variante d'entrée "3ème borne squeezée"
+        (#15 Variante 2). Défaut `None` -> la branche entière est INERTE et
+        cette factory retourne bit-à-bit ce qu'elle retournait avant, pour
+        les 19 appelants existants (vérifié par test dédié). Produits par
+        `compute_squeezed_third_border` ci-dessus, jamais recalculés ici.
+        `low_v` est le seul array de PRIX nouveau : il sert uniquement à
+        constater le remplissage intrabar de l'ordre "Limite Achat" posé à
+        la bougie précédente (H-Squeeze-4) -- même usage que le `low` que
+        `process_tranche` lit déjà pour le stop.
+      - `squeeze_lifetime` : durée de vie de cet ordre en bougies
+        (H-Squeeze-6, la seule hypothèse libre du mécanisme -- 30 par défaut,
+        paramétrable pour la mesure de sensibilité, jamais pour calibrer).
 
     Retourne `open_tranche_fn(i, tranches, win_streak)`, prêt à passer tel
     quel à `run_position_engine`.
     """
+    squeeze_on = squeeze_armed_v is not None
+    if squeeze_on and any(a is None for a in (squeeze_mid_v, squeeze_sup_v, low_v)):
+        # Même discipline que le gate "espace libre" de `trend_table.py` : une
+        # variante activée à moitié échoue explicitement au lieu de se dégrader
+        # en silence en un mécanisme qui n'est plus celui du corpus.
+        raise ValueError(
+            "Variante '3ème borne squeezée' activée sans squeeze_mid_v / "
+            "squeeze_sup_v / low_v -- les quatre arrays vont ensemble.")
     def open_tranche_fn(i, tranches, win_streak):
         j = i - 1
         long_signal_prev = score[j] >= 2
@@ -994,6 +1217,53 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
             i > warmup and 0 < len(tranches) < max_tranches and pyramid_gated and valid_inputs
             and high[j] > state["last_pyramid_high"]
         )
+        # --- Variante 2 de #15, "3ème borne squeezée" : ordre "Limite Achat" --
+        # Entièrement contenue dans ce bloc, entièrement inerte quand la
+        # variante n'est pas activée (`squeeze_on` faux) -- cf. H-Squeeze-1..8
+        # en tête de fichier. Placée AVANT le test d'éligibilité standard
+        # ci-dessous parce qu'un ordre limite déjà posé s'exécute tout seul :
+        # il ne re-teste pas le signal au remplissage (H-Squeeze-7).
+        if squeeze_on:
+            if bool(squeeze_armed_v[j]):
+                # Diagnostic : nombre de bougies ARMÉES pour lesquelles cette
+                # factory a effectivement été appelée. `run_position_engine`
+                # ne l'appelle que si `len(tranches) < max_tranches` -- l'écart
+                # entre ce compteur et le nombre total de bougies armées mesure
+                # donc, sans le supposer, combien de configurations "3ème borne
+                # squeezée" tombent alors que le pyramidage est déjà saturé.
+                state["squeeze_armed_seen"] = state.get("squeeze_armed_seen", 0) + 1
+            pending = state.get("squeeze_pending")
+            if pending is not None and i > pending["expires_at"]:
+                pending = None                      # H-Squeeze-6 : échéance
+                state["squeeze_pending"] = None
+            if (pending is not None and i > warmup and valid_inputs
+                    and low_v[i] <= pending["mid"]):
+                # Remplissage sur la MÈCHE, au plus favorable des deux prix
+                # (cas du gap qui ouvre déjà sous le niveau) -- H-Squeeze-4.
+                fill_price = min(pending["mid"], o[i])
+                state["squeeze_pending"] = None
+                squeeze_tr = _build_tranche(
+                    fill_price, min(pending["sup"], fill_price * 0.999), j, win_streak)
+                if squeeze_tr is not None:
+                    # Comptage DIAGNOSTIC (bookkeeping pur, aucun effet sur le
+                    # résultat) : sans lui, un mécanisme qui ne se déclenche
+                    # jamais serait indiscernable d'un mécanisme sans effet --
+                    # la distinction que le 10e round a dû faire pour le gate
+                    # "espace libre".
+                    state["squeeze_fills"] = state.get("squeeze_fills", 0) + 1
+                    # H-Squeeze-8 : ce chemin ne nourrit PAS le compteur de
+                    # pyramidage "sur nouveau plus haut" -- strictement additif.
+                    return squeeze_tr
+            if (i > warmup and valid_inputs and bool(squeeze_armed_v[j])
+                    and (fresh_gated or pyramid_gated)
+                    and not np.isnan(squeeze_mid_v[j])):
+                if state.get("squeeze_pending") is None:
+                    state["squeeze_orders"] = state.get("squeeze_orders", 0) + 1
+                state["squeeze_pending"] = {
+                    "mid": float(squeeze_mid_v[j]), "sup": float(squeeze_sup_v[j]),
+                    "expires_at": i + squeeze_lifetime - 1,
+                }
+
         if not (is_fresh_entry or is_pyramid_add):
             return None
 
@@ -1008,7 +1278,13 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
         d'un stop DÉJÀ décidés par l'appelant. Extrait tel quel du corps de
         `open_tranche_fn` (mêmes opérations, même ordre, donc mêmes flottants
         au bit près -- vérifié par la suite de tests et par la régénération à
-        l'identique de `phase2_v7_mtf_results.csv`).
+        l'identique de `phase2_v7_mtf_results.csv`), pour que la branche
+        "Limite Achat" de la Variante 2 (#15) partage EXACTEMENT le même
+        dimensionnement que l'entrée standard au lieu d'en dupliquer une
+        seconde version. La seule chose qui reste propre à chaque chemin est ce
+        qu'il passe en `entry_price`/`stop_price` -- pour l'entrée standard
+        `o[i]` et l'Extreme Channel, pour la Variante 2 le point médian et le
+        dernier creux structurel (H-Squeeze-4/H-Squeeze-5).
 
         Retourne `None` si la taille calculée est nulle (comportement d'origine).
         """

@@ -882,6 +882,20 @@ Signe cohérent avec le mécanisme : un break-even quasi immédiat coupe les per
 
 ---
 
+## 5undecies. Variante d'entrée "3ème borne squeezée" (#15, Variante 2) — IMPLÉMENTÉE, disponible, **désactivée par défaut** (18e application)
+
+**Ce qui change pour quelqu'un qui choisit une configuration** : rien par défaut. La variante existe désormais dans le moteur (`code/position_engine.py`), elle est **inerte tant qu'on ne l'active pas** (`use_squeezed_third_border=False`), et la configuration recommandée de ce document est **inchangée**.
+
+**Ce que la variante fait quand on l'active** : elle ajoute un SECOND chemin d'entrée à la table RANGE — un ordre *"Limite Achat"* posé au point médian (50%) d'un mouvement explosif qui a atteint le ratio 1:1 sans retracement préalable, stop sous le dernier creux structurel. C'est la transcription littérale de `TRADING_LESSONS_PYRAMIDALISATION.md:24`. Elle n'enlève rien : l'entrée standard au marché reste exactement ce qu'elle était (non-régression vérifiée, écart **0** sur 16 configs × 5 métriques).
+
+**Pourquoi elle reste OFF par défaut — motif de méthode, pas de performance.** L'effet mesuré est légèrement **positif** (+0,1 à +0,9 pt sur les 4 seules configurations touchées) : la désactivation ne peut donc pas être un arbitrage de performance déguisé, contrairement au piège corrigé le 8 sept. pour le stop UT+1. Les deux vraies raisons : (i) la durée de vie de l'ordre (H-Squeeze-6, 30 bougies) est un **paramètre libre** — le corpus ne la donne pas — exactement le statut de H-Reverse-Range, elle aussi implémentée et laissée off avec son banc de mesure dédié ; (ii) `backtest_phase2_v7.py` est le banc de mesure, sa série historique doit rester comparable ligne à ligne.
+
+**Ce qu'il faut savoir avant d'envisager de l'activer** — le mécanisme est **empiriquement quasi inerte** sur les données de ce projet, et pour une raison structurelle mesurée, pas par hasard : sur BTC/ETH/BNB/SOL et ~6 ans, il pose **un seul ordre** et le remplit **une fois** (SOL). La configuration est rarissime (0,01 à 0,11 % des barres — cohérent avec une source qui la présente comme exceptionnelle), et surtout, **quand elle survient, le moteur a déjà ses 3 tranches ouvertes** (6/6 des barres armées de BNB, 12/13 d'ETH, 1/2 de BTC). Le manque à gagner que cette variante répare chez un opérateur humain — avoir raté l'entrée pendant que le marché s'envolait — n'existe presque pas dans un moteur qui entre au marché à chaque signal éligible. **Sensibilité à H-Squeeze-6 : exactement nulle** (10, 30 et 90 bougies donnent des résultats identiques au chiffre près).
+
+**Reste ouvert, explicitement** : l'activation dans `backtest_phase2_faithful.py` (le moteur opérationnel, celui où le stop UT+1 a été activé sans condition) n'est **pas tranchée** — elle demande sa propre passe de non-régression et la régénération de ses CSV. Détail complet, citations et chiffres : `PLAN.md` section "18e application", `COUVERTURE_ENSEIGNEMENTS.md`, et le bloc "VARIANTE D'ENTRÉE '3ÈME BORNE SQUEEZÉE'" en tête de `code/position_engine.py` (hypothèses H-Squeeze-1..8).
+
+---
+
 ## 6. Pour aller plus loin (documents à consulter, pas à dupliquer)
 
 - **Détail complet des preuves citées section 1** : `COUVERTURE_ENSEIGNEMENTS.md`

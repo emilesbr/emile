@@ -7,7 +7,7 @@ attendu" dans chaque test).
 Aucune donnée réelle n'est utilisée. Exécution : `python3 test_position_engine.py`.
 Affiche PASS/FAIL par test et sort avec un code non-nul si un test échoue.
 
-19 tests (5 historiques Validation/Confirmation/Limite/Invalidation/
+28 tests (5 historiques Validation/Confirmation/Limite/Invalidation/
 pyramidalisation + 3 pour le mécanisme "+Reverse" du profil Très Agressif,
 table RANGE, RULES_EXTRACTION.md §3 -- cf. le bloc dédié en tête de
 `position_engine.py`, hypothèse H-Reverse-Range -- + 5 pour la règle de
@@ -15,7 +15,9 @@ volatilité "Stop Loss = taille du canal", TRADING_LESSONS_MAITRISE_GRADIENT_
 RISQUE.md §5, hypothèses H-Canal-Large-1..4 du même fichier -- + 6 pour
 "Confirmation = médiane du canal de contexte, clôturée", RULES_EXTRACTION.md
 §3 ligne 41 et TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md ligne 55,
-hypothèses H-Conf-Struct-1..5 du même fichier).
+hypothèses H-Conf-Struct-1..5 du même fichier -- + 9 pour la variante
+d'entrée "3ème borne squeezée", TRADING_LESSONS_PYRAMIDALISATION.md
+Variante 2, hypothèses H-Squeeze-1..8 du même fichier).
 """
 import numpy as np
 
@@ -25,6 +27,7 @@ from position_engine import (
     process_tranche, process_reverse, run_position_engine, make_open_tranche_fn,
     WIDE_CHANNEL_STOP_FRAC, WIDE_CHANNEL_SIZE_FRAC,
     CONTEXT_MEDIAN_FRAC, context_channel_median, make_structural_conf_update_fn,
+    compute_squeezed_third_border, SQUEEZE_LIFETIME,
 )
 
 
@@ -636,6 +639,256 @@ def test_context_median_frac_is_the_literal_50_percent():
     assert CONTEXT_MEDIAN_FRAC == 0.5, (
         f"CONTEXT_MEDIAN_FRAC={CONTEXT_MEDIAN_FRAC}, la source dit "
         f"'la médiane (50%) du contexte'")
+# ===========================================================================
+# Variante d'entrée "3ème borne squeezée" (#15 Variante 2) -- hypothèses
+# H-Squeeze-1..8 en tête de `position_engine.py`. Tous les cas ci-dessous
+# sont calculés À LA MAIN dans les docstrings AVANT d'exécuter le code.
+# ===========================================================================
+
+# Série synthétique commune aux tests du détecteur, `swing_order = 1`.
+#
+#   i | low | high | commentaire
+#   --+-----+------+-------------------------------------------------------
+#   0 | 100 | 105  | avant le creux
+#   1 |  90 |  95  | LE CREUX (trough), L = 90
+#   2 |  96 | 100  | confirmation du creux (k = trough_idx + swing_order = 2)
+#   3 | 105 | 110  |
+#   4 | 112 | 120  |
+#   5 | 118 | 125  |
+_SQ_LOW = [100.0, 90.0, 96.0, 105.0, 112.0, 118.0]
+_SQ_HIGH = [105.0, 95.0, 100.0, 110.0, 120.0, 125.0]
+_SQ_CONF = [False, False, True, False, False, False]
+_SQ_ORDER = 1
+
+
+def test_squeezed_third_border_positive_case_hand_computed():
+    """Cas POSITIF, calculé à la main barre par barre (H-Squeeze-1..4).
+
+    Le creux est en i=1 (L = 90), confirmé en i=2. Le suivi du repli démarre
+    APRÈS la barre du creux (le `peak` est initialisé à high[1] = 95) :
+
+      i=2 : peak = max(95, 100) = 100 ; repli = 100 - 96 = 4
+            mouvement = 100 - 90 = 10 ; 10 >= local_range(20) ? NON -> pas armé
+      i=3 : peak = 110 ; repli = max(4, 110 - 105) = 5
+            mouvement = 20 ; 20 >= 20 OUI ; 5/20 = 0,250 >= 0,23 -> PAS armé
+      i=4 : peak = 120 ; repli = max(5, 120 - 112) = 8
+            mouvement = 30 ; 8/30 = 0,2667 >= 0,23 -> PAS armé
+      i=5 : peak = 125 ; repli = max(8, 125 - 118 = 7) = 8
+            mouvement = 35 ; 8/35 = 0,22857 < 0,23 -> ARMÉ
+
+    Le seuil 0,23 est donc franchi entre i=4 et i=5, et la valeur attendue du
+    point médian (H-Squeeze-4) est L + 0,50 x 35 = 90 + 17,5 = 107,5, le stop
+    (H-Squeeze-5) valant le creux lui-même, 90."""
+    lr = [20.0] * 6
+    armed, mid, sup = compute_squeezed_third_border(
+        _SQ_LOW, _SQ_HIGH, lr, _SQ_CONF, _SQ_ORDER)
+
+    assert list(armed) == [False, False, False, False, False, True], list(armed)
+    assert mid[5] == 107.5, mid[5]
+    assert sup[5] == 90.0, sup[5]
+    # Là où la configuration n'est pas réunie, les deux niveaux sont NaN --
+    # aucun ordre ne peut être posé par erreur sur une valeur résiduelle.
+    assert all(np.isnan(mid[k]) for k in range(5)), mid
+    assert all(np.isnan(sup[k]) for k in range(5)), sup
+
+
+def test_squeezed_third_border_negative_case_retracement_invalidates():
+    """Cas NÉGATIF (contrôle) : même série, mais la barre i=4 creuse à 105 au
+    lieu de 112 -- un vrai repli au milieu du mouvement.
+
+      i=4 : peak = 120 ; repli = 120 - 105 = 15 ; mouvement = 30 -> 0,50
+      i=5 : peak = 125 ; repli = max(15, 125 - 118 = 7) = 15
+            mouvement = 35 ; 15/35 = 0,4286 >= 0,23 -> JAMAIS armé
+
+    C'est exactement la clause *"sans retracement préalable"* (H-Squeeze-3) :
+    un mouvement de même amplitude, mais qui a rendu 43% de son avance en
+    route, n'est PAS une 3ème borne squeezée."""
+    low = list(_SQ_LOW)
+    low[4] = 105.0
+    lr = [20.0] * 6
+    armed, mid, sup = compute_squeezed_third_border(
+        low, _SQ_HIGH, lr, _SQ_CONF, _SQ_ORDER)
+
+    assert not armed.any(), list(armed)
+    assert all(np.isnan(v) for v in mid), mid
+
+
+def test_squeezed_third_border_requires_the_1_to_1_ratio():
+    """Second contrôle négatif, sur l'AUTRE moitié de la condition
+    (H-Squeeze-2) : série identique au cas positif, mais `local_range` porté
+    de 20 à 40. Le mouvement maximal atteint 35 < 40, donc le ratio 1:1
+    n'est jamais atteint et rien n'est armé, alors même que le critère
+    "sans retracement" reste satisfait en i=5. Les deux conditions sont bien
+    cumulatives, pas alternatives."""
+    armed, _, _ = compute_squeezed_third_border(
+        _SQ_LOW, _SQ_HIGH, [40.0] * 6, _SQ_CONF, _SQ_ORDER)
+    assert not armed.any(), list(armed)
+
+
+# --- Branche "Limite Achat" de make_open_tranche_fn ------------------------
+#
+# Scénario synthétique commun, construit pour ISOLER le nouveau chemin : on
+# force `n_borders = 0` partout, donc `mature` est FAUX et l'entrée standard
+# (`is_fresh_entry`) ne peut JAMAIS s'ouvrir. Toute tranche produite ci-dessous
+# vient donc nécessairement de l'ordre "Limite Achat" -- c'est précisément la
+# situation que décrit la source (la 3ème borne ne s'est jamais formée).
+_SQ_N = 40
+
+
+def _squeeze_factory(mid=100.0, sup=90.0, arm_at=1, o_fill=102.0, low_fill=99.0,
+                     fill_bar=3, enabled=True, lifetime=None, risk_pct=0.02):
+    """Fabrique un `open_tranche_fn` sur des tableaux synthétiques constants.
+    `arm_at` est l'indice `j` où la configuration est armée (donc l'ordre est
+    posé à l'appel `i = arm_at + 1`)."""
+    n = _SQ_N
+    o = np.full(n, 200.0)
+    high = np.full(n, 200.0)
+    low = np.full(n, 200.0)
+    o[fill_bar] = o_fill
+    low[fill_bar] = low_fill
+    atr_v = np.full(n, 1.0)
+    ctx_support_v = np.full(n, 150.0)
+    local_range_v = np.full(n, 10.0)
+    context_range_v = np.full(n, 20.0)
+    n_borders_v = np.zeros(n)          # -> `mature` toujours FAUX
+    score = np.full(n, 2.0)            # -> signal long toujours actif
+    state = {"last_pyramid_high": -np.inf}
+
+    armed = np.zeros(n, dtype=bool)
+    armed[arm_at] = True
+    mid_v = np.full(n, np.nan)
+    sup_v = np.full(n, np.nan)
+    mid_v[arm_at] = mid
+    sup_v[arm_at] = sup
+
+    kwargs = {}
+    if enabled:
+        kwargs = {"squeeze_armed_v": armed, "squeeze_mid_v": mid_v,
+                  "squeeze_sup_v": sup_v, "low_v": low}
+        if lifetime is not None:
+            kwargs["squeeze_lifetime"] = lifetime
+    fn = make_open_tranche_fn(
+        atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v,
+        high, o, score, warmup=0, min_borders=3, max_tranches=3,
+        rule3_streak=3, rule3_size_mult=0.5, risk_pct=risk_pct, state=state,
+        **kwargs)
+    return fn, state
+
+
+def test_squeeze_limit_order_fills_with_hand_computed_levels():
+    """Chemin nominal, entièrement calculé à la main.
+
+    i=2 : l'ordre est POSÉ (configuration armée en j=1), aucune tranche ouverte.
+    i=3 : la mèche descend à 99 <= 100 -> l'ordre se remplit.
+          prix de remplissage = min(médian 100 ; open 102) = 100 (H-Squeeze-4)
+          stop = min(support 90 ; 100 x 0,999 = 99,9) = 90       (H-Squeeze-5)
+          stop_pct = (100 - 90) / 100 = 0,10
+          taille = min(1/3 ; 0,02 / 0,10) = min(0,3333 ; 0,20) = 0,20
+          val_px  = 100 + local_range(10)        = 110
+          conf_px = 100 + context_range(20)      = 120
+          lim_px  = 100 + 1,5 x context_range(20) = 130
+    Rien n'aurait pu s'ouvrir par le chemin standard : `n_borders = 0` donc
+    `mature` est faux (H-Squeeze-7)."""
+    fn, state = _squeeze_factory()
+
+    assert fn(2, [], 0) is None, "l'ordre est seulement POSÉ à i=2, pas rempli"
+    assert state["squeeze_pending"] is not None
+    assert state["squeeze_pending"]["expires_at"] == 2 + 30 - 1
+
+    tr = fn(3, [], 0)
+    assert tr is not None, "l'ordre aurait dû se remplir à i=3"
+    assert tr["entry"] == 100.0, tr["entry"]
+    assert tr["stop"] == 90.0, tr["stop"]
+    assert abs(tr["remaining"] - 0.20) < 1e-12, tr["remaining"]
+    assert tr["val_px"] == 110.0, tr["val_px"]
+    assert tr["conf_px"] == 120.0, tr["conf_px"]
+    assert tr["lim_px"] == 130.0, tr["lim_px"]
+    assert state["squeeze_pending"] is None, "l'ordre doit être consommé"
+    # H-Squeeze-8 : ce chemin ne nourrit PAS le compteur de pyramidage.
+    assert state["last_pyramid_high"] == -np.inf, state["last_pyramid_high"]
+
+
+def test_squeeze_limit_order_fills_at_the_open_on_a_gap():
+    """Cas du gap : l'open (98) est DÉJÀ sous le point médian (100). Un ordre
+    limite réel est alors exécuté au prix de marché, meilleur que le prix
+    demandé -> remplissage à 98, pas à 100 (H-Squeeze-4).
+      stop_pct = (98 - 90)/98 = 0,081632... ; taille = min(1/3 ; 0,02/0,081632)
+      = min(0,3333 ; 0,245) = 0,245 exactement 0,02 x 98 / 8 = 0,245
+      val_px = 98 + 10 = 108."""
+    fn, _ = _squeeze_factory(o_fill=98.0, low_fill=97.0)
+    assert fn(2, [], 0) is None
+    tr = fn(3, [], 0)
+    assert tr is not None
+    assert tr["entry"] == 98.0, tr["entry"]
+    assert tr["stop"] == 90.0, tr["stop"]
+    assert abs(tr["remaining"] - 0.245) < 1e-12, tr["remaining"]
+    assert tr["val_px"] == 108.0, tr["val_px"]
+
+
+def test_squeeze_limit_order_not_filled_when_price_stays_above():
+    """Contrôle négatif : la mèche la plus basse (101) ne touche jamais le
+    point médian (100) -> aucun remplissage, l'ordre reste posé."""
+    fn, state = _squeeze_factory(low_fill=101.0)
+    assert fn(2, [], 0) is None
+    assert fn(3, [], 0) is None
+    assert state["squeeze_pending"] is not None
+
+
+def test_squeeze_order_expires_after_SQUEEZE_LIFETIME_bars():
+    """H-Squeeze-6, la seule hypothèse libre du mécanisme : l'ordre vit
+    `SQUEEZE_LIFETIME` = 30 bougies. Posé à l'appel i=2, il porte
+    `expires_at = 2 + 30 - 1 = 31`.
+
+    - à i=31 (dernière bougie valide) une mèche à 50 DOIT encore remplir ;
+    - à i=32 la même mèche à 50 ne doit PLUS rien remplir.
+    Les deux moitiés sont testées, sinon un ordre qui n'expirerait jamais
+    passerait le premier test."""
+    assert SQUEEZE_LIFETIME == 30, SQUEEZE_LIFETIME
+
+    fn, state = _squeeze_factory(fill_bar=31, low_fill=50.0, o_fill=200.0)
+    assert fn(2, [], 0) is None
+    tr = fn(31, [], 0)
+    assert tr is not None, "à i=31 l'ordre est encore vivant"
+    assert tr["entry"] == 100.0, tr["entry"]
+
+    fn2, state2 = _squeeze_factory(fill_bar=32, low_fill=50.0, o_fill=200.0)
+    assert fn2(2, [], 0) is None
+    assert fn2(32, [], 0) is None, "à i=32 l'ordre a expiré, il ne doit plus remplir"
+    assert state2["squeeze_pending"] is None, "l'ordre expiré doit être retiré"
+
+
+def test_squeeze_disabled_by_default_no_behavior_change():
+    """Non-régression explicite (le défaut est OFF) : sur EXACTEMENT le même
+    scénario que le test nominal, mais sans passer les tableaux de la
+    variante, la factory ne produit RIEN -- ni à la bougie d'armement ni à
+    celle qui aurait rempli l'ordre. Confirme que la tranche obtenue dans le
+    test nominal vient bien du nouveau chemin, et que les 19 appelants
+    existants (qui n'passent aucun de ces tableaux) sont inchangés."""
+    fn, state = _squeeze_factory(enabled=False)
+    assert fn(2, [], 0) is None
+    assert fn(3, [], 0) is None
+    assert "squeeze_pending" not in state, state
+
+
+def test_squeeze_half_configured_raises():
+    """Une variante activée à moitié doit échouer explicitement plutôt que de
+    se dégrader en silence en un mécanisme qui n'est plus celui du corpus
+    (même discipline que le gate "espace libre" de `trend_table.py`)."""
+    n = 8
+    arrays = dict(
+        atr_v=np.ones(n), ctx_support_v=np.full(n, 1.0), local_range_v=np.ones(n),
+        context_range_v=np.ones(n), n_borders_v=np.zeros(n), high=np.ones(n),
+        o=np.ones(n), score=np.full(n, 2.0))
+    try:
+        make_open_tranche_fn(
+            arrays["atr_v"], arrays["ctx_support_v"], arrays["local_range_v"],
+            arrays["context_range_v"], arrays["n_borders_v"], arrays["high"],
+            arrays["o"], arrays["score"], 0, 3, 3, 3, 0.5, 0.02,
+            {"last_pyramid_high": -np.inf},
+            squeeze_armed_v=np.zeros(n, dtype=bool))   # les 3 autres manquent
+    except ValueError:
+        return
+    raise AssertionError("un armement sans mid/sup/low doit lever ValueError")
 
 
 TESTS = [
@@ -658,6 +911,15 @@ TESTS = [
     test_structural_conf_only_moves_conf_px,
     test_structural_conf_off_by_default_is_bit_identical,
     test_context_median_frac_is_the_literal_50_percent,
+    test_squeezed_third_border_positive_case_hand_computed,
+    test_squeezed_third_border_negative_case_retracement_invalidates,
+    test_squeezed_third_border_requires_the_1_to_1_ratio,
+    test_squeeze_limit_order_fills_with_hand_computed_levels,
+    test_squeeze_limit_order_fills_at_the_open_on_a_gap,
+    test_squeeze_limit_order_not_filled_when_price_stays_above,
+    test_squeeze_order_expires_after_SQUEEZE_LIFETIME_bars,
+    test_squeeze_disabled_by_default_no_behavior_change,
+    test_squeeze_half_configured_raises,
 ]
 
 
