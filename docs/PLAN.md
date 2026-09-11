@@ -1060,6 +1060,63 @@ Conséquence pour un remapping H1 : réutiliser `CLOSURE_DELAY`=1 jour tel quel 
 
 **Conclusion, honnête, non habillée : H1 dégrade nettement la performance par rapport à H4, sur les 4 actifs et les 4 profils, sans exception.** ~3,4x plus de trades partout (978-1019 vs 283-307 sur BTC/ETH/BNB ; 710 vs 185-192 sur SOL) -- frais (`FEE=0,04%`/aller) qui s'accumulent nettement plus vite, profit factor systématiquement plus bas (1,04-1,39 en H1 contre 1,39-2,88 en H4), et retour total négatif sur BNB et SOL (tous profils) alors qu'il est franchement positif en H4 sur ces 2 mêmes actifs. Seul ETH reste positif en H1 sur tous les profils, mais avec un profit factor dégradé partout. **Ceci RECONFIRME, avec le moteur IP-fidèle actuel (pas le PROXY générique de Phase 1), le repère déjà documenté dans `CLAUDE.md` : H1 reste NO-GO** -- la dégradation n'est pas un artefact de calibration (le nombre de trades ~3,4x plus élevé est la cause directe et mesurable, cohérent avec "détruit par les frais de transaction"), même si la fenêtre PCTL_WINDOW/EMA plus courte en temps réel (caveat ci-dessus) n'a pas été isolée séparément de l'effet frais -- pas nécessaire ici, l'effet frais suffit à expliquer la totalité de la dégradation observée sur les 4 actifs.
 
+### 29e application (cycle suivant) — extraction du "Guide de Stratégie" officiel PRO Indicators, 3 écarts trouvés, vérifiés contre le code réel, aucun implémenté
+
+**Demande directe de l'utilisateur** : *"j'ai agrégé de la propriété intellectuelle sur le guide
+que j'ai pu trouver. j'ai mis dans le dépôt guide va le chercher. excuses tout l'enseignement
+nécessaire"*, puis *"mets un plan en place afin d'exécuter ce travail. voir ce que nous avons déjà
+ce qui est erroné dans ce que nous avons fait procède comme un ingénieur senior"*.
+
+**Point vérifié avant tout le reste (mode plan, approuvé par l'utilisateur)** : l'utilisateur a
+ajouté 38 captures d'écran officielles de l'outil interactif "Guide de Stratégie" de
+PRO-INDICATORS.com (logo visible) sur la branche `claude/crypto-daily-capital-growth-b3hq1f`
+(commit `5e7694c`) — PAS sur cette branche. Un commit précédent sur cette même branche (`bae0d0e`,
+co-écrit par une session Claude antérieure) avait explicitement EXCLU ce même dossier via
+`.gitignore` : *"Guide de stratégie PRO Indicators (captures officielles, logo PRO-INDICATORS.com
+visible) : même raison que le manuel PDF ci-dessus, usage personnel, pas à redistribuer sur ce
+dépôt public."* — règle toujours en place, contournée (force-add) au commit suivant. Signalé
+explicitement à l'utilisateur avant de construire le plan (`AskUserQuestion`) : décision sur le
+sort des 38 PNG bruts **différée** ("il précisera plus tard"). Ce round ne touche donc ni ces
+fichiers ni cette branche — uniquement l'extraction TEXTE, sur cette branche, même discipline déjà
+appliquée au manuel PDF (`RULES_EXTRACTION.md`) et aux 17 sources vidéo (`TRADING_LESSONS_*.md`) :
+jamais l'asset copyrighté lui-même, toujours sa transcription.
+
+**Fait ce round** :
+1. Les 38 captures lues directement (capacité vision), via un `git worktree` en lecture seule
+   détaché sur la branche de l'utilisateur (aucune modification de cette branche).
+2. Transcription fidèle dans un nouveau document `docs/GUIDE_STRATEGIE_PRO_INDICATORS.md` (même
+   convention que `RULES_EXTRACTION.md`), organisée par les 4 branches thématiques de l'outil
+   (Chaos / Excès+Bulle spéculative / Range+3ème borne+Range Neuneu / Tendance+Tendance
+   primaire+Suivi de tendance+Multi-timeframe+Structure alternative). **Anomalies de capture
+   signalées telles quelles, pas masquées** : 4 écrans sont des templates vides (Revers, Dead Cat
+   Bounce, Reverse Crash, Suivi de bulle — contenu réel inconnu, pas inventé) ; 1 fichier
+   (`Multi-timeframe/Vague-5-étendu.png`) contient en réalité le texte de `Range-neuneu/Repli-
+   neuneu.png` (capture prise sur le mauvais panneau) ; `Multi-timeframe/Multi-timeframe.png` et
+   `Structure-alternative/Structure-alternative.png` sont des doublons de la même image (la vraie
+   capture de l'écran Multi-timeframe manque probablement).
+3. Audit croisé contre le code réel (pas contre la seule documentation) — 3 écarts trouvés et
+   vérifiés directement dans `emile/core/range_gates.py`/`emile/core/regime_classifier.py`,
+   classés catégorie C (backlog, décision de conception requise), détail complet et citations
+   exactes : `docs/COUVERTURE_ENSEIGNEMENTS.md` (nouvelle sous-section catégorie C, "29e
+   application") :
+   - **Routage RANGE "3ème borne" vs "Neuneu"** — le guide décrit 2 structures RANGE distinctes
+     (choisies par "range précédé d'une tendance ?" + compte de bornes), le code n'en a qu'une.
+   - **Invalidation 3BR par SQUEEZE sur l'UT+1** — moitié déjà couverte par coïncidence (squeeze
+     sur l'UT propre → régime EXCES → déjà bloqué par `range_gate`), moitié PAS couverte
+     (`d1_not_range` ne teste que RANGE_NEUTRE/RANGE_TENDANCIEL sur D1, jamais EXCES — un D1
+     squeezé n'est donc pas bloqué aujourd'hui alors que la citation l'exige). Candidat le plus
+     mûr du lot (citation exacte + écart localisé précisément), reste catégorie C car le "juste
+     avant" n'est pas quantifié par le corpus.
+   - **Variante "Repli sur 3BR squeezée" côté TENDANCE** — même famille que la variante RANGE déjà
+     implémentée (18e/22e rounds), mais dans un scope (Suivi-de-tendance) pas encore vérifié
+     contre `unified_protocol.py`.
+
+**Ce que ce round NE fait PAS** : aucun changement de comportement de code (investigation +
+documentation uniquement, même discipline que les rounds "catégorie C investigué, pas implémenté"
+déjà pratiqués 7 fois dans ce projet) ; suite complète inchangée (aucun fichier de code touché).
+Les 3 écarts restent ouverts pour un round séparé, chacun avec sa propre décision de conception,
+sa propre mesure et sa propre non-régression — pas mélangés à celui-ci.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

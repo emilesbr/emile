@@ -478,6 +478,52 @@ La règle UT+2 littérale (Hebdo seul, D1 sauté) confirme la direction déjà c
 - ~~**"Hiérarchie UT Supérieure = Le Potentiel"** (vérifier la marge de progression disponible avant d'engager un objectif, `TRADING_LESSONS_PULLBACK_MATURITE.md`) — non implémenté.~~ — **COUVERT par la contrainte "espace libre" MTF implémentée au 10e round** (cf. item correspondant ci-dessus) : relecture faite ce round, c'est le MÊME enseignement que la contrainte de la source #12, formulé plus brièvement (`TRADING_LESSONS_PULLBACK_MATURITE.md` l.14, *"vérifier qu'il reste assez de 'jus' (marge de progression) pour un nouvel objectif"*) — il était listé ici comme un item distinct par erreur de classification, pas parce qu'il décrivait un mécanisme différent. Sa présence en 2 sources indépendantes a au contraire servi d'argument POUR l'implémenter.
 - **Nuance "Règle de Non-Existence" (#11) vs Conflit MTF implémenté** : le mécanisme codé (`regime_d1`, un proxy d'état continu par percentiles glissants) capture l'esprit de la source mais pas le déclencheur événementiel précis ("apparition d'une 3ème borne sur le Contexte") ni sa condition de levée exacte ("jusqu'à sortie de la structure de range"). Pas un défaut caché (le choix du niveau D1 reste bien étayé et déjà documenté), mais une équivalence approximative à ne pas confondre avec une implémentation littérale exacte.
 
+**Nouvelle source, 29e application (`docs/GUIDE_STRATEGIE_PRO_INDICATORS.md`, guide officiel
+"Guide de Stratégie" PRO-INDICATORS.com, extraction texte de 38 captures d'écran officielles fournies
+par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CONTRE LE CODE RÉEL
+(`emile/core/range_gates.py`, `emile/core/regime_classifier.py`), pas seulement supposés :
+
+- **Routage RANGE "3ème borne" vs "Neuneu" (`Range/Range.png`)** — le guide décrit DEUX
+  structures RANGE distinctes, choisies par une question explicite (*"range précédé d'une
+  tendance ? (moyenne hors des contextes = tendance)"* → 3ème borne ; sinon, ou si range ≥4
+  bornes, ou Forex UT hebdo → Neuneu), chacune avec sa PROPRE grille de money management (seuils
+  de retracement différents : 3BR neutre ≥76% vs 3BR tendancielle ≥61% vs Neuneu/Borne Neuneu
+  fibo 76% seul). **Vérifié dans `regime_classifier.py::add_regime`** : le code actuel ne produit
+  qu'UNE seule paire de régimes RANGE (`RANGE_NEUTRE`/`RANGE_TENDANCIEL`, basés sur la pente du
+  canal, pas sur "précédé d'une tendance" ni sur un compte de bornes) — aucune notion de "range
+  ≥4 bornes → structure différente" ni de routage vers 2 grilles RANGE distinctes. Catégorie C
+  (exige une décision de conception : comment détecter causalement "range précédé d'une
+  tendance" et "≥4 bornes", et si ça justifie une refonte du régime RANGE actuel ou une couche
+  additionnelle) — PAS implémenté, backlog ouvert.
+- **Invalidation 3BR par SQUEEZE (`Range/3eme-borne/3ème-borne.png`), citation exacte** : *"On ne
+  doit plus la trader si jamais le range produit un SQUEEZE... Si le range se forme juste après
+  un SQUEEZE sur l'unité de temps supérieure, il faudra alors éviter de trader cette 3BR. On fait
+  de même si le marché retourne au niveau de la 1BR (double top/bottom)."* **Vérifié dans le
+  code** : `regime_classifier.py` classe déjà un squeeze (largeur de canal < 5e percentile
+  glissant, `SQUEEZE_PCTL=0.05`) en régime `EXCES` sur l'UT propre — et `range_gate` bloque déjà
+  toute entrée si `feat["regime"][i] == "EXCES"`, donc la première moitié ("squeeze sur SA PROPRE
+  UT → ne plus trader") est déjà couverte, probablement par coïncidence de conception plutôt que
+  par lecture de cette citation précise. **MAIS la seconde moitié ne l'est pas** :
+  `range_gate`'s `d1_not_range` ne bloque que si `regime_d1 in ("RANGE_NEUTRE",
+  "RANGE_TENDANCIEL")` — un D1 en régime `EXCES` (donc potentiellement en SQUEEZE côté D1) N'EST
+  PAS bloqué par ce test, alors que la citation l'exige explicitement ("squeeze sur l'UT
+  SUPÉRIEURE juste avant → éviter cette 3BR"). La 3ème clause ("retour au niveau de la 1BR") n'a
+  aucun équivalent codé (aucun suivi du niveau de la 1ère borne). Catégorie C (le "juste avant"
+  n'est pas précisé dans le corpus — combien de bougies ? — nécessite une décision d'opérationnalisation
+  avant tout code) — PAS implémenté, backlog ouvert, candidat prioritaire (citation exacte + écart
+  concret déjà localisé dans `range_gate`, contrairement à la plupart des items C historiques qui
+  butent sur un paramètre totalement inventé).
+- **Variante d'entrée "Repli sur 3BR squeezée" en contexte TENDANCE/Suivi-de-tendance**
+  (`Tendance/Tendance-primaire/Suivi-de-tendance/Repli-sur-3br-Squizee.png`) — même famille que la
+  variante déjà implémentée côté RANGE (18e/22e rounds, `compute_squeezed_third_border`), mais ICI
+  scopée à la table TENDANCE (pas RANGE) avec un niveau d'entrée alternatif explicite ("sinon au
+  niveau du fibo 50%"). Pas encore vérifié si `unified_protocol.py` (côté TENDANCE) couvre ce cas
+  — à faire avant de conclure à un écart réel ou à une couverture déjà suffisante.
+
+Aucun changement de comportement de code apporté par cette extraction (round investigation/
+documentation, comme la plupart des rounds catégorie C précédents) — les 3 items ci-dessus
+attendent une décision de conception dédiée, pas une implémentation improvisée dans ce même round.
+
 ### Ce qui reste correctement classé, confirmé par les 3 agents (rien à changer)
 Tout le reste des 17 sources + le manuel — UT+2 (mécanisme général), stop UT+1 réel, breakeven différé à la Confirmation, abstention Wall Street, canal manuel, Andrews, diversification 1%+1%, +Reverse scopé TRES_AGRESSIF, EXCES-H4, pyramidalisation-régime, TSI(14,7,9), garde-fous Phase 4 (hors périmètre code, correctement noté comme tel) — vérifié directement dans le code par les 3 agents, pas simplement relu dans ce document.
 
