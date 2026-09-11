@@ -1,10 +1,15 @@
 __pycache__/
 *.pyc
-# Infrastructure locale de Claude Code (copies de travail isolées pour les
-# agents délégués via isolation "worktree") -- pas du contenu du projet,
-# jamais à committer (ce sont des clones jetables du dépôt lui-même).
-.claude/
-# Sortie de code/run_all.py -- jamais la référence committée (voir sa
-# docstring : "ne remplace pas les CSV commités, qui restent la référence
-# tant que ce script n'a pas été relancé et ses sorties comparées à la main").
-code/run_all_output/
+# Infrastructure locale de Claude Code : seules les copies de travail
+# jetables (agents délégués via isolation "worktree") et les préférences
+# de permissions propres à une session sont exclues. .claude/settings.json
+# et .claude/hooks/ sont du vrai contenu de projet (garde-fous testés,
+# cf. tests/unit/test_test_claim_check.py) -- à committer, pas à ignorer
+# en bloc (correction du choix initial de la ligne ci-dessus, trop large).
+.claude/worktrees/
+.claude/settings.local.json
+# Sortie de emile/run_all.py (ex-code/run_all.py, migré lors de la
+# réorganisation) -- jamais la référence committée (voir sa docstring :
+# "ne remplace pas les CSV commités, qui restent la référence tant que ce
+# script n'a pas été relancé et ses sorties comparées à la main").
+emile/run_all_output/
