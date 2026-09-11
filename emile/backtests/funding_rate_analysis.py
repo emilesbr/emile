@@ -32,7 +32,12 @@ ASSETS = {
     "SOL": "SOLUSDT_1h_processed.csv",
 }
 
-OUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "funding_rate_summary.csv")
+# Meme bug que emile/run_all.py::DEFAULT_OUTPUT_DIR avant sa correction :
+# ce script ecrivait a cote de lui-meme (emile/backtests/) au lieu de
+# results/ (convention adoptee par toute la reorg) -- jamais remarque car
+# ce script n'est ni teste ni cible par run_all.py.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+OUT_CSV = os.path.join(_REPO_ROOT, "results", "funding_rate_summary.csv")
 
 def analyze_asset(asset: str, fname: str) -> dict:
     path = os.path.join(DATA_DIR, fname)

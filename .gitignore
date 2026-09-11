@@ -1,5 +1,8 @@
 __pycache__/
 *.pyc
+# Manuel PRO Indicators (Philippe Roux) : usage personnel sous CGU, jamais à
+# redistribuer -- ne doit jamais partir dans un commit sur ce dépôt public.
+*.pdf
 # Infrastructure locale de Claude Code : seules les copies de travail
 # jetables (agents délégués via isolation "worktree") et les préférences
 # de permissions propres à une session sont exclues. .claude/settings.json
