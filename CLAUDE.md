@@ -73,12 +73,22 @@ n'est pas une unité de temps), mais un vrai trou à traiter séparément.
 explicite de l'utilisateur)** : vérifié contre le corpus (18 sources +
 `RULES_EXTRACTION.md`) qu'aucune UT calendaire fixe (M15 compris) n'est
 exigée nativement par un mécanisme précis — le mécanisme réel est relatif
-(UT/UT+1/UT+2), illustré avec des exemples différents selon la vidéo. En
-revanche, `faithful.py`/`unified_protocol.py` ne combinent que 7 mécanismes
-en dur ; 5+ autres déjà codés (Fibonacci RANGE, Andrews, canal manuel,
-Cluster Technique/diversification, "3ème borne squeezée", Confirmation
-structurelle) restent mesurés isolément, jamais dans un seul run agrégé —
-chantier réel, pas encore traité. Les GO/NO-GO déjà publiés (`STATUS.md`,
+(UT/UT+1/UT+2), illustré avec des exemples différents selon la vidéo.
+**Mis à jour (20e-22e rounds)** : `faithful.py`/`unified_protocol.py`
+combinaient jusqu'ici 7 mécanismes en dur ; 3 des 5+ mécanismes déjà codés
+mais jamais agrégés ont depuis été branchés sans condition (Fourchette
+d'Andrews lecture contextuelle, scopée RANGE_TENDANCIEL ; contrainte
+"espace libre" MTF avant Breakout, H13 ; variante d'entrée "3ème borne
+squeezée", #15) — détail et mesures honnêtes : `docs/PLAN.md` sections
+"20e/21e/22e application". **Restent hors périmètre, à raison, pas des
+oublis** : canal manuel comme stop (tie-break D1 non tranché par le
+corpus), Cluster Technique/diversification (paramètres réellement
+inventés, corpus sous-spécifié — H1-H5 de `diversification.py`) ; le
+tableau money management "Range Tendanciel" (§3bis, distinct du Range
+Neutre) reste également un chantier ouvert (19e round : moitié Faible/
+Modéré codable mais exige un changement structurel de `position_engine.py`,
+moitié Agressif/Très Agressif bloquée par "SL gain" indéfini nulle part
+dans le corpus). Les GO/NO-GO déjà publiés (`STATUS.md`,
 `PHASE1_CLOSEOUT.md`) portent sur le PROXY générique (confluence EMA), PAS
 sur la stratégie réelle de Philippe — reformulation de ces documents encore
 à faire pour que le qualificatif survive à une citation partielle.
