@@ -350,7 +350,7 @@ from emile.backtests.backtest_phase2_v7 import (
     MAX_TRANCHES, EMA_SLOW, SWING_ORDER,
 )
 from emile.core.proxy_v2 import compute_swing_low_confirmed
-from emile.backtests.backtest_phase2_ut2 import attach_multi_context, CLOSURE_DELAY
+from emile.backtests.backtest_phase2_ut2 import attach_multi_context, attach_context_level, CLOSURE_DELAY
 from emile.backtests.backtest_phase2_recommended import run_recommended, WARMUP
 from emile.core.position_engine import (
     run_position_engine, make_open_tranche_fn, make_structural_conf_update_fn,
@@ -415,7 +415,9 @@ def range_money_management_fracs(profile_name: str, regime_h4_v) -> tuple:
     return val_v, conf_v
 
 def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
-                       use_mtf_gate: bool = True) -> dict:
+                       use_mtf_gate: bool = True,
+                       closure_delay_d1: pd.Timedelta = None,
+                       closure_delay_weekly: pd.Timedelta = None) -> dict:
     """Calcule toutes les colonnes une seule fois sur l'historique complet.
     `d1` : fournit le VRAI stop cross-timeframe UT+1 (littéral, cf. tête de
     fichier) -- rôle DIFFÉRENT du D1 dans `backtest_phase2_ut2.py` (qui s'en
@@ -434,16 +436,38 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
     concerné et reste inconditionnel dans les deux cas, cf. tête de fichier.
     Raison d'être : `code/oos_xrp_faithful.py` (donnée disponible trop
     courte pour faire converger un niveau de gate placé DEUX crans au-dessus
-    du niveau d'exécution)."""
+    du niveau d'exécution).
+
+    `closure_delay_d1`/`closure_delay_weekly` (AJOUTÉS ce cycle, additifs,
+    défaut `None` -> `CLOSURE_DELAY` chacun, comportement EXACTEMENT
+    inchangé pour tout appelant existant, dont `unified_protocol.py`) :
+    permettent de recalibrer le délai de clôture par niveau quand cette
+    fonction sert à un couple (niveau bas, niveau haut) DIFFÉRENT de
+    (H4, D1)/(H4, Hebdomadaire) -- ex. expérience H1 (H1 exécution, H4 au
+    rôle `d1`, D1 au rôle `weekly`, cf. `h1_timeframe_bench.py`). `D1`/`W`
+    sont des offsets pandas ANCRÉS différemment (`resample(df, rule)` de
+    `backtest_phase2.py` -- vérifié empiriquement, pas supposé) : "D"/"4h"
+    sont des offsets à fréquence FIXE, label=début de période -- une bougie
+    D1 n'est intégralement close qu'1 jour après son `date`, une bougie H4
+    que 4h après (`CLOSURE_DELAY`=1 jour EST la durée exacte d'une bougie
+    D1, mais serait 6x trop tardif -- pas un lookahead, juste une fraîcheur
+    inutilement dégradée -- si réutilisé tel quel pour une bougie H4).
+    "W" est un offset ANCRÉ, label=FIN de période par défaut pandas : une
+    bougie Hebdomadaire est déjà entièrement close AU MOMENT de son `date`
+    -- `CLOSURE_DELAY`=1 jour n'est ici qu'une marge de sécurité, pas la
+    durée d'attente réelle (d'où le commentaire historique "1 jour, PAS 1
+    semaine, pour W" : aucun bug, les deux offsets ont juste des
+    conventions de label différentes)."""
     h4 = prepare(h4)
     h4 = add_wall_street_column(h4)
     h4 = add_andrews_pitchfork_columns(h4)
     d1 = prepare(d1)
-    ctx_levels = [("D1", d1)]
+    d1_delay = CLOSURE_DELAY if closure_delay_d1 is None else closure_delay_d1
+    weekly_delay = CLOSURE_DELAY if closure_delay_weekly is None else closure_delay_weekly
+    ctx = {"D1": attach_context_level(h4, d1, closure_delay=d1_delay)}
     if use_mtf_gate:
         weekly = prepare(weekly)
-        ctx_levels.append(("W", weekly))
-    ctx = attach_multi_context(h4, ctx_levels, closure_delay=CLOSURE_DELAY)
+        ctx["W"] = attach_context_level(h4, weekly, closure_delay=weekly_delay)
 
     if use_mtf_gate:
         gate_score = ctx["W"]["score"]
@@ -627,14 +651,20 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
 def run_faithful(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profile_name: str,
                   capital_eur: float = None, record_trace: bool = False,
                   use_mtf_gate: bool = True,
-                  use_structural_confirmation: bool = False) -> dict:
+                  use_structural_confirmation: bool = False,
+                  closure_delay_d1: pd.Timedelta = None,
+                  closure_delay_weekly: pd.Timedelta = None) -> dict:
     """Point d'entrée principal -- moteur RANGE avec les 3 règles littérales
     du corpus activées SANS CONDITION (cf. tête de fichier). `capital_eur`
     (optionnel) : même paramètre de sizing que `recommended.py`, décision #9,
     inchangée. `use_mtf_gate` (AJOUTÉ ce cycle, additif, défaut `True` =
     comportement inchangé) : cf. docstring de `_prepare_features` --
-    neutralise SEULEMENT le gate Hebdomadaire, jamais le stop D1 littéral."""
-    feat = _prepare_features(h4, d1, weekly, use_mtf_gate=use_mtf_gate)
+    neutralise SEULEMENT le gate Hebdomadaire, jamais le stop D1 littéral.
+    `closure_delay_d1`/`closure_delay_weekly` : transmis tels quels, cf.
+    docstring de `_prepare_features`."""
+    feat = _prepare_features(h4, d1, weekly, use_mtf_gate=use_mtf_gate,
+                              closure_delay_d1=closure_delay_d1,
+                              closure_delay_weekly=closure_delay_weekly)
     risk_pct = None
     if capital_eur is not None:
         sizing = effective_sizing(capital_eur, profile_name, PROFILES_V4, MAX_TRANCHES)

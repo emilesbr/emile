@@ -25,7 +25,7 @@ import pytest
 
 from emile.backtests.backtest_phase2 import load_h1, resample
 from emile.backtests.backtest_phase2_v7 import prepare, PROFILES_V4
-from emile.backtests.backtest_phase2_ut2 import attach_multi_context, CLOSURE_DELAY
+from emile.backtests.backtest_phase2_ut2 import attach_multi_context, attach_context_level, CLOSURE_DELAY
 from emile.backtests.backtest_phase2_recommended import WARMUP
 from emile.backtests.backtest_phase2_faithful import (
     _prepare_features, _run_core, run_faithful, REVERSE_SCOPED_PROFILE,
@@ -75,6 +75,52 @@ def test_stop_is_d1_ctx_support_not_native_h4():
     assert not np.allclose(feat["ctx_support_d1"][valid], native[valid]), (
         "le stop D1 (UT+1) est identique au stop H4 natif sur toutes les bougies valides "
         "-- le test ne prouverait rien, vérifier que le mauvais tableau n'est pas branché"
+    )
+
+@_skip_if_no_data
+@pytest.mark.data_dependent
+def test_prepare_features_closure_delay_params_default_to_unchanged_behavior():
+    """`closure_delay_d1`/`closure_delay_weekly` (AJOUTÉS pour l'expérience
+    H1, `h1_timeframe_bench.py`) : par défaut (`None`), le comportement doit
+    rester STRICTEMENT identique à avant leur ajout -- comparé bit-à-bit à un
+    appel `_prepare_features` sans ces mots-clés (déjà exercé par tous les
+    autres tests de ce fichier, donc ce test est une garantie supplémentaire,
+    pas la seule preuve)."""
+    h4 = _H4_BTC.copy(); d1 = _D1_BTC.copy(); weekly = _WEEKLY_BTC.copy()
+    feat_default = _prepare_features(h4.copy(), d1.copy(), weekly.copy())
+    feat_explicit_none = _prepare_features(h4.copy(), d1.copy(), weekly.copy(),
+                                            closure_delay_d1=None, closure_delay_weekly=None)
+    for key in feat_default:
+        a, b = feat_default[key], feat_explicit_none[key]
+        # `pd.Series.equals` traite NaN == NaN comme vrai (contrairement à
+        # `np.testing.assert_array_equal` sur un array `object` mêlant NaN et
+        # str, ex. `gate_regime` en warmup) -- comparaison bit-à-bit voulue,
+        # pas une tolérance numérique.
+        assert pd.Series(a).equals(pd.Series(b)), f"clé '{key}' diverge"
+
+@_skip_if_no_data
+@pytest.mark.data_dependent
+def test_prepare_features_closure_delay_d1_actually_changes_the_join():
+    """Un `closure_delay_d1` non défaut doit réellement changer la jointure
+    `ctx_support_d1` -- comparé directement à `attach_context_level` appelé à
+    la main avec le même délai (pas une réimplémentation qui pourrait
+    diverger). Garde-fou contre un paramètre accepté mais silencieusement
+    ignoré."""
+    h4 = _H4_BTC.copy(); d1 = _D1_BTC.copy(); weekly = _WEEKLY_BTC.copy()
+    custom_delay = pd.Timedelta(hours=4)
+    feat = _prepare_features(h4.copy(), d1.copy(), weekly.copy(), closure_delay_d1=custom_delay)
+
+    h4p = prepare(h4.copy())
+    d1p = prepare(d1.copy())
+    ctx_ref = attach_context_level(h4p, d1p, closure_delay=custom_delay)
+    np.testing.assert_array_equal(feat["ctx_support_d1"], ctx_ref["ctx_support"])
+
+    feat_default = _prepare_features(h4.copy(), d1.copy(), weekly.copy())
+    valid = ~np.isnan(feat["ctx_support_d1"]) & ~np.isnan(feat_default["ctx_support_d1"])
+    assert valid.sum() > 100, "pas assez de bougies valides pour un test non-vacueux"
+    assert not np.allclose(feat["ctx_support_d1"][valid], feat_default["ctx_support_d1"][valid]), (
+        "un closure_delay_d1 different de CLOSURE_DELAY ne change rien au resultat "
+        "-- le parametre est probablement ignore"
     )
 
 @_skip_if_no_data
