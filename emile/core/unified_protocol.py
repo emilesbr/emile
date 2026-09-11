@@ -269,16 +269,13 @@ from emile.backtests.backtest_phase2_v7 import (
     prepare, PROFILES_V4, MIN_BORDERS, RULE3_STREAK, RULE3_SIZE_MULT,
     MAX_TRANCHES, EMA_SLOW,
 )
-from emile.backtests.backtest_phase2_recommended import _prepare_features, WARMUP
+from emile.backtests.backtest_phase2_recommended import WARMUP
 from emile.backtests.backtest_phase2_faithful import (
     REVERSE_SCOPED_PROFILE, run_faithful, _add_squeeze_columns,
-    range_money_management_fracs,
+    range_money_management_fracs, _prepare_features as _prepare_range_features,
 )
-from emile.backtests.backtest_phase2_ut2 import attach_multi_context, CLOSURE_DELAY
+from emile.backtests.backtest_phase2_ut2 import CLOSURE_DELAY
 from emile.core.position_engine import make_open_tranche_fn, process_tranche, process_reverse
-from emile.core.wall_street_pattern import add_wall_street_column
-from emile.core.regime_classifier import compute_wide_channel
-from emile.core.andrews_pitchfork import add_andrews_pitchfork_columns
 from emile.core.range_gates import range_gate as _range_gate, range_gate_extra as _range_gate_extra
 from emile.core.trend_table import (
     PROFILES_TREND, add_trend_context, add_leg, make_campaign, step_campaign,
@@ -308,14 +305,19 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
     """Calcule TOUTES les colonnes nécessaires aux deux moteurs, une fois,
     sur l'historique complet fourni.
 
-    RANGE : réutilise `backtest_phase2_recommended._prepare_features` tel
-    quel (cycle+structure causaux, gate Hebdomadaire "UT+2 strict"), PLUS
-    (CONSOLIDATION, cf. tête de fichier) le stop D1 réel UT+1
-    (`ctx_support_d1`, même jointure sans lookahead que `backtest_phase2_faithful.py`)
-    et la colonne Wall Street (`wall_street_active`).
+    CHANTIER D'ARCHITECTURE (SUITE des 24e/26e rounds, cf. PLAN.md) : le côté
+    RANGE réutilise désormais `backtest_phase2_faithful._prepare_features`
+    (`_prepare_range_features`) TEL QUEL -- stop D1 réel UT+1 (`ctx_support_d1`),
+    abstention Wall Street, canal large, Fourchette d'Andrews contextuelle,
+    3ème borne squeezée, gate Hebdomadaire "UT+2 strict" : tout ça n'est plus
+    RECALCULÉ ici séparément (avant ce chantier, ce fichier maintenait sa
+    PROPRE copie de ces 4 jointures/colonnes, texte quasi identique à
+    `faithful.py` -- même risque de dérive que le `gate`/`gate_extra` déjà
+    unifié au 26e round, jamais traité pour la préparation des features
+    elle-même).
     TENDANCE : réutilise `backtest_phase2_v7.prepare` +
     `trend_table.add_trend_context` tels quels (stop natif H4, hypothèse H4
-    de `trend_table.py`, inchangé -- pas le même stop que RANGE), plus la
+    de `trend_table.py`, inchangé -- PAS le même stop que RANGE), plus la
     détection volume de `trend_table.py` (H9) calculée ici EXACTEMENT comme
     dans `run_trend_table` (même fenêtre glissante, même seuil)."""
     if "volume" not in h4.columns:
@@ -325,24 +327,9 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
             "avec resample_h4_with_volume(h1)."
         )
 
-    range_feat = _prepare_features(h4, weekly, use_mtf_gate=use_mtf_gate)
-
-    # CONSOLIDATION : stop D1 réel (UT+1, cf. backtest_phase2_faithful.py)
-    # et colonne Wall Street (abstention totale, non conditionnelle), côté
-    # RANGE uniquement -- même jointure sans lookahead que `faithful.py`.
-    d1p = prepare(d1.copy())
-    ctx = attach_multi_context(h4, [("D1", d1p)], closure_delay=CLOSURE_DELAY)
-    ctx_support_d1 = ctx["D1"]["ctx_support"]
-
-    h4_ws = prepare(h4[["date", "open", "high", "low", "close"]].copy())
-    h4_ws = add_wall_street_column(h4_ws)
-    wall_street_active = h4_ws["wall_street_active"].values
-    # Fourchette d'Andrews, lecture CONTEXTUELLE (littérale, inconditionnelle
-    # sur le régime RANGE_TENDANCIEL, cf. `backtest_phase2_faithful.py` et
-    # `andrews_gate_alternative.py`) -- répliquée ici pour que le côté RANGE
-    # du protocole unifié reste identique à `faithful.py`.
-    h4_ws = add_andrews_pitchfork_columns(h4_ws)
-    pitchfork_p1 = h4_ws["pitchfork_p1"].values
+    # RANGE (+ tout ce qui est déjà partagé, cf. docstring) : UNIQUE calcul,
+    # plus de copie séparée ici.
+    range_feat = _prepare_range_features(h4, d1, weekly, use_mtf_gate=use_mtf_gate)
 
     trend_df = prepare(h4[["date", "open", "high", "low", "close"]].copy())
     trend_df = add_trend_context(trend_df)
@@ -366,21 +353,16 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
 
     feat = dict(range_feat)
     feat.update({
-        "ctx_support_d1": ctx_support_d1,
-        "regime_d1": ctx["D1"]["regime"],   # cf. CORRECTION CONFLIT MTF en tête de fichier
-        "wall_street_active": wall_street_active,
-        # Règle de volatilité "Stop Loss = taille du canal" (littérale,
-        # inconditionnelle côté RANGE, cf. `backtest_phase2_faithful.py`) --
-        # largeur du canal D1, le MÊME niveau que `ctx_support_d1` qui porte
-        # le stop RANGE ici (H-Canal-Large-2, `position_engine.py`). Répliquée
-        # ici pour que le côté RANGE du protocole unifié reste STRICTEMENT
-        # identique à `faithful.py` (invariant vérifié par
-        # `test_unified_protocol.py::test_pure_range_sequence_matches_faithful_engine`).
-        # Le côté TENDANCE n'est PAS concerné (H-Canal-Large-4 : la règle est
-        # scopée à la table RANGE par le corpus).
-        "wide_channel": compute_wide_channel(ctx["D1"]["ctx_width_pct"]),
-        "pitchfork_p1": pitchfork_p1,
-        "regime": trend_df["regime"].values,
+        # "regime"/"regime_d1"/"ctx_support_d1"/"wall_street_active"/
+        # "wide_channel"/"pitchfork_p1"/"squeeze_*" : déjà présents via
+        # `range_feat` ci-dessus -- PAS réajoutés ici (chantier d'architecture,
+        # élimine la duplication qui existait avant ce round).
+        # "ctx_support" (H4 NATIF, hypothèse H4 de trend_table.py -- PAS le
+        # même niveau que "ctx_support_d1") : vérifié bit-à-bit identique à
+        # ce qu'une 2e jointure via `range_feat` produirait (même `prepare()`
+        # sur le même H4 OHLC) -- réutilisé depuis `trend_df`, déjà là pour
+        # le côté TENDANCE, plutôt que dupliqué.
+        "ctx_support": trend_df["ctx_support"].values,
         "ctx_resistance": trend_df["ctx_resistance"].values,
         "ctx_high": trend_df["ctx_high"].values,
         "local_high": trend_df["local_high"].values,
@@ -395,10 +377,7 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         "ema_trend": ema_trend_v,
         "volume_expansion": volume_expansion,
     })
-    # Variante d'entrée "3ème borne squeezée" (littérale, non conditionnelle,
-    # cf. backtest_phase2_faithful.py) -- même fonction, réutilisée telle
-    # quelle plutôt que dupliquée, côté RANGE de ce routeur.
-    return _add_squeeze_columns(feat)
+    return feat
 
 def _valid_trend_inputs(feat: dict, j: int) -> bool:
     """Même condition que `trend_table.run_trend_table::valid_inputs`."""
