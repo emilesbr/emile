@@ -3,6 +3,10 @@ __pycache__/
 # Manuel PRO Indicators (Philippe Roux) : usage personnel sous CGU, jamais à
 # redistribuer -- ne doit jamais partir dans un commit sur ce dépôt public.
 *.pdf
+# Guide de stratégie PRO Indicators (captures officielles, logo PRO-INDICATORS.com
+# visible) : même raison que le manuel PDF ci-dessus, usage personnel, pas à
+# redistribuer sur ce dépôt public.
+Guide-stratégique-phillipe/
 # Infrastructure locale de Claude Code : seules les copies de travail
 # jetables (agents délégués via isolation "worktree") et les préférences
 # de permissions propres à une session sont exclues. .claude/settings.json
