@@ -132,6 +132,7 @@ from emile.core.position_engine import make_open_tranche_fn, process_tranche, pr
 from emile.core.trend_table import PROFILES_TREND, step_campaign, try_open_campaign, step_reverse, load_volume
 from emile.core.unified_protocol import (
     _prepare_unified, _accumulation_active, _campaign_ev, resample_h4_with_volume, PROFILE_NAMES,
+    _range_gate, _range_gate_extra,
 )
 from emile.core.diversification import prepare_diversified, size_fraction, RISK_PCT_PATTERN_A, RISK_PCT_PATTERN_B, \
     MAX_RISK_PER_ZONE_PCT
@@ -215,31 +216,14 @@ def _run_triple_core(feat_u: dict, h4p: pd.DataFrame, profile_name: str,
     n_total = len(o)
     end = n_total if end is None else end
 
-    def gate(i):
-        # CORRECTION EXCES H4 + CONFLIT MTF + ANDREWS CONTEXTUEL (cf.
-        # unified_protocol.py) : réplique le gate RANGE RÉEL de
-        # _run_core_unified tel qu'il existe désormais -- pas une version
-        # pré-correction figée.
-        andrews_ok = (
-            feat_u["regime"][i] != "RANGE_TENDANCIEL"
-            or (not np.isnan(feat_u["pitchfork_p1"][i]) and c[i] > feat_u["pitchfork_p1"][i])
-        )
-        return bool(
-            feat_u["gate_score"][i] >= 2 and feat_u["gate_regime"][i] != "EXCES"
-            and feat_u["regime"][i] != "EXCES"
-            and feat_u["regime_d1"][i] not in ("RANGE_NEUTRE", "RANGE_TENDANCIEL")
-            and andrews_ok
-        )
-
-    def gate_extra(j):
-        # CORRECTION PYRAMIDALISATION-RÉGIME (cf. unified_protocol.py) :
-        # réplique le gate RANGE RÉEL de _run_core_unified tel qu'il existe
-        # désormais -- le renfort exige EN PLUS que le régime H4 natif soit
-        # TENDANCE/RANGE_TENDANCIEL, pas une version pré-correction figée.
-        abstain = bool(wall_street_v[j])
-        g = gate(j) and not abstain
-        pyramiding_allowed = feat_u["regime"][j] in ("TENDANCE", "RANGE_TENDANCIEL")
-        return g, (g and pyramiding_allowed)
+    # `gate`/`gate_extra` : PLUS de copie à la main ici (chantier
+    # d'architecture, cf. PLAN.md) -- `_range_gate`/`_range_gate_extra` sont
+    # désormais des fonctions de MODULE de `unified_protocol.py`, importées
+    # directement, exactement comme `_campaign_ev` l'était déjà. Élimine à la
+    # racine le risque de dérive qui a exigé 2 resynchronisations manuelles
+    # cette session (Fourchette d'Andrews, 3ème borne squeezée).
+    gate = lambda i: _range_gate(feat_u, i)
+    gate_extra = lambda j: _range_gate_extra(feat_u, j)
 
     range_state = {"last_pyramid_high": -np.inf}
     open_tranche_fn = make_open_tranche_fn(

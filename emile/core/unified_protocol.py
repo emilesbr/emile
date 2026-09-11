@@ -498,6 +498,49 @@ def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profil
         risk_pct = sizing.risk_pct
     return _run_core_unified(feat, profile_name, risk_pct=risk_pct, record_state=record_state)
 
+# ---------------------------------------------------------------------------
+# Chantier d'architecture (cf. PLAN.md, section dédiée) : `_range_gate`/
+# `_range_gate_extra` extraits comme fonctions de MODULE (pas des fermetures
+# imbriquées dans `_run_core_unified` comme avant) -- sur le MÊME modèle que
+# `_campaign_ev` ci-dessus, qui est déjà réutilisé TEL QUEL par
+# `risk_aggregation_triple_system.py` sans jamais avoir dérivé. Les
+# fermetures imbriquées, elles, avaient dû être RECOPIÉES À LA MAIN dans ce
+# même fichier (aucune autre façon de les réutiliser) -- source de 2 dérives
+# réelles cette session (Fourchette d'Andrews, 3ème borne squeezée, cette
+# dernière NON détectée par le garde-fou anti-dérive avant correction).
+# Cette extraction élimine la duplication à la racine plutôt que de compter
+# sur une resynchronisation manuelle future.
+# ---------------------------------------------------------------------------
+def _range_gate(feat: dict, i: int) -> bool:
+    """Gate d'entrée RANGE (entrée fraîche ET renfort) -- CORRECTION EXCES H4
+    (le régime EXCES du H4 natif, `feat["regime"]`, doit bloquer -- "Bulle/
+    Excès -> NE PAS TRADER", RULES_EXTRACTION.md §1) + CORRECTION CONFLIT MTF
+    (ne jamais ouvrir si le contexte D1 est lui-même en régime range, source
+    #5 "l'erreur numéro un") + Fourchette d'Andrews contextuelle ("prend le
+    relais" seulement en régime RANGE_TENDANCIEL, cf. `backtest_phase2_
+    faithful.py`/`andrews_gate_alternative.py`)."""
+    d1_not_range = feat["regime_d1"][i] not in ("RANGE_NEUTRE", "RANGE_TENDANCIEL")
+    andrews_ok = (
+        feat["regime"][i] != "RANGE_TENDANCIEL"
+        or (not np.isnan(feat["pitchfork_p1"][i]) and feat["close"][i] > feat["pitchfork_p1"][i])
+    )
+    return bool(
+        feat["gate_score"][i] >= 2 and feat["gate_regime"][i] != "EXCES"
+        and feat["regime"][i] != "EXCES" and d1_not_range and andrews_ok
+    )
+
+def _range_gate_extra(feat: dict, j: int) -> tuple:
+    """Abstention Wall Street NON CONDITIONNELLE (bloque entrée fraîche ET
+    renfort) + CORRECTION PYRAMIDALISATION-RÉGIME (le renfort, pas l'entrée
+    fraîche, exige EN PLUS le régime H4 natif TENDANCE/RANGE_TENDANCIEL --
+    "Renfort" n'apparaît jamais dans la table Money Management RANGE, §3,
+    réservé à la table TENDANCE, §4). Renvoie `(fresh_extra, pyramid_extra)`,
+    cf. `make_open_tranche_fn`."""
+    abstain = bool(feat["wall_street_active"][j])
+    g = _range_gate(feat, j) and not abstain
+    pyramiding_allowed = feat["regime"][j] in ("TENDANCE", "RANGE_TENDANCIEL")
+    return g, (g and pyramiding_allowed)
+
 def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
                        record_state: bool = False, start: int = 0, end: int = None) -> dict:
     """La boucle d'orchestration elle-même, séparée de `run_unified` sur le
@@ -548,43 +591,11 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
     n_total = len(o)
     end = n_total if end is None else end
 
-    def gate(i: int) -> bool:
-        # CORRECTION EXCES H4 (mobilisation multi-agents, audit systématique
-        # de fidélité IP -- cf. CORRECTION dans backtest_phase2_faithful.py) :
-        # le régime EXCES du H4 natif (feat["regime"], déjà calculé pour le
-        # côté TENDANCE, jamais lu ici jusqu'à cette correction) doit aussi
-        # bloquer côté RANGE -- "Bulle/Excès -> NE PAS TRADER"
-        # (RULES_EXTRACTION.md §1) porte sur le marché qu'on trade, pas
-        # seulement sur son contexte Hebdomadaire.
-        # CORRECTION CONFLIT MTF (cf. tête de fichier) : ne jamais ouvrir une
-        # tranche RANGE H4 si le contexte immédiatement supérieur (D1) est
-        # LUI-MÊME en régime range (Neutre ou Tendanciel) -- source #5,
-        # "L'erreur numéro un".
-        d1_not_range = feat["regime_d1"][i] not in ("RANGE_NEUTRE", "RANGE_TENDANCIEL")
-        # Fourchette d'Andrews, lecture CONTEXTUELLE (cf.
-        # backtest_phase2_faithful.py, andrews_gate_alternative.py) : "prend
-        # le relais" SEULEMENT en régime RANGE_TENDANCIEL -- condition
-        # triviale (True) dans tout autre régime.
-        andrews_ok = (
-            feat["regime"][i] != "RANGE_TENDANCIEL"
-            or (not np.isnan(feat["pitchfork_p1"][i]) and c[i] > feat["pitchfork_p1"][i])
-        )
-        return bool(
-            feat["gate_score"][i] >= 2 and feat["gate_regime"][i] != "EXCES"
-            and feat["regime"][i] != "EXCES" and d1_not_range and andrews_ok
-        )
-
-    def gate_extra(j):
-        # Abstention Wall Street NON CONDITIONNELLE (littérale, cf.
-        # backtest_phase2_faithful.py) : bloque entrée fraîche ET renfort.
-        abstain = bool(wall_street_v[j])
-        g = gate(j) and not abstain
-        # CORRECTION PYRAMIDALISATION-RÉGIME (cf. tête de fichier) : le
-        # renfort (pas l'entrée fraîche) exige EN PLUS que le régime H4 natif
-        # soit TENDANCE/RANGE_TENDANCIEL -- "Renfort" n'apparaît jamais dans
-        # la table Money Management RANGE (§3), réservé à la table TENDANCE.
-        pyramiding_allowed = feat["regime"][j] in ("TENDANCE", "RANGE_TENDANCIEL")
-        return g, (g and pyramiding_allowed)
+    # `gate`/`gate_extra` : alias locaux vers les fonctions de MODULE
+    # `_range_gate`/`_range_gate_extra` ci-dessus (cf. bloc "Chantier
+    # d'architecture") -- plus de fermeture imbriquée à dupliquer ailleurs.
+    gate = lambda i: _range_gate(feat, i)
+    gate_extra = lambda j: _range_gate_extra(feat, j)
 
     range_state = {"last_pyramid_high": -np.inf}
     open_tranche_fn = make_open_tranche_fn(

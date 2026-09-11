@@ -858,6 +858,113 @@ def test_squeeze_half_configured_raises():
         return
     raise AssertionError("un armement sans mid/sup/low doit lever ValueError")
 
+# ---------------------------------------------------------------------------
+# Chantier d'architecture (cf. PLAN.md, section dédiée) : `val_close_frac`/
+# `conf_close_frac` PAR TRANCHE (`tr.get(...)`) et `risk_pct` en array,
+# strictement additifs -- débloque le tableau Range Tendanciel (§3bis) et le
+# sizing par confiance sans changer le comportement d'aucun appelant existant.
+# ---------------------------------------------------------------------------
+def test_process_tranche_reads_val_conf_close_frac_from_tr_when_present():
+    """Si `tr` porte ses PROPRES `val_close_frac`/`conf_close_frac`, ils
+    priment sur les paramètres scalaires passés à `process_tranche` --
+    prouvé en passant des scalaires OPPOSÉS (0.0) à ceux stockés dans `tr`
+    (1.0) : si `tr` ne primait pas, rien ne se clôturerait à la Validation."""
+    tr = make_tranche(entry=100.0, stop=90.0, remaining=1.0,
+                       val_px=105.0, conf_px=115.0, lim_px=130.0)
+    tr["val_close_frac"] = 1.0
+    tr["conf_close_frac"] = 1.0
+    o = np.array([100.0, 106.0])
+    low = np.array([99.0, 105.0])
+    c = np.array([100.0, 106.0])
+    closed, fee_frac, realized = process_tranche(
+        tr, 1, o, low, c, long_signal_prev=True,
+        val_close_frac=0.0, conf_close_frac=0.0, conf_to_be=True,
+    )
+    assert tr["val_done"] is True
+    assert abs(fee_frac - 1.0) < 1e-9, (
+        f"fee_frac={fee_frac}, attendu 1.0 -- tr['val_close_frac']=1.0 aurait dû primer "
+        "sur le paramètre scalaire val_close_frac=0.0"
+    )
+    assert closed is True and abs(tr["remaining"] - 0.0) < 1e-9
+
+def test_process_tranche_falls_back_to_scalar_args_when_tr_has_no_override():
+    """Non-régression explicite : un `tr` SANS ces 2 clés (comportement de
+    TOUS les appelants existants, `make_open_tranche_fn` compris tant que
+    `val_close_frac_v`/`conf_close_frac_v` ne sont pas fournis) doit se
+    comporter EXACTEMENT comme avant ce chantier -- paramètres scalaires
+    utilisés tels quels."""
+    tr = make_tranche(entry=100.0, stop=90.0, remaining=1.0,
+                       val_px=105.0, conf_px=115.0, lim_px=130.0)
+    assert "val_close_frac" not in tr and "conf_close_frac" not in tr
+    o = np.array([100.0, 106.0])
+    low = np.array([99.0, 105.0])
+    c = np.array([100.0, 106.0])
+    closed, fee_frac, realized = process_tranche(
+        tr, 1, o, low, c, long_signal_prev=True,
+        val_close_frac=0.5, conf_close_frac=0.5, conf_to_be=True,
+    )
+    assert tr["val_done"] is True
+    assert abs(fee_frac - 0.5) < 1e-9, f"fee_frac={fee_frac}, attendu 0.5 (paramètre scalaire, tr sans clé)"
+
+def _confidence_factory(risk_pct, val_close_frac_v=None, conf_close_frac_v=None):
+    n = 6
+    atr_v = np.ones(n)
+    ctx_support_v = np.full(n, 90.0)
+    local_range_v = np.full(n, 10.0)
+    context_range_v = np.full(n, 20.0)
+    n_borders_v = np.full(n, 5.0)
+    high = np.full(n, 101.0)
+    o = np.full(n, 100.0)
+    score = np.full(n, 3.0)
+    state = {"last_pyramid_high": -np.inf}
+    fn = make_open_tranche_fn(
+        atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v,
+        high, o, score, 0, 3, 3, 99, 1.0, risk_pct, state,
+        val_close_frac_v=val_close_frac_v, conf_close_frac_v=conf_close_frac_v,
+    )
+    return fn, state
+
+def test_open_tranche_fn_risk_pct_accepts_per_bar_array():
+    """`risk_pct` en array : la taille de la tranche ouverte à la bougie `i`
+    doit utiliser `risk_pct[i-1]` (résolu à l'ouverture), PAS une moyenne ni
+    une valeur d'une autre bougie -- comparé au calcul manuel exact."""
+    n = 6
+    risk_pct_v = np.array([0.01, 0.01, 0.05, 0.01, 0.01, 0.01])   # 0.05 à j=2
+    fn, state = _confidence_factory(risk_pct_v)
+    tr = fn(3, [], 0)   # j = i-1 = 2 -> risk_pct[2] = 0.05
+    assert tr is not None
+    stop_pct = (100.0 - 90.0) / 100.0   # ctx_support_v=90, entry=o[3]=100
+    expected_size = min(1.0 / 3, 0.05 / stop_pct)
+    assert abs(tr["remaining"] - expected_size) < 1e-9, (
+        f"remaining={tr['remaining']}, attendu {expected_size} (risk_pct[j=2]=0.05, pas le "
+        "scalaire ni une autre bougie de l'array)"
+    )
+
+def test_open_tranche_fn_stores_val_conf_close_frac_when_arrays_given():
+    """Si `val_close_frac_v`/`conf_close_frac_v` sont fournis, la tranche
+    ouverte doit porter EXACTEMENT `array[j]` dans ses propres clés -- pour
+    que `process_tranche` les lise ensuite via `tr.get(...)` toute la vie de
+    la tranche (cf. tête de fichier de `position_engine.py`)."""
+    n = 6
+    vcf_v = np.array([0.1, 0.1, 0.3, 0.1, 0.1, 0.1])
+    ccf_v = np.array([0.2, 0.2, 0.4, 0.2, 0.2, 0.2])
+    fn, state = _confidence_factory(0.02, val_close_frac_v=vcf_v, conf_close_frac_v=ccf_v)
+    tr = fn(3, [], 0)   # j = 2
+    assert tr is not None
+    assert abs(tr["val_close_frac"] - 0.3) < 1e-9, tr.get("val_close_frac")
+    assert abs(tr["conf_close_frac"] - 0.4) < 1e-9, tr.get("conf_close_frac")
+
+def test_open_tranche_fn_scalar_risk_pct_and_no_frac_arrays_unchanged():
+    """Non-régression explicite : sans `val_close_frac_v`/`conf_close_frac_v`
+    et avec `risk_pct` scalaire (les 9+ appelants existants), la tranche
+    ouverte ne doit PORTER AUCUNE des 2 nouvelles clés -- `process_tranche`
+    retombera donc sur ses paramètres scalaires, comportement historique
+    inchangé."""
+    fn, state = _confidence_factory(0.02)
+    tr = fn(3, [], 0)
+    assert tr is not None
+    assert "val_close_frac" not in tr and "conf_close_frac" not in tr
+
 TESTS = [
     test_validation_confirmation_limite_sequence,
     test_immediate_stop_loss,
@@ -887,6 +994,11 @@ TESTS = [
     test_squeeze_order_expires_after_SQUEEZE_LIFETIME_bars,
     test_squeeze_disabled_by_default_no_behavior_change,
     test_squeeze_half_configured_raises,
+    test_process_tranche_reads_val_conf_close_frac_from_tr_when_present,
+    test_process_tranche_falls_back_to_scalar_args_when_tr_has_no_override,
+    test_open_tranche_fn_risk_pct_accepts_per_bar_array,
+    test_open_tranche_fn_stores_val_conf_close_frac_when_arrays_given,
+    test_open_tranche_fn_scalar_risk_pct_and_no_frac_arrays_unchanged,
 ]
 
 def main():
