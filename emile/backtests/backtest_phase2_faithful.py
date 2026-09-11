@@ -366,6 +366,53 @@ from emile.core.andrews_pitchfork import add_andrews_pitchfork_columns
 # littéral du corpus, pas une extension arbitraire de notre part.
 REVERSE_SCOPED_PROFILE = "TRES_AGRESSIF"
 
+# RULES_EXTRACTION.md §3bis, tableau Range TENDANCIEL (distinct de §3, Range
+# Neutre) -- 19e round : SEULEMENT les profils où c'est codable SANS
+# INVENTION. Vérifié ligne à ligne contre §3 (pas supposé) :
+#   - FAIBLE   : §3bis Validation=TP25%/Confirmation=TP50%+SL BE, DIFFÉRENT
+#     de §3 (TP50%/SL BE=0%) -- override réel, ci-dessous.
+#   - MODERE   : §3bis Validation=TP25%/Confirmation=TP25%+SL BE est
+#     NUMÉRIQUEMENT IDENTIQUE à §3 (TP25%+SL payé/TP25%+SL BE) -- 0,25/0,25
+#     dans les deux cas. Aucune entrée nécessaire : le profil applique déjà
+#     la bonne grille sans branchement, "SL payé" ne changeant rien
+#     (aucune action sur le stop avant Confirmation dans ce moteur, cf.
+#     tête de `position_engine.py`, "correction la mieux établie du corpus").
+#   - AGRESSIF/TRES_AGRESSIF : EXCLUS. §3bis introduit "SL gain" à l'étape
+#     Target 1 (TP25%+SL gain) -- AUCUNE définition codable (0 occurrence
+#     dans les 17 sources vidéo, le corpus ou le code, y compris "trailing"
+#     -- même motif de refus que le gate Fibonacci RANGE, cf. 19e round).
+#     Ces 2 profils gardent §3 SANS CONDITION, même en régime RANGE_TENDANCIEL.
+# "Target 1" (§3bis) = TP100% pour FAIBLE/MODERE, textuellement IDENTIQUE à
+# "Limite" de §3 (déjà TP100% pour ces 2 profils) -- le mécanisme de clôture
+# à 100% est déjà câblé en dur dans `process_tranche` (`c[i] >= tr["lim_px"]`),
+# AUCUN nouveau stage n'est nécessaire (vérifié au 19e round : pas un
+# changement structurel pour ces 2 profils, contrairement à Agressif/Très
+# Agressif qui en auraient exigé un).
+RANGE_TENDANCIEL_CLOSE_FRACS = {
+    "FAIBLE": {"val_close": 0.25, "conf_close": 0.50},
+}
+
+
+def range_money_management_fracs(profile_name: str, regime_h4_v) -> tuple:
+    """Retourne `(val_close_frac_v, conf_close_frac_v)`, un array PAR BOUGIE
+    (même longueur que `regime_h4_v`) : la grille §3bis ci-dessus si le
+    profil a une entrée dans `RANGE_TENDANCIEL_CLOSE_FRACS` ET que la bougie
+    est en régime RANGE_TENDANCIEL, sinon la grille §3 par défaut du profil
+    (`PROFILES_V4`) -- fonction PURE, ne recalcule aucun indicateur, réutilisée
+    à l'identique par `unified_protocol.py` (pas de copie, cf. chantier
+    d'architecture 24e round)."""
+    p = PROFILES_V4[profile_name]
+    default_val, default_conf = p["val_close"], p["conf_close"]
+    override = RANGE_TENDANCIEL_CLOSE_FRACS.get(profile_name)
+    n = len(regime_h4_v)
+    if override is None:
+        return np.full(n, default_val), np.full(n, default_conf)
+    regime_h4_v = np.asarray(regime_h4_v)
+    is_tendanciel = regime_h4_v == "RANGE_TENDANCIEL"
+    val_v = np.where(is_tendanciel, override["val_close"], default_val)
+    conf_v = np.where(is_tendanciel, override["conf_close"], default_conf)
+    return val_v, conf_v
+
 def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
                        use_mtf_gate: bool = True) -> dict:
     """Calcule toutes les colonnes une seule fois sur l'historique complet.
@@ -548,6 +595,12 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
         pyramiding_allowed = regime_h4_v[j] in ("TENDANCE", "RANGE_TENDANCIEL")
         return g, (g and pyramiding_allowed)
 
+    # Tableau Range TENDANCIEL (§3bis, 19e/24e rounds) : val_close/conf_close
+    # PAR BOUGIE, branchés sur le régime H4 natif à l'ouverture -- cf.
+    # `range_money_management_fracs` (no-op bit-à-bit pour MODERE/AGRESSIF/
+    # TRES_AGRESSIF, override réel seulement pour FAIBLE en RANGE_TENDANCIEL).
+    val_close_frac_v, conf_close_frac_v = range_money_management_fracs(profile_name, regime_h4_v)
+
     state = {"last_pyramid_high": -np.inf}
     open_tranche_fn = make_open_tranche_fn(
         atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v, high, o, score,
@@ -555,6 +608,7 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
         extra_gate_fn=gate_extra, wide_channel_v=wide_channel_v,
         squeeze_armed_v=squeeze_armed_v, squeeze_mid_v=squeeze_mid_v,
         squeeze_sup_v=squeeze_sup_v, low_v=low,
+        val_close_frac_v=val_close_frac_v, conf_close_frac_v=conf_close_frac_v,
     )
 
     gated_long_signal = np.array([

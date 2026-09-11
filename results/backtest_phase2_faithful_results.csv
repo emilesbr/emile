@@ -1,5 +1,5 @@
 symbol,profile,faithful_n_trades,faithful_max_dd_%,faithful_total_return_%,faithful_win_rate_%,faithful_profit_factor,recommended_n_trades,recommended_max_dd_%,recommended_total_return_%,recommended_win_rate_%,recommended_profit_factor
-BTCUSDT,FAIBLE,283,-3.0,7.9,40.3,1.8,354,-11.8,26.8,38.7,1.74
+BTCUSDT,FAIBLE,283,-3.0,7.9,40.3,1.81,354,-11.8,26.8,38.7,1.74
 BTCUSDT,MODERE,283,-5.8,21.0,40.3,1.97,354,-19.5,60.2,37.9,1.84
 BTCUSDT,AGRESSIF,283,-8.7,37.7,40.3,2.05,354,-24.5,85.8,37.9,1.88
 BTCUSDT,TRES_AGRESSIF,296,-18.3,45.6,38.2,1.65,354,-27.3,123.1,37.9,2.03

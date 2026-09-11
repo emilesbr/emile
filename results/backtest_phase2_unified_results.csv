@@ -1,5 +1,5 @@
 symbol,profile,unified_n_trades,unified_max_dd_%,unified_total_return_%,unified_win_rate_%,unified_profit_factor,unified_n_trend_campaigns_opened,faithful_n_trades,faithful_max_dd_%,faithful_total_return_%,faithful_win_rate_%,faithful_profit_factor
-BTCUSDT,FAIBLE,284,-3.6,9.1,40.5,1.91,7,283,-3.0,7.9,40.3,1.8
+BTCUSDT,FAIBLE,284,-3.6,9.2,40.5,1.92,7,283,-3.0,7.9,40.3,1.81
 BTCUSDT,MODERE,290,-6.5,21.1,39.7,1.93,7,283,-5.8,21.0,40.3,1.97
 BTCUSDT,AGRESSIF,290,-9.8,38.0,39.7,1.99,7,283,-8.7,37.7,40.3,2.05
 BTCUSDT,TRES_AGRESSIF,303,-18.3,45.7,37.6,1.62,7,296,-18.3,45.6,38.2,1.65

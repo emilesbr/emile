@@ -392,6 +392,51 @@ def test_range_entry_blocked_when_h4_regime_is_exces():
         "(le gate EXCES-H4 doit bloquer TOUTE ouverture, entrée fraîche incluse)"
     )
 
+# ---------------------------------------------------------------------------
+# Tableau Range TENDANCIEL (§3bis, 19e/24e rounds) : câblage dans
+# `_run_core_unified` -- `range_money_management_fracs` (réutilisée de
+# `backtest_phase2_faithful.py`, pas dupliquée) doit fixer les fractions de
+# clôture PAR TRANCHE dès l'ouverture, lisibles sur `live_state["range_
+# tranches"]`.
+# ---------------------------------------------------------------------------
+def test_range_tranche_carries_range_tendanciel_fracs_for_faible():
+    feat = _make_pyramid_range_feat("RANGE_TENDANCIEL")
+    res = _run_core_unified(feat, "FAIBLE", record_state=True)
+    trs = res["live_state"]["range_tranches"]
+    assert len(trs) >= 1, "aucune tranche RANGE ouverte -- scénario invalide"
+    assert abs(trs[0]["val_close_frac"] - 0.25) < 1e-9, (
+        f"val_close_frac={trs[0]['val_close_frac']}, attendu 0.25 (§3bis FAIBLE, RANGE_TENDANCIEL)"
+    )
+    assert abs(trs[0]["conf_close_frac"] - 0.50) < 1e-9, (
+        f"conf_close_frac={trs[0]['conf_close_frac']}, attendu 0.50 (§3bis FAIBLE, RANGE_TENDANCIEL)"
+    )
+
+def test_range_tranche_carries_range_neutre_fracs_for_faible():
+    """Contrôle positif : le MÊME profil FAIBLE, mais régime RANGE_NEUTRE --
+    doit porter la grille §3 par défaut (0,50/0,00), pas celle de §3bis."""
+    feat = _make_pyramid_range_feat("RANGE_NEUTRE")
+    res = _run_core_unified(feat, "FAIBLE", record_state=True)
+    trs = res["live_state"]["range_tranches"]
+    assert len(trs) >= 1, "aucune tranche RANGE ouverte -- scénario invalide"
+    assert abs(trs[0]["val_close_frac"] - 0.50) < 1e-9, (
+        f"val_close_frac={trs[0]['val_close_frac']}, attendu 0.50 (§3, RANGE_NEUTRE)"
+    )
+    assert abs(trs[0]["conf_close_frac"] - 0.00) < 1e-9, (
+        f"conf_close_frac={trs[0]['conf_close_frac']}, attendu 0.00 (§3, RANGE_NEUTRE)"
+    )
+
+def test_range_tranche_modere_unaffected_by_regime():
+    """MODERE : §3bis est un no-op bit-à-bit (cf. `backtest_phase2_
+    faithful.py`) -- mêmes fractions dans les 2 régimes."""
+    feat_n = _make_pyramid_range_feat("RANGE_NEUTRE")
+    feat_t = _make_pyramid_range_feat("RANGE_TENDANCIEL")
+    tr_n = _run_core_unified(feat_n, "MODERE", record_state=True)["live_state"]["range_tranches"][0]
+    tr_t = _run_core_unified(feat_t, "MODERE", record_state=True)["live_state"]["range_tranches"][0]
+    assert abs(tr_n["val_close_frac"] - tr_t["val_close_frac"]) < 1e-9
+    assert abs(tr_n["conf_close_frac"] - tr_t["conf_close_frac"]) < 1e-9
+    assert abs(tr_n["val_close_frac"] - 0.25) < 1e-9
+    assert abs(tr_n["conf_close_frac"] - 0.25) < 1e-9
+
 def test_range_entry_blocked_by_andrews_contextual_gate_when_below_pitchfork_p1():
     """Fourchette d'Andrews, lecture CONTEXTUELLE (cf. `backtest_phase2_
     faithful.py`, `andrews_gate_alternative.py`) : régime H4 RANGE_TENDANCIEL

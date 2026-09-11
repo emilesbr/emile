@@ -272,6 +272,7 @@ from emile.backtests.backtest_phase2_v7 import (
 from emile.backtests.backtest_phase2_recommended import _prepare_features, WARMUP
 from emile.backtests.backtest_phase2_faithful import (
     REVERSE_SCOPED_PROFILE, run_faithful, _add_squeeze_columns,
+    range_money_management_fracs,
 )
 from emile.backtests.backtest_phase2_ut2 import attach_multi_context, CLOSURE_DELAY
 from emile.core.position_engine import make_open_tranche_fn, process_tranche, process_reverse
@@ -597,6 +598,12 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
     gate = lambda i: _range_gate(feat, i)
     gate_extra = lambda j: _range_gate_extra(feat, j)
 
+    # Tableau Range TENDANCIEL (§3bis, 19e/24e rounds) : cf.
+    # `backtest_phase2_faithful.py::range_money_management_fracs` (réutilisée
+    # telle quelle, pas dupliquée) -- no-op bit-à-bit pour MODERE/AGRESSIF/
+    # TRES_AGRESSIF, override réel seulement pour FAIBLE en RANGE_TENDANCIEL.
+    val_close_frac_v, conf_close_frac_v = range_money_management_fracs(profile_name, feat["regime"])
+
     range_state = {"last_pyramid_high": -np.inf}
     open_tranche_fn = make_open_tranche_fn(
         feat["atr"], feat["ctx_support_d1"], feat["local_range"], feat["context_range"],
@@ -605,6 +612,7 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
         wide_channel_v=feat["wide_channel"],   # littéral, non conditionnel (cf. faithful.py)
         squeeze_armed_v=feat["squeeze_armed"], squeeze_mid_v=feat["squeeze_mid"],
         squeeze_sup_v=feat["squeeze_sup"], low_v=low,
+        val_close_frac_v=val_close_frac_v, conf_close_frac_v=conf_close_frac_v,
     )
     gated_long_signal = np.array([
         (score[i] >= 2) and gate(i) and not bool(wall_street_v[i]) for i in range(n_total)

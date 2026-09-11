@@ -29,6 +29,7 @@ from emile.backtests.backtest_phase2_ut2 import attach_multi_context, CLOSURE_DE
 from emile.backtests.backtest_phase2_recommended import WARMUP
 from emile.backtests.backtest_phase2_faithful import (
     _prepare_features, _run_core, run_faithful, REVERSE_SCOPED_PROFILE,
+    range_money_management_fracs,
 )
 
 # --- Fixtures réelles (petite tranche, réutilisée par plusieurs tests) ---
@@ -399,6 +400,105 @@ def test_run_faithful_end_to_end_produces_trades_all_profiles():
     for profile in PROFILES_V4:
         res = run_faithful(h4.copy(), d1.copy(), weekly.copy(), profile)
         assert res["n_trades"] > 0, f"profil {profile} : aucun trade produit sur BTC, historique complet"
+
+# ---------------------------------------------------------------------------
+# Tableau Range TENDANCIEL (§3bis, 19e/24e rounds) : `range_money_management_
+# fracs` -- vérité terrain calculée à la main, cf. tête de
+# `backtest_phase2_faithful.py` pour les valeurs exactes et leur source.
+# ---------------------------------------------------------------------------
+def test_range_money_management_fracs_faible_overridden_in_range_tendanciel():
+    regime = np.array(["RANGE_NEUTRE", "RANGE_TENDANCIEL", "TENDANCE"], dtype=object)
+    val_v, conf_v = range_money_management_fracs("FAIBLE", regime)
+    np.testing.assert_array_equal(val_v, [0.50, 0.25, 0.50])
+    np.testing.assert_array_equal(conf_v, [0.00, 0.50, 0.00])
+
+def test_range_money_management_fracs_modere_is_a_bitwise_noop():
+    """MODERE : §3bis est numériquement identique à §3 (0,25/0,25 dans les
+    deux cas, cf. tête de fichier) -- AUCUNE bascule, même en RANGE_TENDANCIEL."""
+    regime = np.array(["RANGE_NEUTRE", "RANGE_TENDANCIEL", "TENDANCE"], dtype=object)
+    val_v, conf_v = range_money_management_fracs("MODERE", regime)
+    np.testing.assert_array_equal(val_v, [0.25, 0.25, 0.25])
+    np.testing.assert_array_equal(conf_v, [0.25, 0.25, 0.25])
+
+def test_range_money_management_fracs_agressif_tres_agressif_excluded():
+    """AGRESSIF/TRES_AGRESSIF : EXCLUS de §3bis ("SL gain" indéfini, cf. 19e
+    round) -- grille §3 partout, MÊME en régime RANGE_TENDANCIEL."""
+    regime = np.array(["RANGE_NEUTRE", "RANGE_TENDANCIEL"], dtype=object)
+    for profile, expected in (("AGRESSIF", (0.00, 0.50)), ("TRES_AGRESSIF", (0.00, 0.00))):
+        val_v, conf_v = range_money_management_fracs(profile, regime)
+        np.testing.assert_array_equal(val_v, [expected[0], expected[0]])
+        np.testing.assert_array_equal(conf_v, [expected[1], expected[1]])
+
+def _range_tendanciel_scenario_feat(n, regime_h4_value):
+    """Scénario synthétique DÉDIÉ (calculé à la main, cf. `test_position_
+    engine.py::test_validation_confirmation_limite_sequence` pour le même
+    patron) : plat jusqu'au warmup, UNE tranche ouverte à `WARMUP+1`
+    (entry=100), puis clôture qui franchit précisément Validation (105) à
+    `WARMUP+2` et Confirmation (108) à `WARMUP+3`, immobile ensuite --
+    n'atteint JAMAIS la Limite (112) dans cette fenêtre, pour isoler l'effet
+    de `val_close_frac`/`conf_close_frac` sans le bruit d'une clôture totale.
+    `local_range=5`/`context_range=8` (val_px=entry+5, conf_px=entry+8)."""
+    close = np.full(n, 100.0)
+    close[WARMUP + 2:] = 106.0    # franchit val_px=105 à partir de WARMUP+2
+    close[WARMUP + 3:] = 109.0    # franchit conf_px=108 à partir de WARMUP+3
+    openp = close.copy()
+    high = close * 1.001
+    low = close * 0.999
+    return {
+        "date": pd.date_range("2020-01-01", periods=n, freq="4h").values,
+        "open": openp, "high": high, "low": low, "close": close,
+        "score": np.full(n, 3.0), "atr": np.full(n, 1.0),
+        "ctx_support_d1": np.full(n, 90.0),   # jamais touché
+        "local_range": np.full(n, 5.0), "context_range": np.full(n, 8.0),
+        "n_borders": np.full(n, 3.0), "gate_score": np.full(n, 10.0),
+        "gate_regime": np.full(n, "TENDANCE", dtype=object),
+        "regime_h4": np.full(n, regime_h4_value, dtype=object),
+        "regime_d1": np.full(n, "TENDANCE", dtype=object),
+        "wall_street_active": np.zeros(n, dtype=bool),
+        "wide_channel": np.zeros(n, dtype=bool),
+        "pitchfork_p1": close - 10.0,
+        "squeeze_armed": np.zeros(n, dtype=bool),
+        "squeeze_mid": np.full(n, np.nan), "squeeze_sup": np.full(n, np.nan),
+    }
+
+def test_faible_uses_range_tendanciel_grid_end_to_end():
+    """Câblage complet, comparaison DIRECTE de deux runs sur le MÊME scénario
+    (seul `regime_h4` change) : la fraction clôturée à la PREMIÈRE bougie où
+    la tranche est encore suivie après son ouverture doit refléter
+    `val_close_frac` -- 0,50 en RANGE_NEUTRE (grille §3), 0,25 en
+    RANGE_TENDANCIEL (grille §3bis, FAIBLE) -- lue directement sur les
+    snapshots de la trace (`remaining` après la 1ère clôture partielle),
+    pas supposée."""
+    n = WARMUP + 15
+    feat_neutre = _range_tendanciel_scenario_feat(n, "RANGE_NEUTRE")
+    feat_tendanciel = _range_tendanciel_scenario_feat(n, "RANGE_TENDANCIEL")
+
+    res_neutre = _run_core(feat_neutre, "FAIBLE", start=0, end=n, record_trace=True)
+    res_tendanciel = _run_core(feat_tendanciel, "FAIBLE", start=0, end=n, record_trace=True)
+    assert len(res_neutre["trace"]) >= 1 and len(res_tendanciel["trace"]) >= 1, (
+        "aucun trade ouvert dans l'un des deux scénarios -- invalide"
+    )
+
+    def _fraction_remaining_after_first_partial_close(trace):
+        """`tr["remaining"]` est une taille de position (risk_pct/stop_pct),
+        pas une fraction normalisée à 1.0 -- on la RAPPORTE à `entry_size`
+        pour obtenir la fraction réellement clôturée, indépendamment du
+        sizing."""
+        entry_size = trace[0]["entry_size"]
+        snaps = trace[0]["snapshots"]
+        sizes = sorted({round(r, 9) for _, r in snaps}, reverse=True)
+        assert len(sizes) >= 2, sizes
+        return sizes[1] / entry_size   # 2e plus grande valeur = après la 1ère clôture partielle
+
+    frac_neutre = _fraction_remaining_after_first_partial_close(res_neutre["trace"])
+    frac_tendanciel = _fraction_remaining_after_first_partial_close(res_tendanciel["trace"])
+    assert abs(frac_neutre - 0.50) < 1e-6, (
+        f"fraction restante après Validation (RANGE_NEUTRE)={frac_neutre}, attendu 0.50 (§3, val_close=0.50)"
+    )
+    assert abs(frac_tendanciel - 0.75) < 1e-6, (
+        f"fraction restante après Validation (RANGE_TENDANCIEL)={frac_tendanciel}, attendu 0.75 "
+        "(§3bis FAIBLE, val_close=0.25 -> il reste 1-0.25=0.75)"
+    )
 
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
