@@ -104,6 +104,11 @@ def _make_base_feat(n=N):
         # ci-dessus, un test dédié override pour injecter SON scénario.
         "obstacle_ut1": close.copy() - 10.0,
         "obstacle_ut2": close.copy() - 10.0,
+        # Variante d'entrée "3ème borne squeezée" : neutralisée ici
+        # (`squeeze_armed` toujours faux), même raison que ci-dessus.
+        "squeeze_armed": np.zeros(n, dtype=bool),
+        "squeeze_mid": np.full(n, np.nan),
+        "squeeze_sup": np.full(n, np.nan),
     }
 
 # ---------------------------------------------------------------------------
@@ -284,6 +289,7 @@ def test_pure_range_sequence_matches_faithful_engine():
         "date", "open", "high", "low", "close", "score", "atr", "ctx_support_d1",
         "local_range", "context_range", "n_borders", "gate_score", "gate_regime",
         "wall_street_active", "wide_channel", "pitchfork_p1",
+        "squeeze_armed", "squeeze_mid", "squeeze_sup",
     ]
     feat_range_only = {k: feat[k] for k in range_keys}
     # "regime" (unified) et "regime_h4" (faithful) désignent la MÊME grandeur

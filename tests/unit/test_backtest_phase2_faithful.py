@@ -78,6 +78,35 @@ def test_stop_is_d1_ctx_support_not_native_h4():
 
 @_skip_if_no_data
 @pytest.mark.data_dependent
+def test_prepare_features_wires_squeezed_third_border_columns():
+    """Variante d'entrée "3ème borne squeezée" : `_prepare_features` doit
+    exposer `squeeze_armed`/`squeeze_mid`/`squeeze_sup` calculés EXACTEMENT
+    comme un appel direct à `compute_squeezed_third_border` (mêmes tableaux
+    `low`/`high`/`local_range`, même `is_swing_low_confirmed`) -- comparé
+    directement, pas une réimplémentation qui pourrait diverger."""
+    from emile.core.proxy_v2 import compute_swing_low_confirmed
+    from emile.core.position_engine import compute_squeezed_third_border
+    from emile.backtests.backtest_phase2_v7 import SWING_ORDER
+
+    feat = _prepare_features(_H4_BTC.copy(), _D1_BTC.copy(), _WEEKLY_BTC.copy())
+
+    is_swing_low = compute_swing_low_confirmed(feat["low"], order=SWING_ORDER)
+    armed_ref, mid_ref, sup_ref = compute_squeezed_third_border(
+        feat["low"], feat["high"], feat["local_range"], is_swing_low, SWING_ORDER)
+
+    np.testing.assert_array_equal(feat["squeeze_armed"], armed_ref)
+    np.testing.assert_array_equal(feat["squeeze_mid"], mid_ref)
+    np.testing.assert_array_equal(feat["squeeze_sup"], sup_ref)
+    # Pas de garde-fou "au moins une bougie armée" ici : la configuration est
+    # rarissime par construction (2-14 bougies sur ~14 000 mesurées au 18e
+    # round, sur l'historique COMPLET) -- l'exiger sur cette fenêtre de 800
+    # bougies (fixture partagée du fichier) rendrait le test flaky sans
+    # ajouter de rigueur. Le non-vacueux réel de ce mécanisme est déjà
+    # couvert par `test_position_engine.py` (détecteur) et par la mesure
+    # honnête publiée dans `PLAN.md` (18e/22e round, sur 6 ans complets).
+
+@_skip_if_no_data
+@pytest.mark.data_dependent
 def test_wall_street_abstention_is_unconditional_and_blocks_fresh_and_pyramid():
     """L'abstention Wall Street doit bloquer À LA FOIS le signal d'entrée
     gaté (`gated_long_signal`) ET le gate interne de `open_tranche_fn`
@@ -222,6 +251,12 @@ def _synthetic_pyramid_feat(n: int, regime_h4_value) -> dict:
         # tableau isole l'effet de `regime_h4`, il ne doit pas faire varier
         # un 2e gate en même temps.
         "pitchfork_p1": close - 10.0,
+        # Variante d'entrée "3ème borne squeezée" : neutralisée ici
+        # (`squeeze_armed` toujours faux -- `mid`/`sup` ne sont jamais lus
+        # dans ce cas), même raison que les autres clés ci-dessus.
+        "squeeze_armed": np.zeros(n, dtype=bool),
+        "squeeze_mid": np.full(n, np.nan),
+        "squeeze_sup": np.full(n, np.nan),
     }
 
 def test_pyramid_renfort_blocked_when_h4_regime_range_neutre():

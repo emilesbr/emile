@@ -253,6 +253,11 @@ def _run_triple_core(feat_u: dict, h4p: pd.DataFrame, profile_name: str,
         # version pré-correction figée. `wide_channel` vient de
         # `_prepare_unified`, jamais recalculé ici.
         wide_channel_v=feat_u["wide_channel"],
+        # Variante d'entrée "3ème borne squeezée" : réplique le RANGE RÉEL de
+        # `_run_core_unified` -- `feat_u` vient de `_prepare_unified`
+        # (`_add_squeeze_columns` déjà appliquée), jamais recalculée ici.
+        squeeze_armed_v=feat_u["squeeze_armed"], squeeze_mid_v=feat_u["squeeze_mid"],
+        squeeze_sup_v=feat_u["squeeze_sup"], low_v=low,
     )
     gated_long_signal = np.array([
         (score[i] >= 2) and gate(i) and not bool(wall_street_v[i]) for i in range(n_total)

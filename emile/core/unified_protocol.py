@@ -270,7 +270,9 @@ from emile.backtests.backtest_phase2_v7 import (
     MAX_TRANCHES, EMA_SLOW,
 )
 from emile.backtests.backtest_phase2_recommended import _prepare_features, WARMUP
-from emile.backtests.backtest_phase2_faithful import REVERSE_SCOPED_PROFILE, run_faithful
+from emile.backtests.backtest_phase2_faithful import (
+    REVERSE_SCOPED_PROFILE, run_faithful, _add_squeeze_columns,
+)
 from emile.backtests.backtest_phase2_ut2 import attach_multi_context, CLOSURE_DELAY
 from emile.core.position_engine import make_open_tranche_fn, process_tranche, process_reverse
 from emile.core.wall_street_pattern import add_wall_street_column
@@ -391,7 +393,10 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         "ema_trend": ema_trend_v,
         "volume_expansion": volume_expansion,
     })
-    return feat
+    # Variante d'entrée "3ème borne squeezée" (littérale, non conditionnelle,
+    # cf. backtest_phase2_faithful.py) -- même fonction, réutilisée telle
+    # quelle plutôt que dupliquée, côté RANGE de ce routeur.
+    return _add_squeeze_columns(feat)
 
 def _valid_trend_inputs(feat: dict, j: int) -> bool:
     """Même condition que `trend_table.run_trend_table::valid_inputs`."""
@@ -587,6 +592,8 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
         feat["n_borders"], high, o, score, WARMUP, MIN_BORDERS, MAX_TRANCHES,
         RULE3_STREAK, RULE3_SIZE_MULT, risk_pct, range_state, extra_gate_fn=gate_extra,
         wide_channel_v=feat["wide_channel"],   # littéral, non conditionnel (cf. faithful.py)
+        squeeze_armed_v=feat["squeeze_armed"], squeeze_mid_v=feat["squeeze_mid"],
+        squeeze_sup_v=feat["squeeze_sup"], low_v=low,
     )
     gated_long_signal = np.array([
         (score[i] >= 2) and gate(i) and not bool(wall_street_v[i]) for i in range(n_total)

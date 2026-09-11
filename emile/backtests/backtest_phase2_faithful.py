@@ -108,6 +108,19 @@ décide PAS de l'activer, elle documente honnêtement l'effet d'UNE lecture
 retenue a priori pour son adéquation au texte. Impact chiffré dans CE
 moteur (toutes règles combinées) : cf. `PLAN.md`.
 
+**Variante d'entrée "3ème borne squeezée" (AJOUTÉE ce cycle, littérale,
+non conditionnelle)** : `position_engine.py::compute_squeezed_third_border`
+(#15 Variante 2, 18e round -- citation exacte `TRADING_LESSONS_
+PYRAMIDALISATION.md:24`, aucun des 4 motifs de refus ne tenant) existait
+déjà, testée et mesurée isolément sur `backtest_phase2_v7_squeeze.py` (banc
+dédié), jamais combinée aux 4 autres règles littérales ci-dessus. **Activée
+ici sans condition** (`_add_squeeze_columns`, câblée dans `make_open_tranche_
+fn` via `squeeze_armed_v`/`squeeze_mid_v`/`squeeze_sup_v`/`low_v`) : même
+principe que les règles précédentes, la mesure isolée déjà publiée (effet
+quasi nul, 1 seul ordre rempli en 6 ans sur 4 actifs) ne décide pas de
+l'activer. Impact chiffré dans CE moteur (toutes règles combinées) : cf.
+`PLAN.md`.
+
 CE QUI RESTE VOLONTAIREMENT NON COMBINÉ ICI (limite documentée, pas une
 invention silencieuse) :
   - **Confirmation comme NIVEAU STRUCTUREL ABSOLU** (`use_structural_
@@ -334,12 +347,14 @@ import sys
 from emile.backtests.backtest_phase2 import FEE, load_h1, resample
 from emile.backtests.backtest_phase2_v7 import (
     prepare, PROFILES_V4, MIN_BORDERS, RULE3_STREAK, RULE3_SIZE_MULT,
-    MAX_TRANCHES, EMA_SLOW,
+    MAX_TRANCHES, EMA_SLOW, SWING_ORDER,
 )
+from emile.core.proxy_v2 import compute_swing_low_confirmed
 from emile.backtests.backtest_phase2_ut2 import attach_multi_context, CLOSURE_DELAY
 from emile.backtests.backtest_phase2_recommended import run_recommended, WARMUP
 from emile.core.position_engine import (
     run_position_engine, make_open_tranche_fn, make_structural_conf_update_fn,
+    compute_squeezed_third_border,
 )
 from emile.core.wall_street_pattern import add_wall_street_column
 from emile.core.capital_tiers import effective_sizing
@@ -389,7 +404,7 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         gate_score = np.full(len(h4), np.inf)
         gate_regime = np.full(len(h4), "RANGE_NEUTRE", dtype=object)
 
-    return {
+    feat = {
         "date": h4["date"].values,
         "open": h4["open"].values, "high": h4["high"].values,
         "low": h4["low"].values, "close": h4["close"].values,
@@ -421,6 +436,26 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         # `andrews_gate_alternative.py`).
         "pitchfork_p1": h4["pitchfork_p1"].values,
     }
+    return _add_squeeze_columns(feat)
+
+def _add_squeeze_columns(feat: dict) -> dict:
+    """Variante d'entrée "3ème borne squeezée" (#15 Variante 2, 18e round,
+    citation exacte, effet mesuré quasi nul mais réel -- cf. tête de fichier
+    pour le principe d'agrégation). `compute_squeezed_third_border` ne
+    recalcule aucun indicateur : `low`/`high`/`local_range` viennent de
+    `_prepare_features` ci-dessus, `is_swing_low_confirmed` réutilise la
+    MÊME primitive causale (`compute_swing_low_confirmed`, P0-bis) que
+    `n_borders`/`fibonacci.py`, jamais une redéfinition locale. Fonction
+    séparée (pas inline dans `_prepare_features`) pour rester appelable sur
+    un `feat` déjà construit (tests, `unified_protocol.py`)."""
+    is_swing_low = compute_swing_low_confirmed(feat["low"], order=SWING_ORDER)
+    squeeze_armed, squeeze_mid, squeeze_sup = compute_squeezed_third_border(
+        feat["low"], feat["high"], feat["local_range"], is_swing_low, SWING_ORDER)
+    feat = dict(feat)
+    feat.update({
+        "squeeze_armed": squeeze_armed, "squeeze_mid": squeeze_mid, "squeeze_sup": squeeze_sup,
+    })
+    return feat
 
 def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
               start: int = 0, end: int = None, record_trace: bool = False,
@@ -452,6 +487,13 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
     wall_street_v = feat["wall_street_active"][start_:end]
     wide_channel_v = feat["wide_channel"][start_:end]   # littéral, non conditionnel
     pitchfork_p1_v = feat["pitchfork_p1"][start_:end]   # Andrews contextuel, littéral, non conditionnel
+    # Variante d'entrée "3ème borne squeezée" (littérale, non conditionnelle,
+    # cf. tête de fichier et `_add_squeeze_columns`) : inerte par construction
+    # tant que `squeeze_armed_v` est faux partout (aucun changement pour un
+    # `feat` synthétique qui ne l'active jamais explicitement).
+    squeeze_armed_v = feat["squeeze_armed"][start_:end]
+    squeeze_mid_v = feat["squeeze_mid"][start_:end]
+    squeeze_sup_v = feat["squeeze_sup"][start_:end]
     # OPTIONNEL (défaut OFF) : la clé n'est LUE que si le mode structurel est
     # demandé, pour qu'un appelant qui construit son propre `feat` (tests
     # synthétiques, harnais externes) ne soit jamais cassé par l'ajout de
@@ -511,6 +553,8 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
         atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v, high, o, score,
         local_warmup, MIN_BORDERS, MAX_TRANCHES, RULE3_STREAK, RULE3_SIZE_MULT, risk_pct, state,
         extra_gate_fn=gate_extra, wide_channel_v=wide_channel_v,
+        squeeze_armed_v=squeeze_armed_v, squeeze_mid_v=squeeze_mid_v,
+        squeeze_sup_v=squeeze_sup_v, low_v=low,
     )
 
     gated_long_signal = np.array([
