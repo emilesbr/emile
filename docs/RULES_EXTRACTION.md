@@ -47,6 +47,21 @@ Accumulation (range mature + rejet canal + retracement 38-61%) → Breakout (cas
 | Agressif | SL BE | TP50% | TP BE | TP100% |
 | Très agressif | RIEN | — | RIEN | TP100%+Reverse |
 
+## 3bis. Money management — Range TENDANCIEL (distinct du Range Neutre ci-dessus)
+
+**Trouvé par re-lecture complète du manuel (organigramme p.48), absent jusqu'ici de ce document et du code** : le manuel donne un tableau SÉPARÉ pour le Range Tendanciel (retracement ≥61%, "entrer dans le contexte"), avec une étape "Target 1" (pas "Limite") et un mécanisme "SL gain" propre aux profils Agressif/Très Agressif — pas juste la même grille que le Range Neutre appliquée à un contexte différent.
+
+4 étapes : **Validation** (borne opposée canal tendance) → **Confirmation** (borne opposée canal contexte, clôturée) → **Target 1** (zone objectif borne opposée du range) → **Invalidation** (cassure tendance, dernier support/résistance)
+
+| Profil | Validation | Confirmation | Target 1 | Invalidation |
+|---|---|---|---|---|
+| Faible risque | TP25%+SL payé | TP50%+SL BE | TP100% | TP50%+TP BE |
+| Modéré | TP25% | TP25%+SL BE | TP100% | -/TP BE |
+| Agressif | — | TP50%+SL BE | TP25%+SL gain | TP BE |
+| Très agressif | — | TP25%+SL BE | TP25%+SL gain | — |
+
+**Vérifié dans le code (pas supposé)** : `PROFILES_V4` (`emile/backtests/backtest_phase2_v7.py`) applique une seule grille `val_close`/`conf_close` à tout trade de range, sans branchement sur `regime_classifier.py::RANGE_NEUTRE` vs `RANGE_TENDANCIEL` — ce tableau n'est donc PAS implémenté. Nouvel item de backlog, catégorie B (littéral, coût modéré) — implémentation non tranchée, à décider séparément.
+
 ## 4. Money management — Trade de tendance
 
 5 étapes : **Accumulation** → **Breakout** → **Divergence** → **Pull-Back** → **Excès final**
@@ -75,6 +90,19 @@ Accumulation (range mature + rejet canal + retracement 38-61%) → Breakout (cas
 | Temps plein trading | Toujours PAS de scalping <15m (5-10 trades/jour max, risque de stress/décision irrationnelle) |
 
 **Le scalping est explicitement déconseillé par l'auteur lui-même**, y compris pour les traders à temps plein — point important vu l'objectif initial de "revenu journalier".
+
+## 6bis. Compléments trouvés par re-lecture complète du manuel (mineurs, non prioritaires)
+
+- **Table exacte TF Local → TF Supérieur** (alerte CONTEXT, p.36) :
+  m1→m5, m2→m10, m3→m15, m5→m30, m15→H1, m30→H2, H1→H4, H2→H8, H4→D1, D1→W1, W1→M1, M1→M3.
+  Confirme que le mécanisme est bien relatif (toujours +1 cran), et que M15 n'apparaît ici que
+  comme un choix de TF Local possible parmi d'autres (cf. chapitre 6, "Choisir un timeframe
+  adapté" selon disponibilité), jamais comme une UT imposée par un mécanisme.
+- **Critères exacts de détection Bulle/Excès** (jusqu'ici seulement "NE PAS TRADER") :
+  (1) les boîtes du canal de contexte deviennent disjointes (support ET résistance pour la bulle,
+  support seul pour un excès simple) ; (2) contexte psychologique de spéculation exacerbée
+  obligatoire ; (3) accélération parabolique des prix — condition supplémentaire, uniquement
+  pour la bulle, pas nécessaire pour un excès. Reste hors périmètre (régime non tradé).
 
 ## Ce qu'il reste à obtenir pour un backtest fidèle
 Le calcul exact du contexte (canal Framework) et des signaux (momentum/cycles) n'étant pas public, deux options pour la Phase 1 :

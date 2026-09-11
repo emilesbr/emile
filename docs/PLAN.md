@@ -732,6 +732,13 @@ Inchangée — discussion différée après Phase 4.
 
 ## Backlog priorisé (remplace la liste plate précédente)
 
+**Nouvel item trouvé par re-lecture intégrale du manuel PDF officiel (`RULES_EXTRACTION.md` §3bis)** :
+le manuel donne un tableau de money management SÉPARÉ pour le Range Tendanciel (étape "Target 1",
+mécanisme "SL gain" propre aux profils Agressif/Très Agressif) — vérifié dans le code : `PROFILES_V4`
+(`backtest_phase2_v7.py`) applique une seule grille (celle du Range Neutre) à tout trade de range,
+sans branchement sur `regime_classifier.py::RANGE_TENDANCIEL`. Catégorie B (littéral, coût modéré) —
+implémentation non tranchée, décision à prendre séparément avant de coder.
+
 Un directeur d'ingénierie priorise par impact sur la validité de ce qui est déjà rapporté, avant d'ajouter de nouvelles fonctionnalités. D'où l'ordre ci-dessous — pas l'ordre de découverte.
 
 | # | Item | Impact si non traité | Effort | Priorité |
