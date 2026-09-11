@@ -280,7 +280,8 @@ from emile.core.trend_table import (
     PROFILES_TREND, add_trend_context, add_leg, make_campaign, step_campaign,
     try_open_campaign, step_reverse, load_volume, resample_volume,
     ACCUM_RETRACEMENT_LOW, ACCUM_RETRACEMENT_HIGH, VOLUME_MA_WINDOW,
-    VOLUME_EXPANSION_MULT,
+    VOLUME_EXPANSION_MULT, attach_obstacle_level, breakout_space_ok,
+    BREAKOUT_SPACE_MULT,
 )
 from emile.core.capital_tiers import effective_sizing
 
@@ -342,6 +343,16 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
     trend_df = prepare(h4[["date", "open", "high", "low", "close"]].copy())
     trend_df = add_trend_context(trend_df)
 
+    # Contrainte "espace libre" MTF avant Breakout (H13-H17, littérale,
+    # inconditionnelle côté TENDANCE, cf. trend_table.py::run_trend_table).
+    # Niveaux d'obstacle D1 (UT+1) et Hebdomadaire (UT+2), joints sans
+    # lookahead -- même construction que `run_trend_table(use_breakout_space_
+    # gate=True)`, jamais recalculée ailleurs.
+    d1_trend_ctx = add_trend_context(prepare(d1[["date", "open", "high", "low", "close"]].copy()))
+    weekly_trend_ctx = add_trend_context(prepare(weekly[["date", "open", "high", "low", "close"]].copy()))
+    obstacle_ut1 = attach_obstacle_level(h4[["date"]], d1_trend_ctx, closure_delay=CLOSURE_DELAY)
+    obstacle_ut2 = attach_obstacle_level(h4[["date"]], weekly_trend_ctx, closure_delay=CLOSURE_DELAY)
+
     vol_v = h4["volume"].values
     vol_ma = pd.Series(vol_v).rolling(VOLUME_MA_WINDOW).mean().values
     volume_expansion = vol_v > VOLUME_EXPANSION_MULT * np.roll(vol_ma, 1)
@@ -371,6 +382,12 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         "local_high": trend_df["local_high"].values,
         "accum_retracement_frac": trend_df["accum_retracement_frac"].values,
         "cycle_favorable": trend_df["cycle_favorable"].values,
+        # "local_range" (H15, "rendement escompté" du breakout) N'EST PAS
+        # rajouté ici : déjà présent via `range_feat` (même calcul `prepare()`
+        # sur le même H4 OHLC côté RANGE) -- vérifié bit-à-bit identique à
+        # `trend_df["local_range"]`, réutilisé tel quel plutôt que dupliqué.
+        "obstacle_ut1": obstacle_ut1,
+        "obstacle_ut2": obstacle_ut2,
         "ema_trend": ema_trend_v,
         "volume_expansion": volume_expansion,
     })
@@ -419,6 +436,17 @@ def _campaign_ev(feat: dict, i: int) -> dict:
         "reverse_stop": (max(feat["ctx_resistance"][j], feat["close"][i] * 1.001) if valid_j
                          else feat["close"][i] * 1.03),
         "reverse_target": feat["ctx_support"][j] if valid_j else feat["close"][i] * 0.97,
+        # Contrainte "espace libre" MTF avant Breakout (H13-H17, littérale,
+        # inconditionnelle, cf. tête de fichier et trend_table.py). Évaluée
+        # sur la MÊME bougie j que `breakout_raw` ci-dessus -- consommée par
+        # `step_campaign` via `ev.get("breakout_space_ok", True)`, jamais
+        # bypassée : True seulement si CE calcul le confirme explicitement.
+        "breakout_space_ok": breakout_space_ok(
+            feat["close"][j],
+            feat["local_range"][j] / feat["close"][j] if feat["close"][j] > 0 else float("nan"),
+            (feat["obstacle_ut1"][j], feat["obstacle_ut2"][j]),
+            BREAKOUT_SPACE_MULT,
+        ),
     }
 
 def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profile_name: str,

@@ -51,7 +51,10 @@ import sys
 from emile.backtests.backtest_phase2_v7 import MIN_BORDERS
 from emile.backtests.backtest_phase2_recommended import WARMUP
 from emile.backtests.backtest_phase2_faithful import _run_core as _run_core_faithful
-from emile.core.unified_protocol import _run_core_unified, _accumulation_active, decide_now, _aggregate_risk_warning
+from emile.core.unified_protocol import (
+    _run_core_unified, _accumulation_active, _campaign_ev, decide_now, _aggregate_risk_warning,
+)
+from emile.core.trend_table import breakout_space_ok, BREAKOUT_SPACE_MULT
 
 N = WARMUP + 25   # marge suffisante après warmup pour dérouler un scénario complet
 
@@ -95,7 +98,51 @@ def _make_base_feat(n=N):
         "cycle_favorable": np.full(n, True),
         "ema_trend": np.full(n, 95.0),
         "volume_expansion": np.full(n, False),
+        # Contrainte "espace libre" MTF avant Breakout : neutralisée ici
+        # (niveaux d'obstacle déjà SOUS le prix -> marge infinie, cf.
+        # `trend_table.free_room_frac`) -- même raison que `pitchfork_p1`
+        # ci-dessus, un test dédié override pour injecter SON scénario.
+        "obstacle_ut1": close.copy() - 10.0,
+        "obstacle_ut2": close.copy() - 10.0,
     }
+
+# ---------------------------------------------------------------------------
+# Contrainte "espace libre" MTF avant Breakout (H13-H17) : `_campaign_ev`
+# doit câbler `breakout_space_ok` depuis `feat["local_range"]`/
+# `feat["obstacle_ut1"]`/`feat["obstacle_ut2"]` -- comparé DIRECTEMENT à
+# `trend_table.breakout_space_ok` appelé à la main (pas une réimplémentation
+# qui pourrait diverger), pour un niveau bloquant ET un niveau non bloquant.
+# ---------------------------------------------------------------------------
+def test_campaign_ev_wires_breakout_space_ok_blocking():
+    feat = _make_base_feat()
+    j = WARMUP + 5
+    feat["close"][j] = 100.0
+    feat["local_range"][j] = 20.0   # "rendement escompté" = 20% du prix
+    # Obstacle à 105 -> marge (105-100)/100 = 5%, < 20% requis -> bloquant.
+    feat["obstacle_ut1"][j] = 105.0
+    feat["obstacle_ut2"][j] = 105.0
+    ev = _campaign_ev(feat, j + 1)
+    expected = breakout_space_ok(100.0, 0.20, (105.0, 105.0), BREAKOUT_SPACE_MULT)
+    assert expected is False, "scénario invalide : le calcul de référence devrait déjà être bloquant"
+    assert ev["breakout_space_ok"] is False, (
+        "_campaign_ev doit câbler breakout_space_ok=False quand l'obstacle est trop proche du "
+        "rendement escompté (H13-H17), pas laisser passer par défaut"
+    )
+
+def test_campaign_ev_wires_breakout_space_ok_passing():
+    feat = _make_base_feat()
+    j = WARMUP + 5
+    feat["close"][j] = 100.0
+    feat["local_range"][j] = 5.0   # "rendement escompté" = 5% du prix
+    # Obstacle à 200 -> marge (200-100)/100 = 100%, >= 5% requis -> passant.
+    feat["obstacle_ut1"][j] = 200.0
+    feat["obstacle_ut2"][j] = 200.0
+    ev = _campaign_ev(feat, j + 1)
+    expected = breakout_space_ok(100.0, 0.05, (200.0, 200.0), BREAKOUT_SPACE_MULT)
+    assert expected is True, "scénario invalide : le calcul de référence devrait déjà être passant"
+    assert ev["breakout_space_ok"] is True, (
+        "_campaign_ev doit câbler breakout_space_ok=True quand l'espace libre est suffisant"
+    )
 
 # ---------------------------------------------------------------------------
 # Test 1 (décision #1 révisée, indépendance) : accumulation_active devient
