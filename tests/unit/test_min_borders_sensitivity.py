@@ -174,6 +174,7 @@ def test_override_actually_reaches_the_engine():
     assert base["n_trades"] > 0, "données synthétiques sans aucun trade : test non concluant"
     assert blocked["n_trades"] == 0, blocked
 
+@pytest.mark.data_dependent
 def test_maturity_gate_is_not_binding_over_the_grid_on_real_data():
     """TROUVAILLE DU CHANTIER, verrouillée par un test.
 

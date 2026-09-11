@@ -14,6 +14,8 @@ Tests pour andrews_gate_alternative.py (vague 5, PLAN.md "Plan d'autonomie
 import numpy as np
 import sys
 
+import pytest
+
 from emile.core.andrews_gate_alternative import run_andrews, ANDREWS_MODES, CONTEXTUAL_REGIMES
 
 def test_contextual_regimes_is_range_tendanciel_only():
@@ -80,6 +82,7 @@ def test_contextual_mode_requires_pitchfork_when_gate_applies():
     result = _andrews_ok_probe("andrews_contextual", regime_v, p1, close)
     assert result == [False]
 
+@pytest.mark.data_dependent
 def test_contextual_is_strictly_more_permissive_than_permanent():
     """Propriété structurelle vérifiée directement sur données réelles (pas
     seulement des cas choisis à la main) : le mode contextuel ne peut
@@ -110,6 +113,7 @@ def test_contextual_is_strictly_more_permissive_than_permanent():
     # principe même de la lecture "conditionnelle").
     assert contextual.sum() > permanent.sum()
 
+@pytest.mark.data_dependent
 def test_run_andrews_all_modes_produce_valid_dicts_on_real_data():
     """Test d'intégration léger : les 3 modes tournent sans erreur sur des
     données réelles et retournent les clés attendues, pour au moins un
@@ -123,6 +127,7 @@ def test_run_andrews_all_modes_produce_valid_dicts_on_real_data():
         for key in ("n_trades", "max_dd_%", "total_return_%", "win_rate_%", "profit_factor"):
             assert key in res
 
+@pytest.mark.data_dependent
 def test_andrews_permanent_matches_backtest_phase2_patterns_reference():
     """Non-régression : `run_andrews(mode="andrews_permanent")` doit
     reproduire EXACTEMENT `backtest_phase2_patterns.run_patterns(mode="andrews_gate")`

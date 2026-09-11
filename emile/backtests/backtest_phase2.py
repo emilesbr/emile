@@ -65,8 +65,31 @@ PROFILES = {
     },
 }
 
+_MIN_H1_ROWS = 1000  # ~6 semaines de bougies 1h -- une vraie serie BTC/ETH/BNB/SOL
+                     # couvre des annees (dizaines de milliers de lignes) ; un
+                     # stub/placeholder en a typiquement 1-2. Ce seuil ne peut
+                     # mordre sur une vraie donnee, seulement sur un fichier
+                     # degenere.
+
 def load_h1(symbol: str) -> pd.DataFrame:
-    df = pd.read_csv(DATA_DIR / f"{symbol}_1h_processed.csv", usecols=["datetime", "open", "high", "low", "close"])
+    """Trouve par audit (cycle CLAUDE.md "aucune donnee reelle disponible") :
+    un fichier de donnees degenere (1 ligne, valeurs fabriquees) a ete commite
+    par erreur et lu sans broncher par tous les moteurs -- resultats
+    silencieusement vides/nuls, indiscernables a l'oeil d'un vrai "gate
+    inerte"/"effet nul" deja frequent dans ce projet. Refuse maintenant
+    explicitement plutot que de laisser un moteur produire une sortie
+    degeneree qui pourrait ecraser un results/*.csv legitime sans que
+    personne ne s'en aperçoive."""
+    path = DATA_DIR / f"{symbol}_1h_processed.csv"
+    df = pd.read_csv(path, usecols=["datetime", "open", "high", "low", "close"])
+    if len(df) < _MIN_H1_ROWS:
+        raise ValueError(
+            f"{path} ne contient que {len(df)} ligne(s) (< {_MIN_H1_ROWS}) -- "
+            f"donnee manifestement absente ou degeneree (stub/placeholder), "
+            f"pas une vraie serie 1h. Refus explicite plutot qu'une sortie "
+            f"degeneree silencieuse (0-1 trade) qui ressemblerait a un "
+            f"resultat honnete. Voir CLAUDE.md, section donnees."
+        )
     df["date"] = pd.to_datetime(df["datetime"])
     return df.sort_values("date")[["date", "open", "high", "low", "close"]].reset_index(drop=True)
 

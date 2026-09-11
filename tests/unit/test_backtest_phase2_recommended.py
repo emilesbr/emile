@@ -20,6 +20,8 @@ se concentre sur la logique NON TRIVIALE introduite ici :
      COUVERTURE_ENSEIGNEMENTS.md ("le sizing ne change pas quels trades
      gagnent ou perdent").
 """
+import pytest
+
 import numpy as np
 import pandas as pd
 import sys
@@ -32,11 +34,22 @@ from emile.backtests.backtest_phase2_recommended import (
 )
 
 # --- Fixtures réelles (petites tranches, réutilisées par plusieurs tests) ---
+# Chargement protégé : voir test_backtest_phase2_faithful.py pour la raison
+# d'être de ce try/except (load_h1 lève maintenant explicitement plutôt que
+# de retourner un stub -- sans ce garde-fou la collecte pytest de tout ce
+# fichier planterait avant même que les marqueurs data_dependent agissent).
+try:
+    _H1_BTC = load_h1("BTCUSDT")
+    _H4_BTC = resample(_H1_BTC, "4h").iloc[:800].reset_index(drop=True)
+    _WEEKLY_BTC = resample(_H1_BTC, "W")
+    _DATA_UNAVAILABLE = None
+except (FileNotFoundError, ValueError) as e:
+    _H1_BTC = _H4_BTC = _WEEKLY_BTC = None
+    _DATA_UNAVAILABLE = str(e)
 
-_H1_BTC = load_h1("BTCUSDT")
-_H4_BTC = resample(_H1_BTC, "4h").iloc[:800].reset_index(drop=True)
-_WEEKLY_BTC = resample(_H1_BTC, "W")
+_skip_if_no_data = pytest.mark.skipif(_DATA_UNAVAILABLE is not None, reason=_DATA_UNAVAILABLE or "")
 
+@_skip_if_no_data
 def test_mtf_gate_bypass_never_compares_to_nan():
     """use_mtf_gate=False doit neutraliser le gate (toujours vrai), pas le
     rendre NaN -- une comparaison `NaN >= 2` retournerait silencieusement
@@ -49,6 +62,8 @@ def test_mtf_gate_bypass_never_compares_to_nan():
     always_true = (feat["gate_score"] >= 2) & (feat["gate_regime"] != "EXCES")
     assert np.all(always_true), "le gate désactivé doit toujours laisser passer, sans exception"
 
+@_skip_if_no_data
+@pytest.mark.data_dependent
 def test_mtf_gate_active_matches_attach_multi_context_directly():
     """Le gate actif (use_mtf_gate=True) doit être EXACTEMENT ce que
     renvoie attach_multi_context appelé directement -- pas une
@@ -179,6 +194,8 @@ def test_pyramid_renfort_allowed_when_h4_regime_tendance():
         f"{len(res['trace'])} tranche(s) ouverte(s) en régime TENDANCE, attendu plusieurs"
     )
 
+@_skip_if_no_data
+@pytest.mark.data_dependent
 def test_capital_eur_changes_return_not_which_trades_win():
     """Cf. COUVERTURE_ENSEIGNEMENTS.md, note 'Capital par palier' : le
     sizing par palier module le retour/drawdown, PAS quels trades gagnent
@@ -198,6 +215,8 @@ def test_capital_eur_changes_return_not_which_trades_win():
             "le retour total DEVRAIT différer : PALIER_1 applique un multiplicateur x1.25 au risk_pct"
         )
 
+@_skip_if_no_data
+@pytest.mark.data_dependent
 def test_reverse_at_limit_default_off_matches_no_reverse_call():
     """`reverse_at_limit=False` (défaut) doit produire EXACTEMENT le même
     résultat qu'un appel qui ne passe pas ce paramètre du tout -- garde-fou

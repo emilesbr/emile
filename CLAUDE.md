@@ -28,14 +28,62 @@ d'exécution réelle apparaît : `place_order`, `ccxt`, `python-binance`...).
 
 ## État actuel du dépôt (à vérifier avant de faire confiance à l'arborescence)
 
-Une réorganisation (`code/` + `.md` racine → `docs/`, `emile/` package, `tests/`,
-`results/`, `data/`) a eu lieu récemment. **Vérifier `git status` avant de supposer que
-la nouvelle arborescence est complète** : au moment de la rédaction, `golden_master.py`
-référencé par les scripts de migration (`refactor_tests.py`, `update_imports.py`,
-`cleanup_imports.py`, à la racine — jetables, pas des outils du projet) est introuvable,
-`data/processed/` ne contient que BTC (ETH/BNB/SOL absents), et **13/181 tests
-échouent** pour cette raison. Ne pas relancer une automatisation basée sur "tests
-verts" sans avoir vérifié l'état réel de la suite.
+Réorganisation (`code/` + `.md` racine → `docs/`, `emile/` package, `tests/`,
+`results/`, `data/`) faite, committée, poussée (`645e46c`). `golden_master.py`,
+référencé par les scripts de migration (`cleanup_imports.py`/`update_imports.py`/
+`refactor_tests.py`, racine — jetables), vérifié comme n'ayant jamais existé dans
+l'historique : pas une perte, une référence erronée du script.
+
+**Aucune donnée OHLCV réelle (BTC/ETH/BNB/SOL) n'est disponible dans ce dépôt ni
+ailleurs sur cette machine, et ne l'a jamais été dans l'historique git.** Trouvé par
+audit dédié (pas une supposition) : `data/processed/BTCUSDT_1h_processed.csv`
+n'est PAS "BTC présent, ETH/BNB/SOL manquants" comme un cycle précédent l'avait
+affirmé à tort — c'est une seule ligne de valeurs rondes fabriquées
+(`50000/50100/49900/50050`), committée par erreur pendant la réorg (`645e46c`)
+sans que son contenu soit vérifié avant `git add`. La vraie donnée a toujours vécu
+sur un chemin absolu d'un autre environnement (`/home/user/spaciousabhi/
+binance-futures-backtest-research/data/processed`, visible dans l'historique des
+imports), jamais versionnée dans ce dépôt. `git log --all` confirme : c'est la
+seule version de ce fichier qui ait jamais existé. Aucune copie de secours
+trouvée nulle part sur cette machine (recherche exhaustive faite). L'accès réseau
+à l'API Binance fonctionne depuis ce sandbox (vérifié, `api.binance.com` répond) —
+récupérer une vraie donnée est possible mais reste à faire, pas un raccourci de
+"copier un fichier existant".
+
+**Conséquence directe, plus grave qu'un simple "13 tests rouges" (constat initial
+sous-évalué)** : audit complet fait (mobilisation multi-agents + vérification
+croisée) plutôt que de s'arrêter aux 13 échecs visibles. Résultat :
+- `emile/backtests/backtest_phase2.py::load_h1` refuse maintenant explicitement
+  (`ValueError`) tout fichier de moins de 1000 lignes — un stub/placeholder ne
+  peut plus produire silencieusement une sortie dégénérée (0-1 trade)
+  indiscernable à l'oeil d'un "effet nul" légitime, déjà fréquent dans ce projet.
+- **19 tests** dépendent réellement de données réelles absentes (12 initiaux +
+  3 trouvés dans `test_backtest_phase2_recommended.py` par audit dédié comme
+  faux positifs dangereux — assertions qui ne testaient plus rien contre la
+  fixture bidon, cf. `docs/PLAN.md`/historique de session — + 3 trouvés en
+  refaisant tourner la suite après le durcissement de `load_h1`, jamais visibles
+  avant) : tous marqués `@pytest.mark.data_dependent`.
+- **2 tests supplémentaires** (`test_mtf_gate_bypass_never_compares_to_nan`,
+  `test_reverse_at_limit_scoped_to_tres_agressif_only`) sont structurellement
+  valides quel que soit le contenu réel de la donnée (vérifié par
+  instrumentation, pas supposé) mais ont besoin d'AU MOINS une donnée non
+  dégénérée pour s'exécuter — marqués `skipif` (pas `data_dependent` : ils ne
+  demandent pas de VRAIE donnée, juste une donnée non vide) ; ils repasseront
+  automatiquement dès qu'une vraie donnée existera.
+
+`pytest` sans option (convention du projet) : **176 passés, 2 skip, 19 exclus,
+0 échec** — honnêtement vert, rien masqué. `pytest -m ""` : 10 échecs directs
+(données réelles requises) + 176 passés + 11 skip (176+11+10=197, rien perdu).
+Ne pas citer un chiffre de tests verts sans avoir vérifié `pytest -m ""` en plus
+du défaut — c'est exactement l'erreur qui a laissé les 9 faux positifs de
+`test_backtest_phase2_recommended.py` invisibles jusqu'à cet audit.
+
+Bug indépendant trouvé et corrigé au passage (`emile/config/env_config.py`) :
+le chemin de données par défaut était relatif (`Path("data/processed")`), donc
+résolu différemment selon le `cwd` au moment de l'appel — cassait silencieusement
+tout appelant qui change de répertoire après l'import (`emile/run_all.py`, qui
+`chdir` vers une sortie temporaire). Corrigé en résolvant le chemin en absolu à
+l'import.
 
 ## Principes non négociables (payés cash, ne pas les redécouvrir)
 

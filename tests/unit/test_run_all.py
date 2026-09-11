@@ -16,6 +16,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from emile import run_all
 
 def test_engine_aliases_unique():
@@ -41,6 +43,7 @@ def test_no_args_refuses_to_run_everything():
     rc = run_all.main([])
     assert rc == 2
 
+@pytest.mark.data_dependent
 def test_real_run_only_base_and_v4():
     """Rejeu réel (pas un mock) des 2 moteurs les plus rapides, dans un
     répertoire temporaire — vérifie que le pipeline complet (import direct,

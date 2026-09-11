@@ -15,6 +15,8 @@ import numpy as np
 import pandas as pd
 import sys
 
+import pytest
+
 from emile.core.diversification import prepare_diversified, run_diversified
 from emile.core.cluster_technique_threshold_robustness import (
     prepare_diversified_pctl, run_diversified_pctl, PROXIMITY_PCTL_GRID, BASELINE_PCTL,
@@ -91,6 +93,7 @@ def test_run_diversified_pctl_matches_reference_at_baseline_threshold():
                                     enable_pattern_b=enable_b)
         assert ref == dup, (enable_b, ref, dup)
 
+@pytest.mark.data_dependent
 def test_varying_proximity_pctl_actually_changes_the_signal():
     """Sanité de la grille sur données RÉELLES (BTC H4) : si aucun des
     seuils testés ne change la fréquence du signal Pattern B par rapport à

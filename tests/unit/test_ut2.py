@@ -10,11 +10,14 @@ import numpy as np
 import pandas as pd
 import sys
 
+import pytest
+
 from emile.backtests.backtest_phase2 import load_h1, resample, atr, ATR_LEN, EMA_SLOW
 from emile.backtests.backtest_phase2_ut2 import attach_context_level, attach_multi_context, CLOSURE_DELAY, GATE_MODES
 from emile.backtests.backtest_phase2_v7 import prepare
 from emile.core.regime_classifier import add_regime
 
+@pytest.mark.data_dependent
 def test_weekly_closure_delay_is_one_day_not_one_week():
     """Régression de la découverte documentée en tête de
     backtest_phase2_ut2.py : une bougie 'W' (resample pandas, ancrée
@@ -55,6 +58,7 @@ def test_closure_delay_constant_is_one_day():
         "identifié et évité une fois)"
     )
 
+@pytest.mark.data_dependent
 def test_attach_context_level_no_lookahead():
     """Le score/régime attaché à une bougie H4 ne doit dépendre que de
     bougies de niveau supérieur ENTIÈREMENT closes à cet instant -- vérifié

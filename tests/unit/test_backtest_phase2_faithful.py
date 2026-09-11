@@ -21,6 +21,8 @@ import numpy as np
 import pandas as pd
 import sys
 
+import pytest
+
 from emile.backtests.backtest_phase2 import load_h1, resample
 from emile.backtests.backtest_phase2_v7 import prepare, PROFILES_V4
 from emile.backtests.backtest_phase2_ut2 import attach_multi_context, CLOSURE_DELAY
@@ -30,12 +32,24 @@ from emile.backtests.backtest_phase2_faithful import (
 )
 
 # --- Fixtures réelles (petite tranche, réutilisée par plusieurs tests) ---
+# Chargement protégé : `load_h1` lève maintenant explicitement si la donnée
+# est absente/dégénérée (cf. sa docstring) -- sans ce try/except, TOUT ce
+# fichier serait injectable au niveau de la collecte pytest (avant même que
+# `@pytest.mark.data_dependent` ait une chance d'exclure quoi que ce soit).
+try:
+    _H1_BTC = load_h1("BTCUSDT")
+    _H4_BTC = resample(_H1_BTC, "4h").iloc[:800].reset_index(drop=True)
+    _D1_BTC = resample(_H1_BTC, "1D")
+    _WEEKLY_BTC = resample(_H1_BTC, "W")
+    _DATA_UNAVAILABLE = None
+except (FileNotFoundError, ValueError) as e:
+    _H1_BTC = _H4_BTC = _D1_BTC = _WEEKLY_BTC = None
+    _DATA_UNAVAILABLE = str(e)
 
-_H1_BTC = load_h1("BTCUSDT")
-_H4_BTC = resample(_H1_BTC, "4h").iloc[:800].reset_index(drop=True)
-_D1_BTC = resample(_H1_BTC, "1D")
-_WEEKLY_BTC = resample(_H1_BTC, "W")
+_skip_if_no_data = pytest.mark.skipif(_DATA_UNAVAILABLE is not None, reason=_DATA_UNAVAILABLE or "")
 
+@_skip_if_no_data
+@pytest.mark.data_dependent
 def test_stop_is_d1_ctx_support_not_native_h4():
     """`_prepare_features` doit exposer le `ctx_support` D1 (UT+1), pas
     celui du H4 natif -- comparé directement à `attach_multi_context` appelé
@@ -62,6 +76,8 @@ def test_stop_is_d1_ctx_support_not_native_h4():
         "-- le test ne prouverait rien, vérifier que le mauvais tableau n'est pas branché"
     )
 
+@_skip_if_no_data
+@pytest.mark.data_dependent
 def test_wall_street_abstention_is_unconditional_and_blocks_fresh_and_pyramid():
     """L'abstention Wall Street doit bloquer À LA FOIS le signal d'entrée
     gaté (`gated_long_signal`) ET le gate interne de `open_tranche_fn`
@@ -107,6 +123,7 @@ def test_wall_street_abstention_is_unconditional_and_blocks_fresh_and_pyramid():
         "n'est pas appliquée de façon non conditionnelle"
     )
 
+@_skip_if_no_data
 def test_reverse_at_limit_scoped_to_tres_agressif_only():
     """`reverse_at_limit` doit être vrai UNIQUEMENT pour TRES_AGRESSIF --
     vérifié en interceptant l'appel à `run_position_engine` (monkeypatch)
@@ -138,6 +155,8 @@ def test_reverse_at_limit_scoped_to_tres_agressif_only():
 
     assert REVERSE_SCOPED_PROFILE == "TRES_AGRESSIF"
 
+@_skip_if_no_data
+@pytest.mark.data_dependent
 def test_capital_eur_changes_sizing_not_which_trades_win():
     """Même principe que `test_backtest_phase2_recommended.py` : le sizing
     par palier change le retour/drawdown mais jamais quels trades
@@ -290,6 +309,8 @@ def test_entry_allowed_when_d1_regime_is_tendance():
         "entièrement favorable) -- le gate Conflit MTF bloque aussi le cas où il ne devrait pas"
     )
 
+@_skip_if_no_data
+@pytest.mark.data_dependent
 def test_run_faithful_end_to_end_produces_trades_all_profiles():
     """Garde-fou non-vacueux : `run_faithful` doit produire au moins un
     trade sur chacun des 4 profils, sur des données réelles (BTC, fenêtre

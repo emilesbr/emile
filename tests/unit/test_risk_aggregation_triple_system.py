@@ -34,6 +34,8 @@ import numpy as np
 import pandas as pd
 import sys
 
+import pytest
+
 from emile.backtests.backtest_phase2 import load_h1, resample
 from emile.core.trend_table import load_volume
 from emile.core.diversification import run_diversified
@@ -45,12 +47,21 @@ from emile.core.risk_aggregation_triple_system import (
 # --- Fixture réelle (tranche réduite pour la vitesse, réutilisée par les
 # tests de cohérence -- assez longue pour produire des trades sur les 4
 # sous-moteurs, condition nécessaire pour que ces tests soient non-vacueux) ---
+# Chargement protégé : voir test_backtest_phase2_faithful.py pour la raison
+# d'être de ce try/except.
 
 _SYMBOL = "BTCUSDT"
-_H1 = load_h1(_SYMBOL)
-_VOL_H1 = load_volume(_SYMBOL)
-_H1_FULL = _H1.merge(_VOL_H1, on="date", how="inner")
-_H1_SMALL = _H1_FULL.iloc[:20000].reset_index(drop=True)
+try:
+    _H1 = load_h1(_SYMBOL)
+    _VOL_H1 = load_volume(_SYMBOL)
+    _H1_FULL = _H1.merge(_VOL_H1, on="date", how="inner")
+    _H1_SMALL = _H1_FULL.iloc[:20000].reset_index(drop=True)
+    _DATA_UNAVAILABLE = None
+except (FileNotFoundError, ValueError) as e:
+    _H1 = _VOL_H1 = _H1_FULL = _H1_SMALL = None
+    _DATA_UNAVAILABLE = str(e)
+
+_skip_if_no_data = pytest.mark.skipif(_DATA_UNAVAILABLE is not None, reason=_DATA_UNAVAILABLE or "")
 
 def test_long_risk_formula():
     """R1 (cf. tête de `risk_aggregation_triple_system.py`) : risque = taille
@@ -73,6 +84,8 @@ def test_short_risk_formula():
     assert _short_risk(rp_be) == 0.0
     assert _short_risk(None) == 0.0
 
+@_skip_if_no_data
+@pytest.mark.data_dependent
 def test_triple_gate_matches_real_unified_protocol_on_real_data():
     """GARDE-FOU ANTI-DÉRIVE (cf. tête de fichier) : le gate RANGE dupliqué
     dans `_run_triple_core` doit produire EXACTEMENT le même nombre total de
@@ -105,6 +118,8 @@ def test_triple_gate_matches_real_unified_protocol_on_real_data():
         _run_triple_core(feat_u, h4p, p)["n_range_trades"] > 0 for p in ("FAIBLE", "MODERE", "AGRESSIF", "TRES_AGRESSIF")
     ), "aucun trade RANGE produit sur cette fenêtre -- comparaison non-vacueuse impossible"
 
+@_skip_if_no_data
+@pytest.mark.data_dependent
 def test_triple_pattern_a_b_match_real_diversification_on_real_data():
     """Même garde-fou pour Pattern A/Pattern B : `make_open_fn` (dupliqué
     dans `_run_triple_core`, seule fermeture interne de `diversification.py`

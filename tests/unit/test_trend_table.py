@@ -13,6 +13,8 @@ de leur fournir des scénarios entièrement maîtrisés ici.
 """
 from fractions import Fraction as F
 
+import pytest
+
 from emile.core.trend_table import (
     add_leg, make_campaign, step_campaign, try_open_campaign, step_reverse,
     PROFILES_TREND, MAX_CAMPAIGN_RISK_PCT,
@@ -446,6 +448,7 @@ def test_attach_obstacle_level_no_lookahead():
 # bien la même condition que celle du moteur (sur données réelles, bougie par
 # bougie -- pas une reformulation approchée)
 # ---------------------------------------------------------------------------
+@pytest.mark.data_dependent
 def test_raw_breakout_candidates_matches_engine_expression():
     import numpy as np
     from emile.backtests.backtest_phase2 import load_h1, resample

@@ -30,6 +30,8 @@ import numpy as np
 import pandas as pd
 import sys
 
+import pytest
+
 # `append`, PAS `insert(0, ...)` : ce chemin absolu reste un SECOURS (pouvoir
 # lancer ce fichier depuis n'importe quel répertoire), il ne doit pas PRIMER
 # sur le répertoire courant. Avec `insert(0, ...)`, ce fichier chargeait le
@@ -344,6 +346,7 @@ DOCUMENTED_DISTRIBUTION_PCT = {
 # totalement d'un régime) depuis un changement en amont (P0-bis ou autre).
 TOLERANCE_PCT = 10.0
 
+@pytest.mark.data_dependent
 def test_real_btc_d1_distribution_close_to_documented():
     """Reproduit exactement le calcul du bloc __main__ de
     regime_classifier.py (EMA_SLOW, ATR(14), canal EMA +/- 2*ATR) sur BTC D1
