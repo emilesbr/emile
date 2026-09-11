@@ -235,6 +235,7 @@ def _synthetic_pyramid_feat(n: int, regime_h4_value) -> dict:
         "gate_score": np.full(n, 10.0),
         "gate_regime": np.full(n, "TENDANCE", dtype=object),
         "regime_h4": np.full(n, regime_h4_value, dtype=object),
+        "regime": np.full(n, regime_h4_value, dtype=object),   # alias, cf. range_gates.py
         "regime_d1": np.full(n, "TENDANCE", dtype=object),   # jamais en range -- isole le test du gate CONFLIT MTF
         "wall_street_active": np.zeros(n, dtype=bool),
         # Règle de volatilité "Stop Loss = taille du canal" (littérale,
@@ -453,6 +454,7 @@ def _range_tendanciel_scenario_feat(n, regime_h4_value):
         "n_borders": np.full(n, 3.0), "gate_score": np.full(n, 10.0),
         "gate_regime": np.full(n, "TENDANCE", dtype=object),
         "regime_h4": np.full(n, regime_h4_value, dtype=object),
+        "regime": np.full(n, regime_h4_value, dtype=object),   # alias, cf. range_gates.py
         "regime_d1": np.full(n, "TENDANCE", dtype=object),
         "wall_street_active": np.zeros(n, dtype=bool),
         "wide_channel": np.zeros(n, dtype=bool),

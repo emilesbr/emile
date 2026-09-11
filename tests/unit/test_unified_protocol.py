@@ -295,8 +295,12 @@ def test_pure_range_sequence_matches_faithful_engine():
     # "regime" (unified) et "regime_h4" (faithful) désignent la MÊME grandeur
     # (régime H4 natif) sous deux noms différents -- cf. CORRECTION EXCES H4
     # dans les deux fichiers. "regime_d1" porte le même nom dans les deux
-    # fichiers (cf. CORRECTION CONFLIT MTF) -- copié tel quel.
+    # fichiers (cf. CORRECTION CONFLIT MTF) -- copié tel quel. Les DEUX clés
+    # ("regime_h4" ET "regime") sont désormais nécessaires côté faithful.py
+    # (l'alias "regime" alimente `range_gates.range_gate`, chantier
+    # d'architecture -- cf. PLAN.md).
     feat_range_only["regime_h4"] = feat["regime"]
+    feat_range_only["regime"] = feat["regime"]
     feat_range_only["regime_d1"] = feat["regime_d1"]
 
     for profile in ("FAIBLE", "MODERE", "AGRESSIF", "TRES_AGRESSIF"):

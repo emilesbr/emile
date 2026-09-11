@@ -279,6 +279,7 @@ from emile.core.position_engine import make_open_tranche_fn, process_tranche, pr
 from emile.core.wall_street_pattern import add_wall_street_column
 from emile.core.regime_classifier import compute_wide_channel
 from emile.core.andrews_pitchfork import add_andrews_pitchfork_columns
+from emile.core.range_gates import range_gate as _range_gate, range_gate_extra as _range_gate_extra
 from emile.core.trend_table import (
     PROFILES_TREND, add_trend_context, add_leg, make_campaign, step_campaign,
     try_open_campaign, step_reverse, load_volume, resample_volume,
@@ -499,48 +500,15 @@ def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profil
         risk_pct = sizing.risk_pct
     return _run_core_unified(feat, profile_name, risk_pct=risk_pct, record_state=record_state)
 
-# ---------------------------------------------------------------------------
-# Chantier d'architecture (cf. PLAN.md, section dédiée) : `_range_gate`/
-# `_range_gate_extra` extraits comme fonctions de MODULE (pas des fermetures
-# imbriquées dans `_run_core_unified` comme avant) -- sur le MÊME modèle que
-# `_campaign_ev` ci-dessus, qui est déjà réutilisé TEL QUEL par
-# `risk_aggregation_triple_system.py` sans jamais avoir dérivé. Les
-# fermetures imbriquées, elles, avaient dû être RECOPIÉES À LA MAIN dans ce
-# même fichier (aucune autre façon de les réutiliser) -- source de 2 dérives
-# réelles cette session (Fourchette d'Andrews, 3ème borne squeezée, cette
-# dernière NON détectée par le garde-fou anti-dérive avant correction).
-# Cette extraction élimine la duplication à la racine plutôt que de compter
-# sur une resynchronisation manuelle future.
-# ---------------------------------------------------------------------------
-def _range_gate(feat: dict, i: int) -> bool:
-    """Gate d'entrée RANGE (entrée fraîche ET renfort) -- CORRECTION EXCES H4
-    (le régime EXCES du H4 natif, `feat["regime"]`, doit bloquer -- "Bulle/
-    Excès -> NE PAS TRADER", RULES_EXTRACTION.md §1) + CORRECTION CONFLIT MTF
-    (ne jamais ouvrir si le contexte D1 est lui-même en régime range, source
-    #5 "l'erreur numéro un") + Fourchette d'Andrews contextuelle ("prend le
-    relais" seulement en régime RANGE_TENDANCIEL, cf. `backtest_phase2_
-    faithful.py`/`andrews_gate_alternative.py`)."""
-    d1_not_range = feat["regime_d1"][i] not in ("RANGE_NEUTRE", "RANGE_TENDANCIEL")
-    andrews_ok = (
-        feat["regime"][i] != "RANGE_TENDANCIEL"
-        or (not np.isnan(feat["pitchfork_p1"][i]) and feat["close"][i] > feat["pitchfork_p1"][i])
-    )
-    return bool(
-        feat["gate_score"][i] >= 2 and feat["gate_regime"][i] != "EXCES"
-        and feat["regime"][i] != "EXCES" and d1_not_range and andrews_ok
-    )
-
-def _range_gate_extra(feat: dict, j: int) -> tuple:
-    """Abstention Wall Street NON CONDITIONNELLE (bloque entrée fraîche ET
-    renfort) + CORRECTION PYRAMIDALISATION-RÉGIME (le renfort, pas l'entrée
-    fraîche, exige EN PLUS le régime H4 natif TENDANCE/RANGE_TENDANCIEL --
-    "Renfort" n'apparaît jamais dans la table Money Management RANGE, §3,
-    réservé à la table TENDANCE, §4). Renvoie `(fresh_extra, pyramid_extra)`,
-    cf. `make_open_tranche_fn`."""
-    abstain = bool(feat["wall_street_active"][j])
-    g = _range_gate(feat, j) and not abstain
-    pyramiding_allowed = feat["regime"][j] in ("TENDANCE", "RANGE_TENDANCIEL")
-    return g, (g and pyramiding_allowed)
+# NOTE (chantier d'architecture, SUITE du 24e round, cf. PLAN.md) :
+# `_range_gate`/`_range_gate_extra` (extraits comme fonctions de module au
+# 24e round, mais encore DUPLIQUÉS avec la copie -- fermeture imbriquée --
+# qui vivait dans `backtest_phase2_faithful.py::_run_core`) ont déménagé
+# dans `range_gates.py` (module NEUTRE, sans dépendance vers ce fichier ni
+# vers `backtest_phase2_faithful.py`, pour casser le cycle d'import) --
+# importés en tête de fichier, désormais l'UNIQUE implémentation, réutilisée
+# ICI, dans `backtest_phase2_faithful.py` ET dans `risk_aggregation_triple_
+# system.py`.
 
 def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
                        record_state: bool = False, start: int = 0, end: int = None) -> dict:

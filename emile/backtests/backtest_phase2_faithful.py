@@ -360,6 +360,7 @@ from emile.core.wall_street_pattern import add_wall_street_column
 from emile.core.capital_tiers import effective_sizing
 from emile.core.regime_classifier import compute_wide_channel
 from emile.core.andrews_pitchfork import add_andrews_pitchfork_columns
+from emile.core.range_gates import range_gate, range_gate_extra
 
 # RULES_EXTRACTION.md §3, table Money Management range : "+Reverse" (Limite,
 # TP100%+Reverse) n'apparaît QUE sur la ligne "Très agressif" -- scope
@@ -470,6 +471,11 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         "gate_score": gate_score,
         "gate_regime": gate_regime,
         "regime_h4": h4["regime"].values,   # cf. CORRECTION EXCES H4 en tête de fichier
+        # Alias -- MÊME array que "regime_h4" ci-dessus, jamais recalculé --
+        # pour que `range_gates.range_gate`/`range_gate_extra` (chantier
+        # d'architecture, cf. PLAN.md) fonctionnent sans connaître les 2 noms
+        # historiques ("regime_h4" ici, "regime" dans `unified_protocol.py`).
+        "regime": h4["regime"].values,
         "regime_d1": ctx["D1"]["regime"],   # cf. CORRECTION CONFLIT MTF en tête de fichier
         "wall_street_active": h4["wall_street_active"].values,
         # Règle de volatilité "Stop Loss = taille du canal" (littérale,
@@ -527,13 +533,13 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
     local_range_v = feat["local_range"][start_:end]
     context_range_v = feat["context_range"][start_:end]
     n_borders_v = feat["n_borders"][start_:end]
-    gate_score = feat["gate_score"][start_:end]
-    gate_regime = feat["gate_regime"][start_:end]
-    regime_h4_v = feat["regime_h4"][start_:end]
-    regime_d1_v = feat["regime_d1"][start_:end]
+    # gate_score/gate_regime/regime_d1_v/pitchfork_p1_v : plus extraits ici --
+    # `gate`/`gate_extra` délèguent à `range_gates.range_gate`/`range_gate_
+    # extra`, qui lisent `feat` directement (cf. chantier d'architecture,
+    # suite du 24e round, ci-dessous).
+    regime_h4_v = feat["regime_h4"][start_:end]   # encore utilisé par range_money_management_fracs
     wall_street_v = feat["wall_street_active"][start_:end]
     wide_channel_v = feat["wide_channel"][start_:end]   # littéral, non conditionnel
-    pitchfork_p1_v = feat["pitchfork_p1"][start_:end]   # Andrews contextuel, littéral, non conditionnel
     # Variante d'entrée "3ème borne squeezée" (littérale, non conditionnelle,
     # cf. tête de fichier et `_add_squeeze_columns`) : inerte par construction
     # tant que `squeeze_armed_v` est faux partout (aucun changement pour un
@@ -557,43 +563,23 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
 
     local_warmup = max(0, WARMUP - start_)
 
+    # Chantier d'architecture, SUITE du 24e round (cf. PLAN.md) : `gate`/
+    # `gate_extra` DÉLÉGUENT désormais à `range_gates.range_gate`/
+    # `range_gate_extra` -- l'UNIQUE implémentation, partagée avec
+    # `unified_protocol.py`/`risk_aggregation_triple_system.py` (avant ce
+    # chantier, cette fonction était une SECONDE copie à la main du même
+    # texte, exactement le risque déjà corrigé pour `risk_aggregation_
+    # triple_system.py` au 24e round -- juste jamais traité pour CE côté-ci).
+    # `i`/`j` ici sont des index LOCAUX (dans la fenêtre `[start_:end)`) ;
+    # `range_gate`/`range_gate_extra` indexent `feat` de façon ABSOLUE (même
+    # convention que dans `unified_protocol.py`, qui ne découpe jamais) --
+    # d'où la traduction `start_ + i`. `feat` ici est le dict COMPLET reçu en
+    # paramètre (jamais réassigné), pas les arrays locaux déjà tranchés.
     def gate(i: int) -> bool:
-        # CORRECTION EXCES H4 (cf. tête de fichier) : le régime EXCES du H4
-        # natif (timeframe d'exécution) doit bloquer, pas seulement celui du
-        # contexte Hebdomadaire -- "Bulle/Excès -> NE PAS TRADER"
-        # (RULES_EXTRACTION.md §1) porte sur le marché qu'on trade, pas
-        # seulement sur son contexte supérieur.
-        # CORRECTION CONFLIT MTF (cf. tête de fichier) : ne jamais ouvrir une
-        # tranche RANGE H4 si le contexte immédiatement supérieur (D1) est
-        # LUI-MÊME en régime range (Neutre ou Tendanciel) -- source #5,
-        # "L'erreur numéro un".
-        d1_not_range = regime_d1_v[i] not in ("RANGE_NEUTRE", "RANGE_TENDANCIEL")
-        # Fourchette d'Andrews, lecture CONTEXTUELLE (cf. tête de fichier,
-        # `andrews_gate_alternative.py`) : "prend le relais" SEULEMENT en
-        # régime RANGE_TENDANCIEL -- condition triviale (True) dans tout
-        # autre régime, comportement inchangé pour TENDANCE/RANGE_NEUTRE/EXCES.
-        andrews_ok = (
-            regime_h4_v[i] != "RANGE_TENDANCIEL"
-            or (not np.isnan(pitchfork_p1_v[i]) and c[i] > pitchfork_p1_v[i])
-        )
-        return bool(
-            gate_score[i] >= 2 and gate_regime[i] != "EXCES"
-            and regime_h4_v[i] != "EXCES" and d1_not_range and andrews_ok
-        )
+        return range_gate(feat, start_ + i)
 
     def gate_extra(j):
-        # Abstention Wall Street NON CONDITIONNELLE (littérale, cf. tête de
-        # fichier) : bloque entrée fraîche ET renfort, même comportement que
-        # le mode "wall_street_abstention" de `backtest_phase2_patterns.py`
-        # (réutilisé à l'identique, pas réinventé).
-        abstain = bool(wall_street_v[j])
-        g = gate(j) and not abstain
-        # CORRECTION PYRAMIDALISATION-RÉGIME (cf. tête de fichier) : le
-        # renfort (pas l'entrée fraîche) exige EN PLUS que le régime H4 natif
-        # soit TENDANCE/RANGE_TENDANCIEL -- "Renfort" n'apparaît jamais dans
-        # la table Money Management RANGE (§3), réservé à la table TENDANCE.
-        pyramiding_allowed = regime_h4_v[j] in ("TENDANCE", "RANGE_TENDANCIEL")
-        return g, (g and pyramiding_allowed)
+        return range_gate_extra(feat, start_ + j)
 
     # Tableau Range TENDANCIEL (§3bis, 19e/24e rounds) : val_close/conf_close
     # PAR BOUGIE, branchés sur le régime H4 natif à l'ouverture -- cf.
