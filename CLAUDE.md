@@ -123,11 +123,15 @@ l'import.
   erreurs de citation/attribution ont été trouvées et corrigées après coup
   (`docs/STATUS.md`, rounds 6 à 8) — la citation de départ d'un item peut être fausse
   ou partiellement fausse.
-- **"Que ferait un ingénieur senior (directeur) ?" mobilise plusieurs agents en
-  parallèle, pas une analyse individuelle** (règle explicite de l'utilisateur,
-  `docs/PLAN.md`). Chaque retour d'agent reste vérifié indépendamment avant d'être
-  accepté — la mobilisation multi-agents ne remplace pas la vérification, elle s'y
-  ajoute.
+- **"Que ferait un ingénieur senior (directeur) ?" n'oblige PLUS à mobiliser
+  plusieurs agents en parallèle** (règle abrogée le 11 sept. 2026 — remplace la
+  version précédente de ce principe, qui l'imposait systématiquement). La
+  mobilisation multi-agents reste une option disponible, à utiliser quand le
+  chantier s'y prête (investigations indépendantes croisables, gros volume
+  d'exploration parallélisable) ou quand l'utilisateur la demande explicitement —
+  jamais par défaut au seul énoncé de la question. Si un ou plusieurs agents sont
+  mobilisés (à l'initiative de l'utilisateur ou de sa propre décision), chaque
+  retour reste vérifié indépendamment avant d'être accepté — ça, c'est inchangé.
 - **Un résultat honnête et dégradé est publié tel quel**, jamais habillé — la
   discipline de ce projet est de documenter ce qui ne marche pas autant que ce qui
   marche (voir le ton de `docs/STATUS.md`).
