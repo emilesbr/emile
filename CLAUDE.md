@@ -34,49 +34,40 @@ référencé par les scripts de migration (`cleanup_imports.py`/`update_imports.
 `refactor_tests.py`, racine — jetables), vérifié comme n'ayant jamais existé dans
 l'historique : pas une perte, une référence erronée du script.
 
-**Aucune donnée OHLCV réelle (BTC/ETH/BNB/SOL) n'est disponible dans ce dépôt ni
-ailleurs sur cette machine, et ne l'a jamais été dans l'historique git.** Trouvé par
-audit dédié (pas une supposition) : `data/processed/BTCUSDT_1h_processed.csv`
-n'est PAS "BTC présent, ETH/BNB/SOL manquants" comme un cycle précédent l'avait
-affirmé à tort — c'est une seule ligne de valeurs rondes fabriquées
-(`50000/50100/49900/50050`), committée par erreur pendant la réorg (`645e46c`)
-sans que son contenu soit vérifié avant `git add`. La vraie donnée a toujours vécu
-sur un chemin absolu d'un autre environnement (`/home/user/spaciousabhi/
-binance-futures-backtest-research/data/processed`, visible dans l'historique des
-imports), jamais versionnée dans ce dépôt. `git log --all` confirme : c'est la
-seule version de ce fichier qui ait jamais existé. Aucune copie de secours
-trouvée nulle part sur cette machine (recherche exhaustive faite). L'accès réseau
-à l'API Binance fonctionne depuis ce sandbox (vérifié, `api.binance.com` répond) —
-récupérer une vraie donnée est possible mais reste à faire, pas un raccourci de
-"copier un fichier existant".
+**Données OHLCV réelles restaurées** (BTC/ETH/BNB/SOL, 1h, Binance Futures USDM,
+klines publiques). Contexte complet, à connaître avant de retoucher `data/` :
+un cycle précédent avait committé par erreur un stub d'une seule ligne
+(valeurs rondes fabriquées) dans `data/processed/BTCUSDT_1h_processed.csv`
+pendant la réorg (`645e46c`), sans vérifier son contenu avant `git add` — la
+vraie donnée n'avait jamais été versionnée dans ce dépôt (elle vivait sur un
+ancien sandbox, `/home/user/spaciousabhi/...`, disparu). Récupérée depuis
+l'API publique Binance Futures (`fapi.binance.com/fapi/v1/klines`, pas de clé
+requise) depuis le premier listing de chaque actif jusqu'à aujourd'hui :
+BTC depuis 2019-09-08 (61 439 bougies), ETH depuis 2019-11-27 (59 529), BNB
+depuis 2020-02-10 (57 728), SOL depuis 2020-09-14 (52 521). Intégrité
+vérifiée avant usage (pas supposée) : 0 doublon, 0 trou horaire, 0 NaN OHLC,
+fourchettes de prix cohérentes avec l'historique connu de chaque actif.
 
-**Conséquence directe, plus grave qu'un simple "13 tests rouges" (constat initial
-sous-évalué)** : audit complet fait (mobilisation multi-agents + vérification
-croisée) plutôt que de s'arrêter aux 13 échecs visibles. Résultat :
-- `emile/backtests/backtest_phase2.py::load_h1` refuse maintenant explicitement
-  (`ValueError`) tout fichier de moins de 1000 lignes — un stub/placeholder ne
-  peut plus produire silencieusement une sortie dégénérée (0-1 trade)
-  indiscernable à l'oeil d'un "effet nul" légitime, déjà fréquent dans ce projet.
-- **19 tests** dépendent réellement de données réelles absentes (12 initiaux +
-  3 trouvés dans `test_backtest_phase2_recommended.py` par audit dédié comme
-  faux positifs dangereux — assertions qui ne testaient plus rien contre la
-  fixture bidon, cf. `docs/PLAN.md`/historique de session — + 3 trouvés en
-  refaisant tourner la suite après le durcissement de `load_h1`, jamais visibles
-  avant) : tous marqués `@pytest.mark.data_dependent`.
-- **2 tests supplémentaires** (`test_mtf_gate_bypass_never_compares_to_nan`,
-  `test_reverse_at_limit_scoped_to_tres_agressif_only`) sont structurellement
-  valides quel que soit le contenu réel de la donnée (vérifié par
-  instrumentation, pas supposé) mais ont besoin d'AU MOINS une donnée non
-  dégénérée pour s'exécuter — marqués `skipif` (pas `data_dependent` : ils ne
-  demandent pas de VRAIE donnée, juste une donnée non vide) ; ils repasseront
-  automatiquement dès qu'une vraie donnée existera.
+**Garde-fou ajouté au passage, reste actif** :
+`emile/backtests/backtest_phase2.py::load_h1` refuse explicitement
+(`ValueError`) tout fichier de moins de 1000 lignes — un futur stub/placeholder
+ne pourra plus reproduire silencieusement l'incident ci-dessus. 19 tests
+marqués `@pytest.mark.data_dependent` (dont 3 étaient de vrais faux positifs
+trouvés par audit dans `test_backtest_phase2_recommended.py` — passaient
+contre le stub sans plus rien vérifier) + 2 marqués `skipif` seul (valides
+avec n'importe quelle donnée, juste pas avec aucune). Avec la vraie donnée en
+place : **`pytest -m ""` (suite complète) → 197/197 passés, 0 échec** —
+vérifié par exécution réelle, pas affirmé.
 
-`pytest` sans option (convention du projet) : **176 passés, 2 skip, 19 exclus,
-0 échec** — honnêtement vert, rien masqué. `pytest -m ""` : 10 échecs directs
-(données réelles requises) + 176 passés + 11 skip (176+11+10=197, rien perdu).
-Ne pas citer un chiffre de tests verts sans avoir vérifié `pytest -m ""` en plus
-du défaut — c'est exactement l'erreur qui a laissé les 9 faux positifs de
-`test_backtest_phase2_recommended.py` invisibles jusqu'à cet audit.
+**Ce qui N'A PAS été fait, à ne pas confondre avec "tout est validé"** : les
+chiffres déjà cités dans `docs/PLAN.md`/`docs/STATUS.md` (win rates,
+drawdowns, walk-forward, OOS XRP...) ont été calculés sur l'ancienne donnée
+du sandbox disparu — cette nouvelle donnée vient de la même source (Binance
+Futures) et est intègre, mais n'a PAS été diffée bougie-par-bougie contre
+l'ancienne (impossible, l'ancienne n'existe plus nulle part). Avant de citer
+un chiffre historique comme "reconfirmé", rejouer et comparer au moins un
+`results/*.csv` très cité (ex. `phase2_v7_mtf_results.csv`,
+`walkforward_faithful_results.csv`) au nouveau résultat.
 
 Bug indépendant trouvé et corrigé au passage (`emile/config/env_config.py`) :
 le chemin de données par défaut était relatif (`Path("data/processed")`), donc
