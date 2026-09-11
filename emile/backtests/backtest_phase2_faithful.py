@@ -86,6 +86,28 @@ VÉRIFIÉ SOURCE PAR SOURCE (pas supposé) :
     performance du proxy ne décide jamais si une règle littéralement
     documentée de l'IP de Philippe est implémentée ou non.
 
+**Fourchette d'Andrews — lecture CONTEXTUELLE (AJOUTÉE ce cycle, littérale,
+non conditionnelle sur son périmètre)** : `andrews_gate_alternative.py`
+(H-Andrews-Contextuel) établit, par lecture textuelle du corpus (pas par
+balayage de paramètres) : *"[la Fourchette d'Andrews] PREND LE RELAIS QUAND
+la tendance est BRISÉE. Couvre ~90% des cas CORRECTIFS"* (#3/#4, tableau
+§3) -- un relais est par nature CONDITIONNEL à un état de marché précis, pas
+un filtre permanent. Le seul régime de `regime_classifier.py` correspondant
+à une tendance qui a cessé de progresser mais garde un biais directionnel
+HÉRITÉ (ni TENDANCE encore intacte, ni RANGE_NEUTRE sans biais, ni EXCES
+exclu ailleurs) est `RANGE_TENDANCIEL` -- lecture retenue à ce jour dans ce
+seul fichier séparé, jamais combinée aux 4 autres règles littérales
+ci-dessus jusqu'à cette mobilisation. **Activée ici sans condition, SCOPÉE
+au régime RANGE_TENDANCIEL du H4 natif** (`gate()` bloque désormais aussi
+quand `regime_h4[i] == "RANGE_TENDANCIEL"` et `close[i] <= pitchfork_p1[i]`
+-- dans tout autre régime, condition triviale, comportement inchangé) :
+même principe que les 4 règles précédentes, la performance mesurée (dans
+`andrews_gate_alternative.py` seul, hors des autres corrections de ce
+fichier : +315,6% vs +501,4% sans gate, moyenne 4 actifs x 4 profils) ne
+décide PAS de l'activer, elle documente honnêtement l'effet d'UNE lecture
+retenue a priori pour son adéquation au texte. Impact chiffré dans CE
+moteur (toutes règles combinées) : cf. `PLAN.md`.
+
 CE QUI RESTE VOLONTAIREMENT NON COMBINÉ ICI (limite documentée, pas une
 invention silencieuse) :
   - **Confirmation comme NIVEAU STRUCTUREL ABSOLU** (`use_structural_
@@ -141,11 +163,12 @@ invention silencieuse) :
     fait `use_fib_gate` dans `backtest_phase2_fib.py`) reste une
     extrapolation À NOUS, pas ce que le corpus dit pour CE protocole précis
     -- laissé backtest-tunable, cohérent avec `CONFIGURATION_RECOMMANDEE.md`.
-  - **Gate Andrews Pitchfork sur l'entrée** : le corpus documente le rôle et
-    le chiffre de l'outil (90% des cas correctifs), jamais comment
-    l'utiliser comme filtre d'entrée -- hypothèse de gating explicitement
-    reconnue comme telle dans `andrews_pitchfork.py`/`andrews_gate_
-    alternative.py` -- laissé backtest-tunable.
+  - **Gate Andrews Pitchfork, lecture PERMANENTE** (`mode="andrews_permanent"`
+    de `andrews_gate_alternative.py`) : reproduction de l'hypothèse
+    ORIGINALE (filtre à CHAQUE bougie, quel que soit le régime) -- écartée
+    au profit de la lecture CONTEXTUELLE ci-dessus (activée sans condition),
+    jugée plus fidèle au mot "relais" du corpus. Gardée dans son fichier
+    dédié pour comparaison directe, jamais combinée ici.
 
 CORRECTION EXCES H4 (mobilisation multi-agents, audit systématique de
 fidélité IP) : `RULES_EXTRACTION.md` §1 ("Bulle / Excès -> NE PAS TRADER",
@@ -321,6 +344,7 @@ from emile.core.position_engine import (
 from emile.core.wall_street_pattern import add_wall_street_column
 from emile.core.capital_tiers import effective_sizing
 from emile.core.regime_classifier import compute_wide_channel
+from emile.core.andrews_pitchfork import add_andrews_pitchfork_columns
 
 # RULES_EXTRACTION.md §3, table Money Management range : "+Reverse" (Limite,
 # TP100%+Reverse) n'apparaît QUE sur la ligne "Très agressif" -- scope
@@ -350,6 +374,7 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
     du niveau d'exécution)."""
     h4 = prepare(h4)
     h4 = add_wall_street_column(h4)
+    h4 = add_andrews_pitchfork_columns(h4)
     d1 = prepare(d1)
     ctx_levels = [("D1", d1)]
     if use_mtf_gate:
@@ -391,6 +416,10 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         # (H-Canal-Large-2), joint par la MÊME jointure sans lookahead, jamais
         # recalculé localement.
         "wide_channel": compute_wide_channel(ctx["D1"]["ctx_width_pct"]),
+        # Fourchette d'Andrews, lecture CONTEXTUELLE (littérale, inconditionnelle
+        # sur son périmètre RANGE_TENDANCIEL, cf. tête de fichier et
+        # `andrews_gate_alternative.py`).
+        "pitchfork_p1": h4["pitchfork_p1"].values,
     }
 
 def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
@@ -422,6 +451,7 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
     regime_d1_v = feat["regime_d1"][start_:end]
     wall_street_v = feat["wall_street_active"][start_:end]
     wide_channel_v = feat["wide_channel"][start_:end]   # littéral, non conditionnel
+    pitchfork_p1_v = feat["pitchfork_p1"][start_:end]   # Andrews contextuel, littéral, non conditionnel
     # OPTIONNEL (défaut OFF) : la clé n'est LUE que si le mode structurel est
     # demandé, pour qu'un appelant qui construit son propre `feat` (tests
     # synthétiques, harnais externes) ne soit jamais cassé par l'ajout de
@@ -449,9 +479,17 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
         # LUI-MÊME en régime range (Neutre ou Tendanciel) -- source #5,
         # "L'erreur numéro un".
         d1_not_range = regime_d1_v[i] not in ("RANGE_NEUTRE", "RANGE_TENDANCIEL")
+        # Fourchette d'Andrews, lecture CONTEXTUELLE (cf. tête de fichier,
+        # `andrews_gate_alternative.py`) : "prend le relais" SEULEMENT en
+        # régime RANGE_TENDANCIEL -- condition triviale (True) dans tout
+        # autre régime, comportement inchangé pour TENDANCE/RANGE_NEUTRE/EXCES.
+        andrews_ok = (
+            regime_h4_v[i] != "RANGE_TENDANCIEL"
+            or (not np.isnan(pitchfork_p1_v[i]) and c[i] > pitchfork_p1_v[i])
+        )
         return bool(
             gate_score[i] >= 2 and gate_regime[i] != "EXCES"
-            and regime_h4_v[i] != "EXCES" and d1_not_range
+            and regime_h4_v[i] != "EXCES" and d1_not_range and andrews_ok
         )
 
     def gate_extra(j):

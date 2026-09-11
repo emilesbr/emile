@@ -215,6 +215,13 @@ def _synthetic_pyramid_feat(n: int, regime_h4_value) -> dict:
         # temps. Le mécanisme lui-même est testé à part, à vérité terrain,
         # dans `test_position_engine.py` (5 tests) et `test_regime_classifier.py`.
         "wide_channel": np.zeros(n, dtype=bool),
+        # Fourchette d'Andrews, lecture contextuelle (littérale, inconditionnelle
+        # sur le régime RANGE_TENDANCIEL, cf. tête de `backtest_phase2_faithful.py`) :
+        # neutralisée ici (`close` toujours strictement au-dessus), même
+        # raison que `wall_street_active`/`wide_channel` ci-dessus -- ce
+        # tableau isole l'effet de `regime_h4`, il ne doit pas faire varier
+        # un 2e gate en même temps.
+        "pitchfork_p1": close - 10.0,
     }
 
 def test_pyramid_renfort_blocked_when_h4_regime_range_neutre():
@@ -278,6 +285,40 @@ def test_entry_allowed_when_h4_regime_is_not_exces():
     assert len(res["trace"]) >= 1, (
         "aucun trade ouvert alors que le régime H4 est RANGE_TENDANCIEL (scénario par ailleurs "
         "entièrement favorable) -- le gate EXCES-H4 bloque aussi le cas où il ne devrait pas"
+    )
+
+def test_entry_blocked_by_andrews_contextual_gate_when_below_pitchfork_p1():
+    """Fourchette d'Andrews, lecture CONTEXTUELLE (cf. tête de fichier,
+    `andrews_gate_alternative.py`) : sur un scénario synthétique par
+    ailleurs entièrement favorable, régime H4 RANGE_TENDANCIEL partout,
+    AUCUN trade ne doit s'ouvrir si `close <= pitchfork_p1` à chaque
+    bougie -- "prend le relais" bloque l'entrée tant que le prix n'a pas
+    repassé au-dessus de la médiane P1."""
+    n = WARMUP + 40
+    feat = _synthetic_pyramid_feat(n, regime_h4_value="RANGE_TENDANCIEL")
+    feat["pitchfork_p1"] = feat["close"] + 10.0   # toujours au-dessus -- close > p1 jamais vrai
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) == 0, (
+        f"{len(res['trace'])} tranche(s) ouverte(s) alors que le régime H4 est RANGE_TENDANCIEL "
+        "et close <= pitchfork_p1 partout, attendu 0 (le gate Andrews contextuel doit bloquer)"
+    )
+
+def test_entry_allowed_by_andrews_contextual_gate_outside_range_tendanciel():
+    """Contrôle positif du test ci-dessus (sinon il pourrait passer
+    trivialement sur un moteur qui bloque tout) : le MÊME `pitchfork_p1`
+    au-dessus de `close` partout, mais régime H4 TENDANCE (pas
+    RANGE_TENDANCIEL) -- le gate Andrews contextuel ne s'applique QUE dans
+    RANGE_TENDANCIEL ("prend le relais QUAND la tendance est BRISÉE"), donc
+    plusieurs trades doivent s'ouvrir malgré le même `pitchfork_p1`
+    défavorable."""
+    n = WARMUP + 40
+    feat = _synthetic_pyramid_feat(n, regime_h4_value="TENDANCE")
+    feat["pitchfork_p1"] = feat["close"] + 10.0
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) > 1, (
+        f"{len(res['trace'])} tranche(s) ouverte(s) en régime TENDANCE malgré pitchfork_p1 "
+        "défavorable, attendu plusieurs (le gate Andrews contextuel ne doit s'appliquer qu'en "
+        "RANGE_TENDANCIEL, pas en TENDANCE)"
     )
 
 def test_entry_blocked_when_d1_regime_is_range():

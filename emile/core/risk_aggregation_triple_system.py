@@ -216,14 +216,19 @@ def _run_triple_core(feat_u: dict, h4p: pd.DataFrame, profile_name: str,
     end = n_total if end is None else end
 
     def gate(i):
-        # CORRECTION EXCES H4 + CONFLIT MTF (cf. unified_protocol.py) :
-        # réplique le gate RANGE RÉEL de _run_core_unified tel qu'il existe
-        # désormais, H4-EXCES et Conflit-MTF-D1 inclus -- pas une version
+        # CORRECTION EXCES H4 + CONFLIT MTF + ANDREWS CONTEXTUEL (cf.
+        # unified_protocol.py) : réplique le gate RANGE RÉEL de
+        # _run_core_unified tel qu'il existe désormais -- pas une version
         # pré-correction figée.
+        andrews_ok = (
+            feat_u["regime"][i] != "RANGE_TENDANCIEL"
+            or (not np.isnan(feat_u["pitchfork_p1"][i]) and c[i] > feat_u["pitchfork_p1"][i])
+        )
         return bool(
             feat_u["gate_score"][i] >= 2 and feat_u["gate_regime"][i] != "EXCES"
             and feat_u["regime"][i] != "EXCES"
             and feat_u["regime_d1"][i] not in ("RANGE_NEUTRE", "RANGE_TENDANCIEL")
+            and andrews_ok
         )
 
     def gate_extra(j):

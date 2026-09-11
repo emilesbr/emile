@@ -76,6 +76,11 @@ def _make_base_feat(n=N):
         # défaut (aucune bougie "très large") -- comme `wall_street_active`
         # ci-dessus, un test dédié l'override pour injecter SON scénario.
         "wide_channel": np.full(n, False),
+        # Fourchette d'Andrews, lecture contextuelle : neutralisée ici
+        # (`close` toujours strictement au-dessus) -- même raison que
+        # `wall_street_active`/`wide_channel` ci-dessus, un test dédié
+        # override pour injecter SON scénario RANGE_TENDANCIEL.
+        "pitchfork_p1": close.copy() - 10.0,
         "local_range": np.full(n, 5.0),
         "context_range": np.full(n, 10.0),
         "n_borders": np.full(n, float(MIN_BORDERS)),
@@ -231,7 +236,7 @@ def test_pure_range_sequence_matches_faithful_engine():
     range_keys = [
         "date", "open", "high", "low", "close", "score", "atr", "ctx_support_d1",
         "local_range", "context_range", "n_borders", "gate_score", "gate_regime",
-        "wall_street_active", "wide_channel",
+        "wall_street_active", "wide_channel", "pitchfork_p1",
     ]
     feat_range_only = {k: feat[k] for k in range_keys}
     # "regime" (unified) et "regime_h4" (faithful) désignent la MÊME grandeur
@@ -332,6 +337,35 @@ def test_range_entry_blocked_when_h4_regime_is_exces():
     assert n_open == 0, (
         f"{n_open} tranche(s) RANGE ouverte(s) alors que le régime H4 natif est EXCES, attendu 0 "
         "(le gate EXCES-H4 doit bloquer TOUTE ouverture, entrée fraîche incluse)"
+    )
+
+def test_range_entry_blocked_by_andrews_contextual_gate_when_below_pitchfork_p1():
+    """Fourchette d'Andrews, lecture CONTEXTUELLE (cf. `backtest_phase2_
+    faithful.py`, `andrews_gate_alternative.py`) : régime H4 RANGE_TENDANCIEL
+    partout, `close <= pitchfork_p1` partout -- AUCUNE tranche RANGE ne doit
+    s'ouvrir ("prend le relais" bloque tant que le prix n'a pas repassé
+    au-dessus de la médiane P1)."""
+    feat = _make_pyramid_range_feat("RANGE_TENDANCIEL")
+    feat["pitchfork_p1"] = feat["close"] + 10.0
+    res = _run_core_unified(feat, "MODERE", record_state=True)
+    n_open = len(res["live_state"]["range_tranches"])
+    assert n_open == 0, (
+        f"{n_open} tranche(s) RANGE ouverte(s) alors que le régime H4 est RANGE_TENDANCIEL et "
+        "close <= pitchfork_p1 partout, attendu 0 (le gate Andrews contextuel doit bloquer)"
+    )
+
+def test_range_entry_allowed_by_andrews_contextual_gate_outside_range_tendanciel():
+    """Contrôle positif du test ci-dessus : le MÊME `pitchfork_p1`
+    défavorable, mais régime H4 TENDANCE (pas RANGE_TENDANCIEL) -- le gate
+    Andrews contextuel ne s'applique QUE dans RANGE_TENDANCIEL, donc
+    plusieurs tranches doivent s'ouvrir malgré tout."""
+    feat = _make_pyramid_range_feat("TENDANCE")
+    feat["pitchfork_p1"] = feat["close"] + 10.0
+    res = _run_core_unified(feat, "MODERE", record_state=True)
+    n_open = len(res["live_state"]["range_tranches"])
+    assert n_open > 1, (
+        f"{n_open} tranche(s) RANGE ouverte(s) en régime TENDANCE malgré pitchfork_p1 défavorable, "
+        "attendu plusieurs (le gate Andrews contextuel ne doit s'appliquer qu'en RANGE_TENDANCIEL)"
     )
 
 # ---------------------------------------------------------------------------

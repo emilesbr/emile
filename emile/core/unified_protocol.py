@@ -275,6 +275,7 @@ from emile.backtests.backtest_phase2_ut2 import attach_multi_context, CLOSURE_DE
 from emile.core.position_engine import make_open_tranche_fn, process_tranche, process_reverse
 from emile.core.wall_street_pattern import add_wall_street_column
 from emile.core.regime_classifier import compute_wide_channel
+from emile.core.andrews_pitchfork import add_andrews_pitchfork_columns
 from emile.core.trend_table import (
     PROFILES_TREND, add_trend_context, add_leg, make_campaign, step_campaign,
     try_open_campaign, step_reverse, load_volume, resample_volume,
@@ -331,6 +332,12 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
     h4_ws = prepare(h4[["date", "open", "high", "low", "close"]].copy())
     h4_ws = add_wall_street_column(h4_ws)
     wall_street_active = h4_ws["wall_street_active"].values
+    # Fourchette d'Andrews, lecture CONTEXTUELLE (littérale, inconditionnelle
+    # sur le régime RANGE_TENDANCIEL, cf. `backtest_phase2_faithful.py` et
+    # `andrews_gate_alternative.py`) -- répliquée ici pour que le côté RANGE
+    # du protocole unifié reste identique à `faithful.py`.
+    h4_ws = add_andrews_pitchfork_columns(h4_ws)
+    pitchfork_p1 = h4_ws["pitchfork_p1"].values
 
     trend_df = prepare(h4[["date", "open", "high", "low", "close"]].copy())
     trend_df = add_trend_context(trend_df)
@@ -357,6 +364,7 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         # Le côté TENDANCE n'est PAS concerné (H-Canal-Large-4 : la règle est
         # scopée à la table RANGE par le corpus).
         "wide_channel": compute_wide_channel(ctx["D1"]["ctx_width_pct"]),
+        "pitchfork_p1": pitchfork_p1,
         "regime": trend_df["regime"].values,
         "ctx_resistance": trend_df["ctx_resistance"].values,
         "ctx_high": trend_df["ctx_high"].values,
@@ -520,9 +528,17 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
         # LUI-MÊME en régime range (Neutre ou Tendanciel) -- source #5,
         # "L'erreur numéro un".
         d1_not_range = feat["regime_d1"][i] not in ("RANGE_NEUTRE", "RANGE_TENDANCIEL")
+        # Fourchette d'Andrews, lecture CONTEXTUELLE (cf.
+        # backtest_phase2_faithful.py, andrews_gate_alternative.py) : "prend
+        # le relais" SEULEMENT en régime RANGE_TENDANCIEL -- condition
+        # triviale (True) dans tout autre régime.
+        andrews_ok = (
+            feat["regime"][i] != "RANGE_TENDANCIEL"
+            or (not np.isnan(feat["pitchfork_p1"][i]) and c[i] > feat["pitchfork_p1"][i])
+        )
         return bool(
             feat["gate_score"][i] >= 2 and feat["gate_regime"][i] != "EXCES"
-            and feat["regime"][i] != "EXCES" and d1_not_range
+            and feat["regime"][i] != "EXCES" and d1_not_range and andrews_ok
         )
 
     def gate_extra(j):
