@@ -499,12 +499,28 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   4 actifs — cohérent avec le guide lui-même : "la stratégie à privilégier au moindre doute").
   **PAS ENCORE CONSOMMÉ par aucun moteur** : la grille "3BR" reste appliquée sans condition,
   comportement inchangé, vérifié bit-à-bit. Le mécanisme NEUNEU lui-même (grille de risque
-  distincte) reste catégorie C, différé — diagnostic fait AVANT de coder : il exige un stop
-  TRAILING (aucune primitive de ce type n'existe dans `position_engine.py`) et un ordre
-  Validation/Confirmation NON séquentiel (*"parfois la confirmation arrivera avant"* —
-  `process_tranche` est séquentiel par construction). Backlog ouvert, décision de conception à
-  prendre dans un round séparé plutôt que de bricoler une approximation ou dupliquer
-  `process_tranche`.
+  distincte) reste catégorie C, différé.
+  **Diagnostic revu et corrigé (36e round)** — le blocage "stop trailing" du 32e round était
+  SURESTIMÉ : la citation exacte (*"SL déplacé au sommet récent"* à la Validation) décrit un
+  ajustement PONCTUEL, pas un stop réévalué en continu — structurellement identique au `conf_to_be`
+  déjà existant (`process_tranche`), juste déclenché à un autre point et vers un autre niveau (même
+  primitive que `swing_high` de `trend_table.py`). **Mais un blocage PLUS FONDAMENTAL, trouvé en
+  revérifiant les captures elles-mêmes (pas seulement leur transcription texte), remplace celui-là** :
+  Neuneu est en réalité **BIDIRECTIONNEL** — "Repli Neuneu" (`Repli-neuneu.png`, pattern creux→
+  rebond→retour fibo 14,6-23,6%) est un LONG classique, compatible avec l'architecture existante ;
+  "Borne Neuneu" (`Borne-neuneu.png`, *"Stoploss = au-dessus du plus haut du range"* — cohérent
+  seulement pour un SHORT, un stop au-dessus de l'entrée n'ayant aucun sens pour un LONG) est un
+  **SHORT**, structure qui n'existe NULLE PART dans `position_engine.py` (la seule jambe short du
+  fichier, `H-Reverse-Range`, est explicitement BORNÉE — un seul stop/une seule cible, jamais une
+  table à étapes) — construire "Borne Neuneu" fidèlement exigerait une vraie table RANGE short
+  symétrique, chantier d'architecture à part entière. **Et "Repli Neuneu" (la moitié long,
+  a priori compatible) bute à son tour sur un blocage catégorie A** : aucun chiffre, nulle part
+  dans le corpus (grep confirmé sur les 17 sources + `RULES_EXTRACTION.md` : "Neuneu" n'existe que
+  dans ce guide), ne définit la "dumb zone" elle-même (le point intermédiaire du pattern) — un
+  seuil inventé de toutes pièces, ce que le principe du projet interdit. **Conclusion : toujours
+  PAS implémenté, backlog ouvert, décision de conception (Borne Neuneu) + parties non chiffrables
+  (Repli Neuneu) à traiter dans un round séparé** — détail complet : `PLAN.md`, section
+  "36e application".
 - ~~**Invalidation 3BR par SQUEEZE (`Range/3eme-borne/3ème-borne.png`), citation exacte** : *"On ne
   doit plus la trader si jamais le range produit un SQUEEZE... Si le range se forme juste après
   un SQUEEZE sur l'unité de temps supérieure, il faudra alors éviter de trader cette 3BR..."*~~ —
