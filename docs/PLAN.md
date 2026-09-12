@@ -1117,6 +1117,68 @@ déjà pratiqués 7 fois dans ce projet) ; suite complète inchangée (aucun fic
 Les 3 écarts restent ouverts pour un round séparé, chacun avec sa propre décision de conception,
 sa propre mesure et sa propre non-régression — pas mélangés à celui-ci.
 
+### 30e application (cycle suivant) — audit indépendant de l'extraction du 29e round, demandé par l'utilisateur
+
+**Demande directe de l'utilisateur** : *"avant lance ma joue [un agent] qui va vérifier que nous
+avons bien extrait toute la propriété [intellectuelle] et que nous l'avons bien croisé avec le
+code existant pour voir si nous n'avons rien produit erroné jusqu'à maintenant et que nous n'avons
+rien oublié"*.
+
+**2 agents adversariaux mobilisés en parallèle** (tâche prêtée à ce cas : deux investigations
+indépendantes croisables, chacune vérifiée après coup — cf. principe non négociable de ce
+projet) :
+1. Un agent a rouvert les 38 captures d'écran (via le `git worktree` détaché déjà en place, lecture
+   seule) une par une et comparé au texte de `docs/GUIDE_STRATEGIE_PRO_INDICATORS.md`.
+2. Un agent a relu, ligne par ligne, le croisement avec le code réel (`range_gates.py`,
+   `regime_classifier.py`, `trend_table.py`, `fibonacci.py`, `backtest_phase2_faithful.py`) sans
+   faire confiance aux conclusions du 29e round.
+
+**Chaque retour vérifié indépendamment avant d'être accepté** (règle inchangée) : les deux
+rapports d'agents ont divergé sur un point précis (le statut de `Excès/Excès/Exit.png` et
+`Trend-Follow.png`) — l'agent d'extraction a affirmé ces 2 fichiers "OK", alors qu'une relecture
+personnelle directe (3 lectures isolées, une par une, pas en lot, pour éliminer tout risque
+d'attribution croisée entre appels parallèles) a confirmé qu'ils étaient bien INTERVERTIS dans la
+version précédente du document. Corrigé en me fiant à ma propre vérification directe plutôt qu'à
+l'agent sur ce point précis — exactement la discipline que ce projet applique déjà aux agents.
+
+**Trouvailles retenues, toutes corrigées dans `docs/GUIDE_STRATEGIE_PRO_INDICATORS.md` et
+`docs/COUVERTURE_ENSEIGNEMENTS.md`** :
+- **Erreur d'attribution confirmée personnellement** : le contenu de `Exit.png` et
+  `Trend-Follow.png` était interverti (texte transcrit fidèlement, mais sous le mauvais nom de
+  fichier) dans la version précédente.
+- **Mixup confirmé par les 2 sources (agent + relecture personnelle)** : `Screenshot 2026-09-11
+  23.20.54.png` avait été présenté comme le contenu de `Bulle-spéculative.png` — deux écrans
+  distincts (titres et citations différents). Le vrai contenu de `Bulle-spéculative.png` n'avait
+  jamais été transcrit. Corrigé : nouvelle section "2.1bis" dédiée à l'écran intermédiaire, vraie
+  transcription de la Bulle spéculative.
+- **Contenu manquant ajouté** : écran d'accueil (nouvelle section "0."), les 3 critères propres à
+  `3ème-borne.png` (distincts des 4 conditions de `3br.png`), le bloc "Exemples des erreurs
+  classiques" de `3br.png`, le placeholder "IMAGE A VENIR" de `Divergence.png`.
+- **Erreurs mineures corrigées** : "3 conditions" → 4 (comptage faux) ; une citation "stop
+  suiveur" mal attribuée (Objectif, pas Confirmation) ; l'affirmation "même paragraphe" pour
+  Structure alternative/Vague 1 étendue (en réalité proche mais pas identique mot pour mot).
+- **Écart de croisement code élargi** : l'écart n°3 du 29e round (variante "3BR squeezée" côté
+  TENDANCE) ne couvrait qu'UN TIERS du trou réel — c'est tout le mécanisme "Suivi de tendance"
+  (3 branches) qui est absent de `trend_table.py`, pas seulement sa variante squeeze.
+- **Nouvel écart trouvé** : les sous-patterns "Trend Follow"/"Exit" en régime Excès (niveau
+  expert, grilles de risque complètes dans le guide) ne sont jamais implémentés — le code bloque
+  Excès sans condition. Catégorie C, à reconfirmer explicitement plutôt qu'à laisser implicite.
+- **Conclusion FAUSSE du 29e round, corrigée** : l'affirmation comme quoi les seuils de
+  retracement 3BR (76%/61%) "confirment les seuils déjà codés dans `fibonacci.py`/
+  `regime_classifier.py`" était fausse — `regime_classifier.py` ne calcule aucun retracement
+  Fibonacci, et `fibonacci.py` sert un mécanisme TENDANCE distinct (plafond, pas plancher) qui ne
+  partage que la valeur numérique par coïncidence. Pire, `backtest_phase2_faithful.py:299-313`
+  documentait déjà, avant ce round, qu'aucun gate RANGE par retracement Fibonacci n'est implémenté
+  — information disponible dans le projet mais pas croisée en écrivant le 29e round.
+
+**Ce que ce round confirme (rien de nouveau)** : les 2 écarts n°1 (routage 3BR/Neuneu) et n°2
+(squeeze UT+1, moitié non couverte) du 29e round résistent tous deux à la relecture adversariale,
+citations fichier:ligne à l'appui — aucune régression de conclusion sur ces deux points.
+
+**Aucun changement de comportement de code** (round de vérification + correction documentaire).
+Suite complète inchangée (aucun fichier de code touché). Les écarts identifiés restent ouverts
+pour des rounds séparés, chacun avec sa propre décision de conception.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

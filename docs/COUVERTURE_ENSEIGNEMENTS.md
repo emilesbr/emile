@@ -517,12 +517,51 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   (`Tendance/Tendance-primaire/Suivi-de-tendance/Repli-sur-3br-Squizee.png`) — même famille que la
   variante déjà implémentée côté RANGE (18e/22e rounds, `compute_squeezed_third_border`), mais ICI
   scopée à la table TENDANCE (pas RANGE) avec un niveau d'entrée alternatif explicite ("sinon au
-  niveau du fibo 50%"). Pas encore vérifié si `unified_protocol.py` (côté TENDANCE) couvre ce cas
-  — à faire avant de conclure à un écart réel ou à une couverture déjà suffisante.
+  niveau du fibo 50%"). **VÉRIFIÉ depuis (30e application, audit indépendant) : ce n'est qu'un
+  TIERS du trou réel** — voir item ci-dessous, plus large.
 
-Aucun changement de comportement de code apporté par cette extraction (round investigation/
-documentation, comme la plupart des rounds catégorie C précédents) — les 3 items ci-dessus
-attendent une décision de conception dédiée, pas une implémentation improvisée dans ce même round.
+**30e application — audit indépendant demandé par l'utilisateur ("vérifier que nous avons bien
+extrait toute la propriété [intellectuelle] et croisé avec le code, voir ce qui est erroné")** :
+2 agents adversariaux mobilisés, l'un a rouvert les 38 captures une par une contre
+`docs/GUIDE_STRATEGIE_PRO_INDICATORS.md`, l'autre a revérifié le croisement code ligne par ligne.
+Corrections déjà appliquées au document d'extraction — retenu ici, ce qui change le diagnostic
+du round précédent :
+
+- **Le mécanisme "Suivi de tendance" (§4.3, PAS seulement sa variante squeeze) est ABSENT de
+  `trend_table.py` en entier.** L'item ci-dessus (Repli sur 3BR squeezée) ne couvrait qu'une des 3
+  branches (Repli à la moyenne / Cassure de 3BR / Repli sur 3BR squeezée), chacune avec sa propre
+  grille STOPLOSS/VALIDATION/CONFIRMATION/OBJECTIF et ses 5 conditions d'activation. `grep -n
+  "suivi\|volatil\|alerte\|repli.*moyenne"` sur `emile/core/trend_table.py` ne retourne AUCUN
+  résultat — le code actuel modélise le Breakout comme un simple "Renfort +X%" figé par profil
+  puis saute directement à Divergence, sans aucune des 3 branches de ré-entrée par ordre en
+  attente. Catégorie C, portée plus large que ce que le 29e round avait cerné — PAS implémenté.
+- **Nouvel item trouvé** : les sous-patterns "Trend Follow"/"Exit" en régime Excès (§2.1 du guide,
+  grilles de risque complètes, niveau EXPERT) ne sont jamais implémentés — `range_gates.py:48`
+  bloque INCONDITIONNELLEMENT toute entrée en régime EXCES. Cohérent avec le choix déjà documenté
+  ("Bulle/Excès → NE PAS TRADER"), mais mériterait d'être reconfirmé explicitement plutôt que de
+  rester un silence face à ce nouveau contenu. Catégorie C — PAS implémenté.
+- **Une conclusion du 29e round était FAUSSE, corrigée** : l'affirmation "confirme les seuils déjà
+  codés dans `fibonacci.py`/`regime_classifier.py`" (à propos des seuils de retracement 3BR
+  76%/61%) ne résiste pas à la relecture — `regime_classifier.py::add_regime` ne calcule AUCUN
+  retracement Fibonacci ; `fibonacci.py::FAVORABLE_MIN/MAX` sert un mécanisme TENDANCE distinct
+  (plafond d'invalidation du Pull-Back, pas plancher d'entrée RANGE) qui ne partage que la valeur
+  numérique 0,618 par coïncidence ; et `backtest_phase2_faithful.py:299-313` documente LUI-MÊME,
+  depuis un round antérieur, qu'aucun gate RANGE par retracement Fibonacci n'est implémenté — cette
+  information était déjà dans le projet et aurait dû être croisée avant d'écrire "confirme".
+  Détail complet, correction appliquée dans `docs/GUIDE_STRATEGIE_PRO_INDICATORS.md` section 5.
+- **Erreurs de transcription/catégorisation corrigées dans le document d'extraction lui-même**
+  (pas des écarts corpus↔code, des erreurs de ma propre extraction) : le contenu réel de
+  `Bulle-spéculative.png` n'avait jamais été transcrit (un écran voisin, `Screenshot 2026-09-11
+  23.20.54.png`, avait été présenté à sa place) ; "3ème conditions" aurait dû être "4 conditions"
+  (`3br.png`) ; une citation "stop suiveur" était attribuée au mauvais champ (Objectif, pas
+  Confirmation) ; un bloc entier ("Exemples des erreurs classiques", `3br.png`) et les 3 critères
+  propres à l'écran `3ème-borne.png` n'étaient pas transcrits ; l'écran d'accueil et le placeholder
+  "IMAGE A VENIR" de `Divergence.png` n'étaient pas signalés. Toutes corrigées, mêmes fichiers
+  images revérifiés directement (pas la seule parole des agents) avant correction.
+
+Aucun changement de comportement de code apporté par ce round ou le précédent (investigation +
+correction documentaire uniquement) — les écarts ci-dessus attendent une décision de conception
+dédiée, pas une implémentation improvisée.
 
 ### Ce qui reste correctement classé, confirmé par les 3 agents (rien à changer)
 Tout le reste des 17 sources + le manuel — UT+2 (mécanisme général), stop UT+1 réel, breakeven différé à la Confirmation, abstention Wall Street, canal manuel, Andrews, diversification 1%+1%, +Reverse scopé TRES_AGRESSIF, EXCES-H4, pyramidalisation-régime, TSI(14,7,9), garde-fous Phase 4 (hors périmètre code, correctement noté comme tel) — vérifié directement dans le code par les 3 agents, pas simplement relu dans ce document.

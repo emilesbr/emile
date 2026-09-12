@@ -16,11 +16,21 @@ cumulatives de validation d'un pattern) et souvent une zone "Gestion du risque"
 (STOPLOSS/VALIDATION/CONFIRMATION/OBJECTIF/RISQUE MAX). Je transcris les deux fidèlement, sans
 paraphraser le texte libre. Nom du fichier source entre parenthèses pour traçabilité.
 
+**Audit indépendant fait après une première version de ce document** (2 agents adversariaux
+mobilisés par l'utilisateur, cf. `docs/PLAN.md` section "30e application") : l'un a rouvert les 38
+PNG un par un et comparé au texte ci-dessous, l'autre a revérifié le croisement avec le code. Les
+corrections qu'ils ont trouvées sont déjà appliquées dans ce document (pas laissées en note à
+part) — cf. section 5 pour le détail des écarts de croisement code, et cette liste d'anomalies pour
+les erreurs de transcription/catégorisation corrigées.
+
 **Anomalies de capture trouvées, signalées telles quelles (pas corrigées ni devinées)** :
 - 4 écrans sont des **templates vides** (aucun texte rempli, juste la structure UI) :
   `Excès/Excès/Revers.png`, `Excès/Bulle spéculative/Dead-Cat-Bounce.png`,
   `Excès/Bulle spéculative/Reverse-Crash.png`, `Excès/Bulle spéculative/Suivi-de-bulle.png`.
   Contenu réel INCONNU — pas inventé ici.
+- `Tendance/Tendance-primaire/Divergence.png` a son texte intégralement rempli, mais l'emplacement
+  du graphique affiche littéralement **"IMAGE A VENIR"** — anomalie distincte des 4 templates vides
+  ci-dessus (ici seule l'illustration manque, pas le texte).
 - `Tendance/Multi-timeframe/Vague-5-étendu.png` contient, à l'identique, le texte de
   `Range/Range-neuneu/Repli-neuneu.png` ("dumb zone" / RÈGLES DE DÉCLENCHEMENT 1-4 / fibo
   14,6-23,6%) — vraisemblablement une capture d'écran prise par erreur sur le mauvais panneau.
@@ -30,6 +40,16 @@ paraphraser le texte libre. Nom du fichier source entre parenthèses pour traça
   VAGUE 5 étendue) — la vraie capture de l'écran "Multi-timeframe" (mentionné dans
   `Tendance/Tendance.png` : *"vous pouvez trader chaque TF en parallèle avec 2% de risque
   chacun"*) est probablement manquante, remplacée par un doublon de l'écran voisin.
+- Un écran d'accueil (`Screenshot 2026-09-11 23.20.40.png`, à la racine du dossier du guide) n'a
+  pas de section dédiée dans une première version de ce document — corrigé, cf. section 0
+  ci-dessous.
+
+## 0. Écran d'accueil (`Screenshot 2026-09-11 23.20.40.png`, racine du dossier)
+
+« GUIDE DE STRATÉGIE — QUEL EST MON CONTEXTE ? » — écran de menu, logo PRO-INDICATORS.com. 4
+dossiers : Excès, **Range** (marqué « DÉBUTANTS »), Tendance, Chaos — l'ordre de présentation suivi
+par ce document (sections 1 à 4 ci-dessous couvrent Chaos/Excès/Range/Tendance, pas dans cet ordre
+d'affichage mais dans l'ordre de complexité croissante déjà utilisé dans `RULES_EXTRACTION.md`).
 
 ## 1. Chaos (`Chaos/Chaos.png`)
 
@@ -44,9 +64,19 @@ Action : **PARTEZ** (changer d'actif, pas de règle de trading proposée).
 
 ## 2. Excès
 
-### 2.1 Excès (`Excès/Excès/Excès.png`, `Screenshot 2026-09-11 23.20.54.png`)
+**Correction d'attribution (audit indépendant, cf. tête de document)** : une première version de
+ce document avait interverti le contenu réel de `Exit.png` et `Trend-Follow.png` (deux fichiers
+voisins, même famille de template "TAKE PROFIT/PSYCHOLOGIE") et avait aussi présenté
+`Screenshot 2026-09-11 23.20.54.png` comme si c'était `Bulle-spéculative.png` (deux écrans
+distincts, jamais le même titre ni le même contenu). Re-vérifié directement (3 lectures
+indépendantes des fichiers réels, pas une seule) avant correction : les 4 sections ci-dessous sont
+désormais chacune sourcée sur le bon fichier.
 
-3 critères : **Fondamental haussier**, **Pas de V5 étendue**, **Pas de multi-timeframe**.
+### 2.1 Excès (`Excès/Excès/Excès.png`)
+
+3 critères : **Fondamental haussier**, **Pas de V5 étendue**, **Pas de multi-timeframe**. Aucun
+niveau de difficulté ni ratio affichés sur cet écran (contrairement à 2.1bis ci-dessous, qui est un
+écran DIFFÉRENT malgré le même titre "EXCÈS").
 
 > « L'Excès n'est pas facile à trader car la composante principale de l'excès est souvent
 > d'origine fondamentale. De ce fait il faut chercher une source rationnelle qui peut supporter
@@ -56,19 +86,12 @@ Action : **PARTEZ** (changer d'actif, pas de règle de trading proposée).
 > Il est essentiel de s'assurer que vous n'avez pas à faire à une tendance multi-timeframe (sortie
 > d'un range multi-timeframe) ni une structure de vague 5 étendue (pas d'overlap). »
 
-Sous-écrans : **Trend Follow**, **Exit**, **Revers** (niveau hardcore) — le contenu détaillé
-de "Revers" est un template vide (cf. anomalies).
+Mène vers 3 sous-écrans : **Trend Follow**, **Exit**, **Reverse** (niveau hardcore) — le contenu
+détaillé de "Reverse" est un template vide (`Excès/Excès/Revers.png`, cf. anomalies).
 
-**Zone spéculative "Trend Follow"** (`Excès.png`) : 6 critères — après 2 pattern de suivi UT-2,
-débordement du contexte, au-dessus du canal de tendance, break sinewave (target), creux
-descendant sur momentum, signal momentum optionnel.
-**Gestion du risque** : TP 100% suivi ; TP 50% du reste sur les autres trades (breakout, accu…).
-Psychologie : *« pas de trade en reverse, ce n'est pas du tout la même gestion du risque… juste un
-TP »*.
-
-**Zone spéculative "Exit"** (`Exit.png`) : 5 critères — suivi effectué sur UT-2, prix sous le
-contexte vendeur UT-0, proche fibo 14,6% ou 23,6%, range mature ou repli moyenne, signal momentum
-optionnel.
+**Zone spéculative "Trend Follow"** (`Trend-Follow.png`) : 5 critères — suivi effectué sur UT-2,
+prix sous le contexte vendeur UT-0, proche fibo 14,6% ou 23,6%, range mature ou repli moyenne,
+signal momentum optionnel.
 **Gestion du risque** : Stoploss sous le niveau Fibonacci suivant, au moins sous le contexte d'UT
 supérieure, **risque max 2%**. Validation = rejoindre le contexte opposé ou casser la 3BR du range
 mature (SL au plus bas récent). Confirmation = le prix quitte la zone de range et atteint le
@@ -76,10 +99,19 @@ contexte d'UT supérieure (SL à breakeven). Objectif : conserver jusqu'à un ni
 apparition d'un pattern d'Exit, **utilisé 2 fois maximum**, ne pas laisser traîner les profits
 après le 2ème suivi.
 
-### 2.2 Bulle spéculative (`Excès/Bulle spéculative/Bulle-spéculative.png`)
+**Zone spéculative "Exit"** (`Exit.png`) : 6 critères — après 2 pattern de suivi UT-2,
+débordement du contexte, au-dessus du canal de tendance, break sinewave (target), creux
+descendant sur momentum, signal momentum optionnel.
+**Gestion du risque** : TP 100% suivi ; TP 50% du reste sur les autres trades (breakout, accu…).
+Psychologie : *« pas de trade en reverse, ce n'est pas du tout la même gestion du risque… juste un
+TP »*.
 
-3 critères : **Contextes disjoints**, **Cycles inexistants**, **Momentum <0 acheté**.
-Difficulté niveau expert. Ratio risque/rendement **1:10 à 1:20**.
+### 2.1bis Excès niveau expert (`Screenshot 2026-09-11 23.20.54.png`)
+
+Écran DISTINCT de 2.1 malgré le même titre "EXCÈS" — 3 critères différents : **Contextes
+disjoints**, **Cycles inexistants**, **Momentum <0 acheté**. Badge « DIFFICULTÉ NIVEAU EXPERT ».
+Ratio risque/rendement **1:10 à 1:20**. Mène vers 2 dossiers : "EXCÈS" et "NIVEAU HARDCORE : BULLE
+SPÉCULATIVE" (donc un écran de transition entre 2.1 et 2.2, pas le contenu de 2.2 lui-même).
 
 > « Le marché excessif se caractérise par des boîtes de contexte qui sont disjointes en support et
 > en résistance. La situation doit s'établir plusieurs boîtes de suite et dans le cas des bulles,
@@ -88,6 +120,20 @@ Difficulté niveau expert. Ratio risque/rendement **1:10 à 1:20**.
 > Un excès peut être le signe d'une TENDANCE MULTI-TIMEFRAME. Alors que la bulle se caractérise par
 > un excès qui n'est soutenu par aucun fondamental et ne valide pas de structure multi-timeframe.
 > Sa fin sera relativement imprévisible. »
+
+### 2.2 Bulle spéculative (`Excès/Bulle spéculative/Bulle-spéculative.png`)
+
+3 critères (différents de 2.1bis) : **Fondamental inexistant**, **Pas de V5 étendue**, **Pas de
+multi-timeframe**.
+
+> « A l'inverse d'un excès la bulle se caractérise par l'absence totale de justification
+> fondamentale. Le marché ne cherche plus à valoriser. Le prix est la seule chose dont les gens
+> parlent. La structure s'enferme de plus en plus dans des raisonnements de court terme. Chaque
+> repli est acheté et les ranges qui ponctuent la structures sont de plus en plus rapides alors que
+> les volumes eux deviennent de plus en plus faibles.
+> Il est essentiel de s'assurer que vous n'avez pas à faire à une tendance multi-timeframe (sortie
+> d'un range multi-timeframe) ni une structure de vague 5 étendue (pas d'overlap). »
+> *(« Attention à la psycho. »)*
 
 Sous-écrans **Suivi de bulle**, **Reverse Crash**, **Dead Cat Bounce** : templates vides dans
 cette capture (cf. anomalies) — aucune règle transcrite pour ces 3.
@@ -112,15 +158,28 @@ actuellement câblée dans le code** (cf. section 5, écart n°1).
 
 ### 3.2 3ème borne (`Range/3eme-borne/3ème-borne.png`)
 
-Rappel des 3 conditions pour activer un pattern de 3BR (image complémentaire,
-`Range/3eme-borne/3br/3br.png`) : **1** précédé ou au sein d'une tendance, **2** contexte
+**3 critères propres à CET écran** (`3ème-borne.png` lui-même, distincts des 4 conditions de
+`3br.png` ci-dessous) : **Contexte renversé**, **Pas de squeeze sur le prix**, **Pas de squeeze
+sur le prix UT+1**. Callouts : *« JE VALIDE MES RÈGLES — AVANT D'ALLER PLUS LOIN »*, *« ATTENTION À
+L'IMPATIENCE »* (icône sablier), *« UTILISEZ DES ALERTES »*. Mène vers 3 dossiers : **3BR**, **3BR
+SQUEEZÉE**, et **3BR EN RETARD** marqué *« VÉRIFIER EN 1ER »*.
+
+**Rappel des 4 conditions pour activer un pattern de 3BR** (image complémentaire,
+`Range/3eme-borne/3br/3br.png` — corrigé : ce sont bien **4** conditions, pas 3, une première
+version de ce document comptait mal) : **1** précédé ou au sein d'une tendance, **2** contexte
 renversé, **3** triangle de confirmation, **4** pas de débordement du sommet (sinon 3BR
 squeezée). *« Lorsque ces conditions sont bien vérifiées, il ne reste alors plus que deux options
 possibles… 3BR NEUTRE ou 3BR TENDANCIELLE… À défaut il faudra privilégier la 3BR NEUTRE (car elle
 est moins risquée que la variante tendancielle). »*
 
-**Règle d'invalidation explicite (`3ème-borne.png`), littérale, PAS encore vérifiée contre le
-code** (cf. écart n°2) :
+**"Exemples des erreurs classiques" (`3br.png`, panneau latéral, 4 graphiques annotés — en
+anglais dans l'image)**, non transcrit dans une première version de ce document : *"SQUEEZE on
+UT+1 (avoid trading that)"* ; *"CONTEXT has reversed on UT+1 (go trade on this TF)"* ; *"Price
+SQUEEZED (range is mature, move to higher TF) — NO 3BR"* ; *"Have you seen the candles? (this is
+chaos.. GET OUT)"*.
+
+**Règle d'invalidation explicite (`3ème-borne.png`), littérale, VÉRIFIÉE contre le code** (cf.
+écart n°2, confirmé par audit indépendant) :
 > « La structure de 3EME BORNE peut prendre un grand nombre de formes. On ne doit plus la trader
 > si jamais le range produit un SQUEEZE (canal de tendance grisé). On considère alors le range
 > mature et on doit donc arrêter de trader sur cette UT.
@@ -170,10 +229,12 @@ retournement dans le contexte, retracement ≥61% fibo, triangle de confirmation
 momentum, break sinewave optionnel.
 **Gestion du risque, risque max 2%** : Stoploss = idem 3BR neutre. Validation = rejoindre le canal
 de tendance opposé OU clôture au-dessous de 50% contexte. Confirmation = le prix atteint le
-contexte opposé OU déborde le point bas précédent (2ème borne) — *« vous pouvez aussi utiliser un
-stop suiveur à placer dès le débordement du point bas précédent »*. Objectif = récupérer ses
-profits dès que le prix se trouve sous le point bas précédent, sous les contextes acheteurs et
-que le momentum donne un signal + triangle de confirmation.
+contexte opposé OU déborde le point bas précédent (2ème borne). Objectif = récupérer ses profits
+dès que le prix se trouve sous le point bas précédent, sous les contextes acheteurs et que le
+momentum donne un signal + triangle de confirmation — *« vous pouvez aussi utiliser un stop
+suiveur à placer dès le débordement du point bas précédent »* (corrigé par audit indépendant :
+cette citation appartient au champ **Objectif**, pas Confirmation, une première version de ce
+document l'avait mal attribuée).
 
 **Ces 2 grilles de validation numériques (neutre : retracement ≥76% ; tendancielle : retracement
 ≥61%, condition "2BR a clôturé sous le contexte") sont PLUS PRÉCISES que ce qui existe aujourd'hui
@@ -267,7 +328,8 @@ si réduction de risque voulue, sinon attendre le premier suivi de tendance). Ob
 règle est de ne jamais dépasser 2% de risque sur votre exposition à la tendance. Mais vouloir
 ramener le risque à 0 trop vite n'est pas une bonne solution !! »*
 
-**Divergence** (`Divergence.png`) — 6 critères (numérotation source : deux fois "5") :
+**Divergence** (`Divergence.png`, texte intégralement présent mais illustration = placeholder
+"IMAGE A VENIR", cf. anomalies) — 6 critères (numérotation source : deux fois "5") :
 débordement du contexte, prix proche du canal de tendance, 2 suivis de tendance visibles, trend
 sinewave > 80, break sinewave recommandé, signal momentum recommandé.
 > « Comme une tendance ne peut être éternelle, nous devons prendre en compte sa maturité dans la
@@ -383,12 +445,17 @@ Range-neuneu, cf. anomalies).
 > (moins souvent que la version primaire). » *(Des anomalies dans la structure primaire doivent
 > vous alerter — ces structures induisent des biais psycho encore plus prononcés.)*
 
-**Vague 1 étendue (Structure alternative)** (`Structure-alternative/Vague-1-étendu.png`) : même
-paragraphe théorique que ci-dessus (4.4), pattern légèrement différent : (1) reverse en "V
-Bottom", la moyenne repasse sous le contexte, le prix revient au sommet précédent (peut même le
-déborder) ; (2) un premier pullback classique intervient et est suivi par une structure d'excès
-final classique elle aussi ; (3) arrive un second pullback qui se positionne en overlap et
-produira un second, et dernier, excès final.
+**Vague 1 étendue (Structure alternative)** (`Structure-alternative/Vague-1-étendu.png`) :
+paragraphe théorique PROCHE de celui de 4.4 mais PAS identique mot pour mot (corrigé par audit
+indépendant — une première version de ce document affirmait à tort "même paragraphe") : la version
+ci-dessus (4.4, Multi-timeframe) se termine par *"...on peut difficilement l'anticiper, on la
+constate. [...] Ramassez les miettes mais si vous l'avez ratée, acceptez-le !!"* ; celle-ci se
+termine par *"...on la constate en cours de route. [...] Sachez acceptez que vous avez raté le
+plus gros, contentez-vous des miettes !!"* — deux variantes rédactionnelles proches, pas le même
+texte. Pattern légèrement différent de 4.4 : (1) reverse en "V Bottom", la moyenne repasse sous le
+contexte, le prix revient au sommet précédent (peut même le déborder) ; (2) un premier pullback
+classique intervient et est suivi par une structure d'excès final classique elle aussi ; (3) arrive
+un second pullback qui se positionne en overlap et produira un second, et dernier, excès final.
 
 **Vague 5 étendue (Structure alternative)** (`Structure-alternative/Vague-5-étendu.png`) :
 > « Dans une vague 5 étendue (V5E) le marché se comporte de manière assez piégeuse et la
@@ -405,39 +472,80 @@ replie jusqu'au niveau de break ; le prix tente un second breakout qui échouera
 au-delà du report de range (confirmation) ; le prix réalise un second pullback et retourne
 chercher la zone de prix traitée au sommet du 1er break.
 
-## 5. Écarts corpus↔code identifiés — À VÉRIFIER (pas encore vérifiés contre le code réel)
+## 5. Écarts corpus↔code — VÉRIFIÉS contre le code réel (audit indépendant, cf. `PLAN.md` "30e application")
 
-Cette section liste des candidats à auditer en Phase C (round suivant), **pas des conclusions** —
-chaque item nécessite de relire le code réel avant de conclure "erroné" ou "conforme".
+Contrairement à la version précédente de cette section ("à vérifier"), les items 1 à 3 ci-dessous
+ont désormais été **relus directement dans le code réel** (pas seulement supposés) par un agent
+d'audit indépendant, citations fichier:ligne à l'appui. Toujours **catégorie C — rien implémenté**,
+décision de conception requise pour chacun.
 
-1. **Routage RANGE explicite (`Range.png`)** : *"range précédé d'une tendance → 3ème borne ; sinon
-   (pas assez d'historique, range >4 bornes, ou forex UT hebdo) → Neuneu"* — règle de choix de
-   STRUCTURE, pas de money management. À vérifier : `regime_classifier.py`/`range_gates.py`
-   implémentent-ils cette distinction 3BR vs Neuneu, ou appliquent-ils une seule grille RANGE
-   indifférenciée (ce qui semble être le cas actuel, `RANGE_NEUTRE`/`RANGE_TENDANCIEL` ne
-   correspondent pas explicitement à "3BR" vs "Neuneu") ?
-2. **Invalidation 3BR par SQUEEZE (`3ème-borne.png`)** : *"ne plus trader ce range si SQUEEZE sur
-   son UT, ou si SQUEEZE sur l'UT+1 juste avant le range, ou si retour au niveau de la 1BR"* — à
-   vérifier contre `_add_squeeze_columns`/`compute_squeezed_third_border`
-   (`backtest_phase2_faithful.py`, 18e/22e rounds) : ce mécanisme couvre l'ENTRÉE par ordre limite
-   sur 3ème borne squeezée, pas forcément cette règle d'INVALIDATION/abstention distincte.
-3. **Variante "Repli sur 3BR squeezée" en contexte TENDANCE** (`Suivi-de-tendance/Repli-sur-3br-
-   Squizee.png`) : même mécanisme d'entrée par ordre limite que le #2, mais scopé Suivi-de-
-   tendance (pas Range) avec niveau d'entrée fibo 50% de la jambe de hausse — à vérifier si
-   `unified_protocol.py` (côté TENDANCE) le couvre déjà ou seulement côté RANGE.
-4. **Seuils de retracement 3BR neutre (≥76%) / 3BR tendancielle (≥61%)** — cohérents en apparence
-   avec `RULES_EXTRACTION.md` §1 (76,4%/61,8%) et `fibonacci.py`, à revérifier chiffre exact par
-   chiffre exact (76% vs 76,4%, 61% vs 61,8% — écart possible d'arrondi entre l'app et le manuel).
-5. **Range Neuneu, condition d'usage FOREX "à partir de l'UT hebdo sur les paires majeures"** —
+1. **CONFIRMÉ — Routage RANGE "3ème borne" vs "Neuneu" absent.** `regime_classifier.py::add_regime`
+   (lignes 54-92) ne calcule la distinction RANGE_NEUTRE/RANGE_TENDANCIEL qu'à partir de la pente
+   du canal (`slope_pct`) et de la position récente du prix (`recent_above_frac`) — aucune notion
+   de "précédé d'une tendance" ni de compte de bornes. Le seul compteur de bornes du projet
+   (`n_borders`/`MIN_BORDERS=3`) sert de seuil de maturité binaire, jamais de bascule vers une
+   seconde grille de money management. Il n'existe qu'UNE paire de grilles RANGE dans tout le code,
+   jamais deux grilles nommées "3BR"/"Neuneu".
+2. **CONFIRMÉ (moitié) — Invalidation 3BR par squeeze UT+1 partiellement non couverte.**
+   `range_gates.py:42` — `d1_not_range = feat["regime_d1"][i] not in ("RANGE_NEUTRE",
+   "RANGE_TENDANCIEL")` — si `regime_d1[i] == "EXCES"` (un D1 squeezé EST classé EXCES par
+   `regime_classifier.py:82-84`), `d1_not_range` vaut `True` : cette clause NE bloque PAS l'entrée,
+   alors que la citation l'exige explicitement. La 1ère moitié (squeeze sur la PROPRE UT du range →
+   régime EXCES → déjà bloqué par `range_gate` ligne 48) EST couverte, par coïncidence de
+   conception plutôt que par lecture de cette citation précise. La 3ème clause ("retour au niveau
+   de la 1BR") n'a aucun équivalent codé (aucune notion de "1BR"/"première borne" dans
+   `emile/core/*.py`).
+3. **CONFIRMÉ, et PLUS LARGE que prévu — pas seulement la variante squeeze.** L'audit a montré que
+   c'est tout le mécanisme "Suivi de tendance" (§4.3 de ce document — 3 branches Repli à la
+   moyenne/Cassure de 3BR/Repli sur 3BR squeezée, chacune avec sa propre grille STOPLOSS/
+   VALIDATION/CONFIRMATION/OBJECTIF, précédées de 5 conditions d'activation) qui est ABSENT de
+   `trend_table.py` (le moteur TENDANCE) — `grep -n "suivi\|volatil\|alerte\|repli.*moyenne"` n'y
+   retourne aucun résultat. Le code actuel modélise le Breakout comme un simple "Renfort +X%" figé
+   par profil puis saute directement à Divergence : aucune des 3 branches de ré-entrée par ordre en
+   attente n'existe. `compute_squeezed_third_border`/`_add_squeeze_columns`
+   (`backtest_phase2_faithful.py`) ne sont câblés QUE côté RANGE (moteur séparé, sans import croisé
+   avec `trend_table.py`) — la variante squeeze de §4.3 n'est donc, en l'état, qu'un TIERS du trou
+   réel.
+
+**Nouvel item trouvé par l'audit, catégorie C** :
+
+4. **Sous-patterns Trend Follow/Exit en régime Excès jamais implémentés.** Le guide (§2.1) donne
+   deux patterns tradables EXPERT en régime Excès, avec grilles de risque complètes. Le code
+   actuel (`range_gates.py:48`, `feat["regime"][i] != "EXCES"`) bloque INCONDITIONNELLEMENT toute
+   entrée en régime EXCES — cohérent avec le choix déjà documenté de laisser Excès hors périmètre
+   (`RULES_EXTRACTION.md` : *"Bulle/Excès → NE PAS TRADER"*), mais ce choix mériterait d'être
+   reconfirmé explicitement à la lumière de ce contenu plutôt que de rester implicite.
+
+**Correction d'une conclusion FAUSSE de la version précédente de cette section (trouvée par
+l'audit, pas glissée sous le tapis)** :
+
+5. ~~**Seuils de retracement 3BR neutre (≥76%) / 3BR tendancielle (≥61%)** — "confirme les seuils
+   déjà codés dans `fibonacci.py`/`regime_classifier.py`"~~ — **FAUX, vérifié et corrigé.**
+   `regime_classifier.py::add_regime` ne contient AUCUN calcul de retracement Fibonacci (seulement
+   pente + position récente). Les seuils de `fibonacci.py` (`FAVORABLE_MIN=0.23`/
+   `FAVORABLE_MAX=0.618`, lignes 200-202) servent `classify_retracement` côté **TENDANCE** (zone
+   favorable du Pull-Back, 61,8% comme PLAFOND d'invalidation) — c'est l'inverse directionnel du
+   seuil RANGE du guide (76,4%/61,8% comme PLANCHER d'entrée). Le rapprochement ne tenait qu'à une
+   coïncidence numérique (0,618 des deux côtés), pas à un mécanisme partagé. Pire : le projet
+   documente LUI-MÊME, ailleurs, qu'aucun gate RANGE par retracement n'est implémenté —
+   `backtest_phase2_faithful.py:299-313`, *"Gate Fibonacci RANGE (manuel, seuils par régime) --
+   délibérément PAS implémenté ce cycle"*, avec la citation exacte du même "76%" et l'avertissement
+   que ce chiffre est un seuil d'ENTRÉE ici et une cible de SORTIE ailleurs dans le corpus.
+   **Aucun gate RANGE par retracement Fibonacci n'est codé, nulle part** — ce n'était pas "à
+   vérifier", c'était déjà écrit dans ce même fichier avant que cette section ne soit rédigée, et
+   ç'aurait dû être croisé avant d'écrire "confirme".
+6. **Range Neuneu, condition d'usage FOREX "à partir de l'UT hebdo sur les paires majeures"** —
    non applicable au périmètre crypto de ce projet (BTC/ETH/BNB/SOL), à noter comme hors-scope
    plutôt qu'un écart.
-6. **Taux de réussite chiffré "~85%, ratio 1:1" pour Range Neuneu (Borne Neuneu)** — chiffre du
+7. **Taux de réussite chiffré "~85%, ratio 1:1" pour Range Neuneu (Borne Neuneu)** — chiffre du
    guide officiel, jamais mesuré indépendamment sur les moteurs de ce projet ; à comparer si
-   l'occasion se présente (measure honnête, pas une contrainte de conception).
+   l'occasion se présente (mesure honnête, pas une contrainte de conception).
 
-## Prochaine étape (Phase C, round séparé)
+## Prochaine étape (round séparé)
 
-Vérifier chaque écart ci-dessus contre le code réel (`emile/core/range_gates.py`,
-`emile/core/regime_classifier.py`, `emile/backtests/backtest_phase2_faithful.py`), citer le
-fichier/la fonction exacte, mesurer l'effet si un changement s'avère justifié — même discipline
-que les 28 rounds précédents (rien implémenté sans preuve, aucun résultat dégradé caché).
+Traiter un écart à la fois avec la discipline habituelle (décision de conception documentée AVANT
+le code, mesure honnête, non-régression bit-à-bit) — l'écart n°2 (squeeze UT+1) est le plus mûr
+(citation exacte + emplacement précis dans `range_gates.py`), l'écart n°3 (Suivi de tendance
+absent de `trend_table.py`) est le plus large en portée. Aucun des deux n'est implémenté par ce
+round ni le précédent — décision de conception à prendre séparément, comme pour Fibonacci
+RANGE/Conflit MTF avant eux.
