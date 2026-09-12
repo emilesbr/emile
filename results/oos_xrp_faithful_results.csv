@@ -1,5 +1,5 @@
 symbol,timeframe_exec,timeframe_stop,timeframe_gate,profile,n_trades,max_dd_%,total_return_%,win_rate_%,profit_factor
-XRPUSDT,D1,"Hebdomadaire (UT+1, actif)","Mensuel (UT+2, DESACTIVE -- donnee insuffisante)",FAIBLE,0,0.0,0.0,,
-XRPUSDT,D1,"Hebdomadaire (UT+1, actif)","Mensuel (UT+2, DESACTIVE -- donnee insuffisante)",MODERE,0,0.0,0.0,,
-XRPUSDT,D1,"Hebdomadaire (UT+1, actif)","Mensuel (UT+2, DESACTIVE -- donnee insuffisante)",AGRESSIF,0,0.0,0.0,,
-XRPUSDT,D1,"Hebdomadaire (UT+1, actif)","Mensuel (UT+2, DESACTIVE -- donnee insuffisante)",TRES_AGRESSIF,0,0.0,0.0,,
+XRPUSDT,H4,"D1 (UT+1, actif)","Hebdomadaire (UT+2, ACTIF)",FAIBLE,137,-3.7,-0.2,32.8,1.04
+XRPUSDT,H4,"D1 (UT+1, actif)","Hebdomadaire (UT+2, ACTIF)",MODERE,137,-7.2,0.7,32.8,1.12
+XRPUSDT,H4,"D1 (UT+1, actif)","Hebdomadaire (UT+2, ACTIF)",AGRESSIF,137,-10.7,2.0,32.8,1.17
+XRPUSDT,H4,"D1 (UT+1, actif)","Hebdomadaire (UT+2, ACTIF)",TRES_AGRESSIF,140,-17.1,6.7,32.1,1.27

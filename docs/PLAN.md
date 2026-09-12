@@ -1690,6 +1690,51 @@ backlog, catégorie C : aucune des 3 lectures mesurées à ce jour (structurelle
 H4, amplitude UT+2 réelle) ne satisfait à la fois la citation ET la praticabilité — une 4e lecture
 resterait à imaginer, mais aucune n'est indiquée par le corpus au-delà des 3 déjà testées.
 
+### 41e application (cycle suivant) — OOS XRP rebranché sur la donnée réelle : gate MTF enfin mesurable, résultat honnête
+
+**Décision directe de l'utilisateur, "directeur ingénieur senior"** : plutôt que de continuer à
+chasser des mesures supplémentaires sur `conf_px` (fermé au 40e round), traiter un gap concret,
+déjà connu et documenté depuis la restauration OHLCV (`CLAUDE.md`), non bloqué par une décision de
+conception — `oos_xrp_recommended.py`/`oos_xrp_faithful.py` restaient câblés sur
+`/home/user/http-kaijin/crypto-decision-bi/...`, un dépôt d'un ANCIEN sandbox disparu
+(`FileNotFoundError` confirmé à l'exécution).
+
+**Contexte qui rendait ce rebranchement plus qu'un simple changement de chemin** : l'ancienne
+procédure existait UNIQUEMENT parce que XRP n'avait, dans cet environnement, que 365 barres D1 —
+obligeant à décaler les 3 rôles de timeframe (exécution/stop UT+1/gate UT+2) d'un cran vers le
+haut (D1→exécution, Hebdomadaire→stop, Mensuel→gate) et à désactiver le gate faute d'historique
+suffisant pour `compute_cycle_phase_causal`/les seuils adaptatifs de `regime_classifier.
+add_regime` (13-53 bougies << 150/250 requises). XRP dispose désormais d'une vraie donnée H1
+native (58 569 bougies, 2020-01-06, cf. `CLAUDE.md`) — les 3 rôles reprennent leur position
+NATURELLE, identique à BTC/ETH/BNB/SOL, sans aucun décalage ni procédure de repli.
+
+**Réécrit** (les deux fichiers, chemin externe et `load_xrp_d1()` supprimés, remplacés par
+`load_h1("XRPUSDT")` + `resample()`, exactement le pipeline déjà utilisé pour les 4 autres actifs) :
+- `oos_xrp_recommended.py` : H4 exécution + Hebdomadaire gate (`use_mtf_gate=True`, le défaut du
+  moteur — jamais explicitement désactivé cette fois).
+- `oos_xrp_faithful.py` : H4 exécution + D1 stop UT+1 (littéral, inconditionnel) + Hebdomadaire
+  gate UT+2 (`use_mtf_gate=True`) — les 3 rôles enfin testés simultanément SANS neutralisation
+  forcée par la donnée, une première pour cet OOS.
+
+**Mesuré, rapporté tel quel** (aucune itération après coup, comme les versions précédentes de ces
+2 scripts) :
+
+| Script | Ancien (D1, 365 barres, gate désactivé) | Nouveau (H4/D1/Hebdo réels, gate actif) |
+|---|---|---|
+| `recommended` | 3 trades, -0,3% à -2,0% selon profil | **215 trades**, -18,4% à -27,3% selon profil |
+| `faithful` | 3 trades, -0,3% à -2,0% (gate Mensuel désactivé) | **137-140 trades**, -0,2% à +6,7% selon profil |
+
+**Lecture honnête** : `recommended` est négatif sur les 4 profils — rapporté tel quel, sans
+habillage. `faithful` (les 3 règles littérales du corpus + le gate) est quasi neutre à légèrement
+positif, sur un échantillon nettement plus substantiel (137-140 trades sur ~6 ans, contre 3 trades
+sur 1 an auparavant) — un résultat qui n'était tout simplement PAS mesurable avant ce round (gate
+structurellement cassé par manque de données). **Aucun code de production modifié** (seuls les 2
+scripts OOS eux-mêmes) — suite complète inchangée, **262/262 tests toujours verts**. Les deux CSV
+(`oos_xrp_recommended_results.csv`/`oos_xrp_faithful_results.csv`) régénérés — NE PAS comparer aux
+anciennes valeurs commitées, qui portaient sur un timeframe, une période et une configuration de
+gate entièrement différents (documenté explicitement en tête des 2 fichiers réécrits pour éviter
+toute confusion future).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

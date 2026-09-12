@@ -48,8 +48,10 @@ requise) depuis le premier listing de chaque actif jusqu'à aujourd'hui.
 - **H1 natif** : BTC (2019-09-08, 61 439 bougies), ETH (2019-11-27, 59 529),
   BNB (2020-02-10, 57 728), SOL (2020-09-14, 52 521), **XRP** (2020-01-06,
   58 569 — n'existait avant que comme 365 barres D1 depuis une source
-  externe disparue, cf. `emile/core/oos_xrp_faithful.py`/
-  `oos_xrp_recommended.py`, toujours non branchés sur cette nouvelle donnée).
+  externe disparue). **Rebranché (41e round)** : `emile/core/oos_xrp_faithful.py`/
+  `oos_xrp_recommended.py` utilisent désormais cette donnée H1 native (plus
+  de décalage de rôles UT ni de gate désactivé faute d'historique) — cf.
+  `docs/PLAN.md` section "41e application" pour le détail et les chiffres.
 - **M15 natif** : BTC (245 751, déjà présent avant ce cycle, origine
   antérieure à cette session — intégrité revérifiée, pas juste supposée
   bonne), ETH (238 114), BNB (230 913), SOL (210 085) — complète la Phase 1
@@ -129,12 +131,17 @@ retombe à +8,0%/-9,4% (proche de -9,5%/+5,2% déjà documenté dans `STATUS.md`
 année (-12,2%/-26,3%, proche de -11,7%/-27,2% déjà documenté) — la conclusion "n'est plus à
 exclure d'un usage réel" tient toujours. **Bug indépendant trouvé et corrigé au passage** (voir
 paragraphe dédié ci-dessous) dans `backtest_phase2_faithful_manual_channel.py` — jamais testé
-unitairement avant ce round. **Reste non fait, à dessein** : `oos_xrp_recommended.py`/
-`oos_xrp_faithful.py` restent câblés sur un chemin de sandbox disparu
-(`/home/user/http-kaijin/...`), donc toujours PAS rejouables sur la nouvelle donnée XRP —
-rebranchement = chantier de code à part (remplacer le chargeur XRP D1 externe par
-`data/processed/XRPUSDT_1h_processed.csv` resamplé), pas fait ce round, différé. Détail complet,
-chiffres exacts par fichier : `docs/PLAN.md` section "37e application".
+unitairement avant ce round. Détail complet, chiffres exacts par fichier : `docs/PLAN.md` section
+"37e application".
+
+**Rebranché (41e round)** : `oos_xrp_recommended.py`/`oos_xrp_faithful.py`, qui restaient câblés
+sur un chemin de sandbox disparu (`/home/user/http-kaijin/...`, `FileNotFoundError` confirmé),
+utilisent désormais `data/processed/XRPUSDT_1h_processed.csv` — les 3 rôles UT (exécution/stop
+UT+1/gate UT+2) reprennent leur position naturelle (H4/D1/Hebdomadaire), plus de décalage ni de
+gate désactivé faute d'historique. Résultat honnête, échantillon bien plus substantiel qu'avant
+(3 trades sur 1 an → 137-140 trades sur ~6 ans côté fidèle, 215 côté recommandé) : `recommended`
+négatif sur les 4 profils (-18,4% à -27,3%), `faithful` quasi neutre à légèrement positif (-0,2% à
++6,7%) — rapporté tel quel. Détail complet : `docs/PLAN.md` section "41e application".
 
 Bug indépendant trouvé et corrigé au passage (`emile/config/env_config.py`) :
 le chemin de données par défaut était relatif (`Path("data/processed")`), donc
