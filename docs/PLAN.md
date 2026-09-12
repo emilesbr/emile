@@ -1649,6 +1649,47 @@ Validation→Confirmation se reproduirait, mais ce n'est PAS mesuré, donc pas a
 défaut de moteur n'est changé par ce round (`local_duration`/`context_duration` restent optionnels
 partout, jamais activés par défaut).
 
+### 40e application (cycle suivant) — `conf_px` avec une vraie UT+2 (Hebdomadaire) mesuré : résultat honnête, la citation littérale rend la Confirmation quasi inatteignable
+
+**Décision directe de l'utilisateur, "directeur ingénieur senior"** : continuer la mesure laissée
+ouverte au 39e round — maintenant que la fenêtre UT-agnostique en bougies existe, tester si
+`conf_px = entry + context_range` avec un `context_range` sourcé sur une VRAIE UT+2 (Hebdomadaire,
+`CONTEXT_DURATION_H4_BARS=90` bougies, causalement jointe sur H4 via `merge_asof`+`CLOSURE_DELAY`,
+même mécanique que `attach_obstacle_level`) change le diagnostic du 16e round.
+
+**Mesuré** (`emile/core/confirmation_ut2_amplitude_measure.py`, nouveau script — même patron
+monkeypatch-et-observe que `structural_confirmation_measure.py`, AUCUNE réimplémentation de
+`process_tranche`, aucun moteur de production modifié) sur les 200 tranches réelles de
+`backtest_phase2_faithful.py` ayant atteint la Validation (BTC/ETH/BNB/SOL × 4 profils) :
+
+| Variante | Délai médian Validation→Confirmation | % atteinte dans les 200 tranches |
+|---|---|---|
+| H4 (production actuelle) | 41 bougies | 164/200 (82%) |
+| UT+2 réelle (Hebdomadaire, bougies) | — | **0/200 (0%)** |
+
+**Cause identifiée, pas supposée** : le `context_range` (amplitude max-min sur 90 bougies
+Hebdomadaires, ~1,7 an) vaut une MÉDIANE de 106% du prix pour BTC (60 382 sur un prix médian de
+42 021) — cohérent avec l'historique réel de l'actif (cycles haussier/baissier à 3-5x sur cette
+échelle). Le niveau de Confirmation résultant (`entry + context_range`) se situe à une distance
+médiane de **62,27%** au-dessus de l'entrée (min 47,4%, max 382,9% sur les 132 tranches où les deux
+variantes sont calculables) — un mouvement d'une telle ampleur ne se produit quasiment jamais dans
+la fenêtre de vie d'une tranche.
+
+**Conclusion honnête, symétrique et opposée à celle du 16e round** : le 16e round avait trouvé que
+les lectures STRUCTURELLES (niveau absolu, `ctx_median`) COLLAPSENT quasi immédiatement après
+Validation (98-100% en 1 bougie, TROP TÔT). Cette mesure trouve l'inverse pour la lecture
+AMPLITUDE avec une VRAIE UT+2 : le niveau est si ÉLOIGNÉ qu'il n'est JAMAIS atteint (0/200, TROP
+LOIN). **Les deux extrêmes sont dégénérés, pour des raisons différentes** — ni l'un ni l'autre
+n'est un mécanisme utilisable tel quel avec les briques actuelles de ce projet. Le mécanisme
+actuellement en production (`context_range` sur H4, PAS littéralement ce que dit la citation
+UT+2, mais empiriquement le seul des 3 lectures testées à ce jour qui produise un niveau
+réellement atteignable — 82% des tranches) reste donc, par élimination et non par fidélité
+littérale, la lecture la plus praticable disponible. **Aucun changement de code de production** —
+mesure seule, comme le 16e round et `min_borders_sensitivity.py` avant lui. Nouvel item de
+backlog, catégorie C : aucune des 3 lectures mesurées à ce jour (structurelle H4/D1, amplitude
+H4, amplitude UT+2 réelle) ne satisfait à la fois la citation ET la praticabilité — une 4e lecture
+resterait à imaginer, mais aucune n'est indiquée par le corpus au-delà des 3 déjà testées.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

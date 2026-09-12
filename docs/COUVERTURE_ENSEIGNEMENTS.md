@@ -676,6 +676,19 @@ dédiée, pas une implémentation improvisée.
   vraie UT+2) — jamais testé avec la fenêtre en bougies (catégorie C, non fait ce round, cf.
   `PLAN.md` "39e application" pour le détail). Le money-management "2% par UT en parallèle" de la
   Tendance Multi-timeframe reste, lui, catégorie C (sizing non chiffré par le corpus).
+  **MESURÉ (40e round)** : `conf_px` retesté avec un `context_range` sourcé sur une VRAIE UT+2
+  (Hebdomadaire, fenêtre en bougies) — résultat honnête, symétrique et opposé à celui du 16e round.
+  Le 16e round avait trouvé les lectures STRUCTURELLES (niveau absolu) collapsant quasi
+  immédiatement (98-100% en 1 bougie, TROP TÔT). La lecture AMPLITUDE avec une vraie UT+2 donne
+  l'inverse : sur les 200 tranches réelles ayant atteint la Validation (`backtest_phase2_
+  faithful.py`), **0/200 atteignent cette Confirmation** (contre 164/200, 82%, pour la version H4
+  actuellement en production) — le niveau résultant se situe à une distance médiane de **62,3%**
+  au-dessus de l'entrée (le range Hebdomadaire sur 90 bougies vaut ~106% du prix pour BTC, cohérent
+  avec son historique réel de cycles haussier/baissier). **Conclusion** : aucune des 3 lectures
+  mesurées à ce jour (structurelle H4/D1, amplitude H4, amplitude UT+2 réelle) ne satisfait à la
+  fois la citation et la praticabilité — le mécanisme en production (amplitude H4) reste le plus
+  praticable PAR ÉLIMINATION, pas par fidélité littérale. Aucun changement de code de production.
+  Détail complet : `PLAN.md` "40e application".
 
 ### Ce qui reste correctement classé, confirmé par les 3 agents (rien à changer)
 Tout le reste des 17 sources + le manuel — UT+2 (mécanisme général), stop UT+1 réel, breakeven différé à la Confirmation, abstention Wall Street, canal manuel, Andrews, diversification 1%+1%, +Reverse scopé TRES_AGRESSIF, EXCES-H4, pyramidalisation-régime, TSI(14,7,9), garde-fous Phase 4 (hors périmètre code, correctement noté comme tel) — vérifié directement dans le code par les 3 agents, pas simplement relu dans ce document.
