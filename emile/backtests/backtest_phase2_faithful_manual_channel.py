@@ -102,13 +102,23 @@ def _attach_channel_support_d1(h4_dates: np.ndarray, d1_with_channel: pd.DataFra
     high = d1_with_channel[["date", "channel_support"]].copy()
     high["available_at"] = high["date"] + closure_delay
     high = high.sort_values("available_at")
-    # `feat["date"]` (construit par `_prepare_features` via `h4["date"].values`)
-    # perd le fuseau UTC porté par la colonne `date` d'origine (comportement
-    # documenté de `.values` sur une Series tz-aware) -- remis en UTC ici
-    # (mêmes instants, pas une conversion) pour que `merge_asof` compare des
-    # types de clé homogènes avec `d1_with_channel["date"]`, resté tz-aware.
-    h4_dates_utc = pd.to_datetime(h4_dates, utc=True)
-    low = pd.DataFrame({"date": h4_dates_utc}).sort_values("date")
+    # BUG TROUVÉ ET CORRIGÉ (36e round, régénération post-restauration OHLCV,
+    # cf. CLAUDE.md) : cette fonction forçait `h4_dates` en UTC tz-aware en
+    # partant du principe que `d1_with_channel["date"]` (donc `available_at`)
+    # restait tz-aware après `prepare()`/`add_manual_trend_channel_columns`
+    # -- vrai sur l'ancienne donnée (sandbox disparu), FAUX sur la donnée
+    # restaurée : `load_h1` (`pd.to_datetime(df["datetime"])`, sans
+    # `utc=True`) produit des dates NAIVES de bout en bout, comme partout
+    # ailleurs dans ce projet (`attach_context_level`/`attach_obstacle_level`
+    # ne forcent jamais UTC non plus). Forcer un seul côté en UTC ici cassait
+    # `merge_asof` (`MergeError: incompatible merge keys`, un côté naive,
+    # l'autre tz-aware) dès que ce script a été rejoué sur la donnée réelle
+    # actuelle. Corrigé en ne forçant PLUS aucun fuseau -- `h4_dates` et
+    # `d1_with_channel["date"]` comparés dans le dtype qu'ils ont RÉELLEMENT
+    # (naive aujourd'hui), cohérent avec le reste du projet plutôt qu'une
+    # hypothèse figée sur un fuseau qui a changé silencieusement entre deux
+    # jeux de données.
+    low = pd.DataFrame({"date": pd.to_datetime(h4_dates)}).sort_values("date")
     merged = pd.merge_asof(
         low, high, left_on="date", right_on="available_at", direction="backward",
     )

@@ -1437,6 +1437,87 @@ Le stop "ponctuel au sommet récent" (correction n°1 ci-dessus) reste une trouv
 
 **Trouvaille annexe, distincte, faite en repartant de la structure de décision du guide (question directe de l'utilisateur : "il cherche d'abord à identifier si l'actif, sur chaque timeframe, est dans le chaos, une tendance, un range ou un excès — et c'est pareil pour tous les nouveaux sous-dossiers, un niveau de décision lui correspond")** — en revérifiant cette structure contre le code, un écart jamais remonté par aucun round précédent (29e/30e compris) apparaît : **le régime "Chaos" (1ère des 4 branches du menu d'accueil du guide, `Chaos/Chaos.png`) n'a JAMAIS été croisé contre `regime_classifier.py`.** L'audit du 29e/30e round n'avait couvert que Excès/Range/Tendance (items 1-7 de la section 5 du document d'extraction) — un oubli, la structure du guide posant bien 4 issues à chaque nœud de décision, jamais 3. `add_regime` ne connaît que `RANGE_NEUTRE`/`RANGE_TENDANCIEL`/`TENDANCE`/`EXCES` (grep confirmé : 0 occurrence de "chaos" dans tout `emile/`) ; absent aussi de `RULES_EXTRACTION.md` (le manuel PDF, autorité la plus haute) — comme Neuneu, cette notion n'existe que dans ce guide. **Catégorie A** : les 3 critères de l'écran ("Contextes irréguliers", "Moyenne plate", "Momentum bruyant" → action "PARTEZ") ne sont assortis d'aucun seuil chiffré — rien à coder sans inventer. **Conséquence réelle à connaître, même sans implémentation possible** : `add_regime` classe aujourd'hui tout bar ambigu en `RANGE_NEUTRE` ("en cas de doute, range", son propre commentaire) — un choix différent de celui du guide (qui traiterait la même ambiguïté comme potentiellement du Chaos, "PARTEZ", pas un Range tradable). Documenté dans `docs/GUIDE_STRATEGIE_PRO_INDICATORS.md` (section 5, item 8, nouveau) et `docs/COUVERTURE_ENSEIGNEMENTS.md` (catégorie A). Aucun code modifié — même disposition que les autres items catégorie A du projet.
 
+### 37e application (cycle suivant) — reconciliation des chiffres de référence contre la donnée OHLCV restaurée (`CLAUDE.md`), bug indépendant trouvé et corrigé au passage
+
+**Décision directe de l'utilisateur, "directeur ingénieur senior"** : plutôt que de continuer à
+chasser des écarts corpus↔code déjà tous bloqués (Neuneu, Chaos — cf. rounds précédents), traiter
+la tâche explicitement laissée en attente par `CLAUDE.md` lui-même : les chiffres cités dans
+`docs/PLAN.md`/`docs/STATUS.md` n'avaient jamais été rejoués contre la donnée OHLCV restaurée
+(ancien sandbox disparu, donnée actuelle intègre mais jamais diffée bougie-par-bougie contre
+l'ancienne).
+
+**Périmètre décidé** : audit de fraîcheur sur les 67 CSV de `results/` (comparaison du dernier
+commit ayant TOUCHÉ chaque fichier contre le commit de restauration OHLCV, `36ee05c`) — **58/67
+(87%) sont antérieurs à la restauration**. Décision : ne régénérer QUE les CSV actuellement cités
+comme référence par `STATUS.md` (sa propre table "Référence actuelle" vs "Historique/supersédé") —
+les ~49 autres appartiennent à des moteurs déjà explicitement classés "historique, ne pas utiliser
+comme source de vérité" par `STATUS.md` lui-même (v3/v4/v5/v6/CLOSES/CORRECTED/full_matrix/
+moneymanagement/patterns/capital_tiers/diversification/ut2/reverse/squeeze/fib) : aucun enjeu à les
+rejouer, ce serait du travail sans conséquence documentaire.
+
+**Régénérés et vérifiés ce round** (les autres CSV "référence" — `backtest_phase2_faithful_
+results.csv`/`backtest_phase2_unified_results.csv`/`phase2_trend_table_*.csv`/`risk_aggregation_
+*.csv`/`walkforward_unified_results.csv` — l'étaient déjà, rounds 31-36 de ce même cycle) :
+- `phase2_v7_mtf_results.csv` (`emile.backtests.backtest_phase2_v7`)
+- `phase2_recommended_results.csv` (`emile.backtests.backtest_phase2_recommended`)
+- `walkforward_recommended_results.csv` (`emile.core.walkforward_recommended`)
+- `walkforward_faithful_results.csv` (`emile.core.walkforward_faithful`)
+- `cross_stress_test_faithful_gates_walkforward.csv` / `_worst_year.csv`
+- `cross_stress_test_unified_capital_tiers_walkforward.csv` / `_worst_year.csv`
+- `backtest_phase2_faithful_manual_channel_walkforward_results.csv`
+
+**Résultat honnête, chiffré** : `max_dd_%` ne bouge quasiment pas (donnée restaurée = surtout PLUS
+d'historique, pas un historique DIFFÉRENT sur les mêmes bougies) mais `n_trades`/`total_return_%`
+montent presque partout, mécaniquement, avec la période plus longue désormais disponible :
+- `v7` : 64 lignes, TOUTES changées en retour/n_trades (delta moyen +32,5 pt de retour, +33
+  trades), `max_dd_%` change sur 9/64 lignes seulement (delta moyen +0,01 pt). Ex. cité dans
+  `STATUS.md` (6e round) : BTC/MODERE H4_valide_par_D1/H4_meme_UT passe de 492→**508** trades
+  (déjà une 1ère correction du 504 d'origine), retour +57,7%→**+64,2%**.
+- `recommended` : 8/16 lignes changées (mean delta +3,3 pt retour, +3,5 trades), `max_dd_%`
+  **inchangé au chiffre près sur les 16 lignes**. Ex. : BTC/FAIBLE 343→**354** trades, +21,1%→
+  **+26,8%**.
+- `walkforward_recommended`/`walkforward_faithful` : quelques années nouvelles/décalées en bord de
+  période (2019 apparaît, 2026 partiel apparaît) — `walkforward_faithful` bouge plus (21/28 lignes,
+  car sa fenêtre couvre déjà tout l'historique disponible par construction).
+- `cross_stress_test_faithful_gates_*` : mouvements mineurs, `catastrophic` **inchangé partout**
+  (0/448 + 0/64) — aucune nouvelle combinaison dangereuse, aucune disparue.
+- `cross_stress_test_unified_capital_tiers_*` : **3 combinaisons voient leur flag `catastrophic`
+  passer de `True` à `False`** (BNB/TRES_AGRESSIF/2021, les 3 paliers de capital) — **trouvaille la
+  plus significative de ce round, investiguée avant d'en tirer une conclusion** (jamais un chiffre
+  pris au premier degré sans creuser, même discipline que d'habitude) : ce fichier n'avait en
+  réalité jamais été régénéré depuis AVANT même les corrections EXCES-H4/pyramidalisation-régime/
+  Conflit MTF/"Stop Loss = taille du canal" (déjà connues et documentées, `STATUS.md`) — il
+  affichait donc encore l'ANCIEN chiffre catastrophique d'origine (-45,9%/-63,5% pour 2021), pas
+  un nouveau problème révélé par la donnée restaurée. Recalculé sur la donnée actuelle AVEC le code
+  actuel : 2021 retombe à **+8,0%/-9,4%**, très proche du -9,5%/+5,2% pour 2021 déjà documenté par
+  `walkforward_unified_results.csv` (régénéré dès un round précédent de ce cycle) ; 2024 reste la
+  pire année (**-12,2%/-26,3%**, proche du -11,7%/-27,2% déjà documenté). **Conclusion : le chiffre
+  le plus surveillé du projet (BNB/TRES_AGRESSIF) est RECONFIRMÉ par la donnée restaurée, pas
+  infirmé** — ce fichier annexe était simplement en retard de plusieurs rounds de corrections déjà
+  connues, indépendamment de la restauration OHLCV.
+
+**Bug indépendant trouvé et corrigé au passage** (`backtest_phase2_faithful_manual_channel.py`,
+zéro couverture de test avant ce round) : `_attach_channel_support_d1` forçait `h4_dates` en UTC
+tz-aware en supposant `d1_with_channel["date"]` restait tz-aware après `prepare()` — vrai sur
+l'ancienne donnée (sandbox disparu), FAUX sur la donnée restaurée (`load_h1` produit des dates
+NAIVES de bout en bout, comme partout ailleurs dans ce projet — aucun autre `merge_asof` du projet
+ne force un fuseau). `MergeError: incompatible merge keys` dès que ce script a été rejoué sur la
+donnée réelle actuelle — jamais détecté avant faute de test dédié. Corrigé en ne forçant plus aucun
+fuseau (les deux côtés comparés dans leur dtype réel, cohérent avec le reste du projet). **2
+nouveaux tests** (`tests/unit/test_backtest_phase2_faithful_manual_channel.py`, nouveau fichier —
+ce module n'avait AUCUNE couverture avant ce round) : reproduction du cas réel (dates naives des
+deux côtés) + vérité terrain sans lookahead calculée à la main. Suite complète **253 → 255 tests,
+tous verts**.
+
+**PAS fait, à dessein, documenté plutôt que masqué** : `oos_xrp_recommended.py`/`oos_xrp_
+faithful.py` restent câblés sur un chemin de sandbox disparu
+(`/home/user/http-kaijin/crypto-decision-bi/...`, confirmé par erreur `FileNotFoundError` à
+l'exécution) — jamais rebranchés sur `data/processed/XRPUSDT_1h_processed.csv` (déjà réel et
+complet depuis la restauration OHLCV, cf. `CLAUDE.md`). Rebrancher ces deux scripts est un
+changement de CODE (remplacer le chargeur XRP D1 externe), pas une simple régénération — chantier
+à part, différé, pas fait ce round. Les ~49 CSV d'engins historiques/supersédés (cf. périmètre
+ci-dessus) restent volontairement non régénérés — décision explicite, pas un oubli.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

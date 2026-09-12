@@ -104,15 +104,37 @@ avec n'importe quelle donnée, juste pas avec aucune). Avec la vraie donnée en
 place : **`pytest -m ""` (suite complète) → 197/197 passés, 0 échec** —
 vérifié par exécution réelle, pas affirmé.
 
-**Ce qui N'A PAS été fait, à ne pas confondre avec "tout est validé"** : les
-chiffres déjà cités dans `docs/PLAN.md`/`docs/STATUS.md` (win rates,
-drawdowns, walk-forward, OOS XRP...) ont été calculés sur l'ancienne donnée
-du sandbox disparu — cette nouvelle donnée vient de la même source (Binance
-Futures) et est intègre, mais n'a PAS été diffée bougie-par-bougie contre
-l'ancienne (impossible, l'ancienne n'existe plus nulle part). Avant de citer
-un chiffre historique comme "reconfirmé", rejouer et comparer au moins un
-`results/*.csv` très cité (ex. `phase2_v7_mtf_results.csv`,
-`walkforward_faithful_results.csv`) au nouveau résultat.
+**Mis à jour (37e round)** : la reconciliation demandée ci-dessus est désormais **faite pour
+les moteurs actuellement cités comme référence** (pas pour les 49 CSV d'archive
+d'engins supersédés — `v3/v4/v5/v6/CLOSES/CORRECTED/full_matrix/moneymanagement/patterns/
+capital_tiers/diversification/ut2/reverse/squeeze/fib`... — délibérément laissés tels quels,
+`STATUS.md` les classe déjà lui-même "historique, ne pas utiliser comme source de vérité", donc
+aucun enjeu à les rejouer). Régénérés et vérifiés : `phase2_v7_mtf_results.csv`,
+`phase2_recommended_results.csv`, `walkforward_recommended_results.csv`,
+`walkforward_faithful_results.csv`, `cross_stress_test_faithful_gates_*.csv`,
+`cross_stress_test_unified_capital_tiers_*.csv`,
+`backtest_phase2_faithful_manual_channel_walkforward_results.csv` (les autres — `faithful`/
+`unified`/`trend_table`/`risk_aggregation`/`walkforward_unified` — l'étaient déjà, régénérés lors
+de rounds précédents de ce même cycle). **Conclusion honnête** : `max_dd_%` change à peine
+(la donnée restaurée couvre surtout PLUS d'historique, pas un historique DIFFÉRENT sur les mêmes
+bougies) mais `n_trades`/`total_return_%` montent partout, mécaniquement, avec la période plus
+longue désormais disponible — v7 (BTC/MODERE H4_valide_par_D1 : 492→508 trades, +57,7%→+64,2%),
+`recommended` (BTC/FAIBLE : 343→354 trades, +21,1%→+26,8%) sont les deltas les plus significatifs.
+**Le chiffre le plus surveillé du projet, BNB/TRES_AGRESSIF (walk-forward)** : RECONFIRMÉ, pas
+infirmé — `cross_stress_test_unified_capital_tiers_*.csv` étaient en fait BEAUCOUP plus périmés
+que par la seule donnée (jamais régénérés depuis AVANT les corrections EXCES-H4/pyramidalisation-
+régime/Conflit MTF/Stop-Loss-canal déjà connues), d'où un "catastrophique" 2021 à -45,9%/-63,5%
+qui semblait réapparaître à tort ; recalculé sur la donnée actuelle avec le code actuel, 2021
+retombe à +8,0%/-9,4% (proche de -9,5%/+5,2% déjà documenté dans `STATUS.md`), 2024 reste la pire
+année (-12,2%/-26,3%, proche de -11,7%/-27,2% déjà documenté) — la conclusion "n'est plus à
+exclure d'un usage réel" tient toujours. **Bug indépendant trouvé et corrigé au passage** (voir
+paragraphe dédié ci-dessous) dans `backtest_phase2_faithful_manual_channel.py` — jamais testé
+unitairement avant ce round. **Reste non fait, à dessein** : `oos_xrp_recommended.py`/
+`oos_xrp_faithful.py` restent câblés sur un chemin de sandbox disparu
+(`/home/user/http-kaijin/...`), donc toujours PAS rejouables sur la nouvelle donnée XRP —
+rebranchement = chantier de code à part (remplacer le chargeur XRP D1 externe par
+`data/processed/XRPUSDT_1h_processed.csv` resamplé), pas fait ce round, différé. Détail complet,
+chiffres exacts par fichier : `docs/PLAN.md` section "37e application".
 
 Bug indépendant trouvé et corrigé au passage (`emile/config/env_config.py`) :
 le chemin de données par défaut était relatif (`Path("data/processed")`), donc
