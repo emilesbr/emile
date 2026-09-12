@@ -906,6 +906,79 @@ def test_mtf_cascade_risk_pct_is_two_percent():
     constante contre une modification accidentelle."""
     assert MTF_CASCADE_RISK_PCT == 0.02
 
+# ---------------------------------------------------------------------------
+# Test 22 : consommation de "Tendance Multi-timeframe" (42e round) --
+# H-MTF-Cascade-4 (gate d'ouverture) / H-MTF-Cascade-5 (sizing par risque de
+# la jambe de Breakout SEULEMENT)
+# ---------------------------------------------------------------------------
+def test_step_campaign_mtf_cascade_breakout_sized_by_risk_not_profile_fraction():
+    """entry=100, stop=95 (distance 5%) -> add_frac attendu = 0,02/0,05 = 0,4
+    (calcul indépendant via Fraction), PAS `profile["breakout_frac"]`
+    (MODERE=1.00, chiffre très différent) -- vérifie que le sizing bascule
+    bien sur le risque, pas seulement que la clé ne casse rien."""
+    p = PROFILES_TREND["MODERE"]  # breakout_frac=1.00, pour contraste
+
+    def fresh():
+        campaign = make_campaign(entry=100.0, stop=95.0)
+        add_leg(campaign, p["accum_frac"], 100.0)  # jambe d'Accumulation inchangée (H-MTF-Cascade-5)
+        return campaign
+
+    expected_add_frac = F(2, 100) / (F(100 - 95, 1) / F(100, 1))
+    assert expected_add_frac == F(2, 5)  # 0,4
+
+    # (a) Absent de `ev` -> comportement historique inchangé (fraction du profil).
+    c_a = fresh()
+    closed, fee_a, realized, rev = step_campaign(
+        c_a, 0, o=[100.0], high=[101.0], low=[99.0], c=[100.5],
+        ev={"regime_excess": False, "breakout_raw": True}, profile=p)
+    assert c_a["stage"] == "POST_BREAKOUT"
+    assert fclose(fee_a, p["breakout_frac"]) or fee_a <= p["breakout_frac"] + 1e-9  # plafonné par H3 si besoin
+
+    # (b) Présent -> jambe de Breakout dimensionnée par le risque, PAS par
+    #     `breakout_frac` (MODERE=1.00, chiffre très différent de 0,4).
+    c_b = fresh()
+    remaining_before = c_b["remaining"]
+    closed_b, fee_b, realized_b, rev_b = step_campaign(
+        c_b, 0, o=[100.0], high=[101.0], low=[99.0], c=[100.5],
+        ev={"regime_excess": False, "breakout_raw": True, "mtf_cascade_risk_pct": 0.02}, profile=p)
+    assert c_b["stage"] == "POST_BREAKOUT"
+    added = c_b["remaining"] - remaining_before
+    assert fclose(added, float(expected_add_frac)), f"attendu 0.4, obtenu {added}"
+    assert not fclose(added, p["breakout_frac"]), "ne doit PAS retomber sur la fraction du profil"
+
+def test_run_trend_table_use_mtf_cascade_requires_gate_array():
+    """`use_mtf_cascade=True` sans `mtf_cascade_gate` (ou de mauvaise
+    longueur) doit échouer explicitement -- même discipline que
+    `use_breakout_space_gate` sans `df_ut1`/`df_ut2` : un mécanisme activé à
+    moitié échoue au lieu de se dégrader en silence."""
+    from emile.core.trend_table import run_trend_table
+    dates = pd.date_range("2024-01-01", periods=50, freq="4h")
+    prices = np.linspace(100.0, 110.0, 50)
+    df = pd.DataFrame({
+        "date": dates, "open": prices, "high": prices + 1.0, "low": prices - 1.0, "close": prices,
+    })
+    vol = pd.DataFrame({"volume": np.full(50, 1000.0)})
+    with pytest.raises(ValueError, match="mtf_cascade_gate"):
+        run_trend_table(df.copy(), vol.copy(), "MODERE", use_mtf_cascade=True)
+    with pytest.raises(ValueError, match="mtf_cascade_gate"):
+        run_trend_table(df.copy(), vol.copy(), "MODERE", use_mtf_cascade=True,
+                         mtf_cascade_gate=np.zeros(10, dtype=bool))  # mauvaise longueur
+
+def test_mtf_cascade_absent_ev_keys_preserve_historical_behavior():
+    """Non-régression explicite, même patron que `test_cassure_3br_absent_
+    ev_keys_preserve_historical_behavior` : un `ev` qui ne fournit PAS
+    `mtf_cascade_risk_pct` doit produire un résultat identique à un appel
+    d'avant ce round (aucune clé nouvelle n'est jamais lue avec `ev[...]`,
+    toujours `ev.get(..., None)`)."""
+    p = PROFILES_TREND["FAIBLE"]
+    campaign = make_campaign(entry=100.0, stop=95.0)
+    add_leg(campaign, p["accum_frac"], 100.0)
+    ev = {"regime_excess": False, "breakout_raw": True}  # aucune clé MTF cascade
+    closed, fee, realized, rev = step_campaign(
+        campaign, 0, o=[100.0], high=[101.0], low=[99.0], c=[100.5], ev=ev, profile=p)
+    assert campaign["stage"] == "POST_BREAKOUT"
+    assert fclose(fee, p["breakout_frac"])
+
 TESTS = [
     test_add_leg_risk_cap,
     test_add_leg_blended_entry_price,
@@ -934,6 +1007,9 @@ TESTS = [
     test_attach_regime_is_tendance_no_lookahead_ground_truth,
     test_compute_multi_timeframe_trend_requires_all_three,
     test_mtf_cascade_risk_pct_is_two_percent,
+    test_step_campaign_mtf_cascade_breakout_sized_by_risk_not_profile_fraction,
+    test_run_trend_table_use_mtf_cascade_requires_gate_array,
+    test_mtf_cascade_absent_ev_keys_preserve_historical_behavior,
 ]
 
 def main():

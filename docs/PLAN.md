@@ -1744,6 +1744,79 @@ anciennes valeurs commitées, qui portaient sur un timeframe, une période et un
 gate entièrement différents (documenté explicitement en tête des 2 fichiers réécrits pour éviter
 toute confusion future).
 
+### 42e application (cycle suivant) — "Tendance Multi-timeframe" câblée : décision directe de l'utilisateur d'accepter la lecture extrapolée, mesuré honnêtement
+
+**Décision directe de l'utilisateur, "directeur ingénieur senior"** : *"j'accepte la lecture
+extrapolée, procède comme un ingénieur senior."* Contexte précis : le 38e round avait construit et
+mesuré la DÉTECTION de "Tendance Multi-timeframe" (littérale, testée), mais sa CONSOMMATION
+(comment sizer réellement 3 jambes concurrentes) restait catégorie C — le corpus ne précise ni si
+l'entrée doit reproduire le séquencement Accumulation/Breakout, ni comment répartir "2% de risque
+chacun" dans le modèle `PROFILES_TREND` existant (fractions fixes, pas risque). Cette autorisation
+explicite lève ce blocage précis — pas les autres (Neuneu, Chaos, "SL gain" restent bloqués par une
+ABSENCE de donnée chiffrable, qu'aucune autorisation ne peut combler sans inventer).
+
+**H-MTF-Cascade-4 (gate)** : une nouvelle campagne ne peut s'ouvrir en Accumulation QUE si la
+"Tendance Multi-timeframe" (38e round) est active — EN PLUS des conditions habituelles (H1-H12),
+jamais à leur place. Lecture littérale de *"dans ce cas... vous pouvez trader chaque TF"* — la
+permission de trader est conditionnée à cet état, pas illimitée.
+
+**H-MTF-Cascade-5 (sizing)** : SEULE la jambe de Breakout est dimensionnée par le risque
+(`MTF_CASCADE_RISK_PCT=0.02`, "2% chacun", citation exacte) — la jambe d'Accumulation garde la
+fraction du profil choisi telle quelle (le corpus ne mentionne aucun changement pour cette étape
+dans ce mécanisme précis, donc pas de raison de la réinventer). Formule de sizing par risque
+IDENTIQUE à celle déjà établie et acceptée pour "Cassure de 3BR" (H-Suivi-Cassure3BR-2,
+`SUIVI_RISK_PCT`) — pas une 2e convention inventée pour ce mécanisme.
+
+**Implémenté, strictement additif** : `trend_table.py::run_trend_table` — 2 nouveaux paramètres
+(`use_mtf_cascade: bool = False`, `mtf_cascade_gate: np.ndarray = None`), défauts préservant le
+comportement BIT-À-BIT de tout appelant existant (vérifié : `phase2_trend_table_results.csv`/
+`phase2_trend_table_space_gate_diagnostic.csv`/`backtest_phase2_unified_results.csv` identiques au
+chiffre près). `mtf_cascade_gate` est un array PRÉCALCULÉ par l'appelant (`compute_multi_timeframe_
+trend`/`attach_regime_is_tendance`, 38e round) — CE fichier ne le recalcule pas lui-même : la
+"Tendance Multi-timeframe" est une propriété du marché ENTIER (H4+D1+Hebdomadaire), pas relative à
+l'UT en cours d'exécution, contrairement à `df_ut1`/`df_ut2` du gate "espace libre" (réutiliser ces
+derniers aurait rebasé le triplet de référence sur l'UT exécutée, une erreur). `step_campaign` :
+la jambe de Breakout lit `ev.get("mtf_cascade_risk_pct")` (défaut `None` -> comportement historique
+inchangé, `profile["breakout_frac"]`) — présent, bascule sur `risk_pct / stop_pct`, plafonné comme
+toute jambe par `MAX_CAMPAIGN_RISK_PCT` via `add_leg`.
+
+**3 nouveaux tests** (`test_trend_table.py`) : vérité terrain du sizing par risque (Fraction,
+0,02/0,05 = 0,4, PAS `breakout_frac`) ; garde-fou explicite (`use_mtf_cascade=True` sans/avec
+mauvaise longueur de `mtf_cascade_gate` lève `ValueError`, même discipline que `use_breakout_
+space_gate` sans `df_ut1`/`df_ut2`) ; non-régression explicite pour tout appelant qui ne fournit
+pas la clé `ev`. Suite complète **262 → 265 tests, tous verts**.
+
+**Mesuré sur données réelles (`emile/core/mtf_cascade_wired_measure.py`, nouveau script, BTC/ETH/
+BNB/SOL × H4/D1/Hebdomadaire, profil MODERE)** : effet réel et honnête, **8/12 lignes actif×UT
+changent** :
+
+| Actif | UT | Trades (sans → avec) | Retour (sans → avec) |
+|---|---|---|---|
+| BTC | H4 | 7 → 2 | +0,1% → +1,0% |
+| BTC | D1 | 3 → 0 | +0,9% → 0,0% |
+| ETH | H4 | 8 → 0 | -2,8% → 0,0% |
+| ETH | D1 | 1 → 0 | -0,4% → 0,0% |
+| BNB | H4 | 16 → 1 | -8,1% → -0,8% |
+| BNB | D1 | 1 → 0 | -3,7% → 0,0% |
+| SOL | H4 | 8 → 0 | -5,1% → 0,0% |
+| SOL | D1 | 3 → 0 | -6,4% → 0,0% |
+| tous | Hebdomadaire | 0 → 0 | inchangé (déjà 0 avant, échantillon trop court) |
+
+**Lecture honnête, sans embellir** : le gate est TRÈS restrictif (0,29%-3,27% des bougies selon
+l'actif/UT, cf. 38e round) — pour BTC/H4 et BNB/H4, il réduit fortement le nombre de trades tout en
+améliorant le retour (moins d'expositions, mieux choisies) ; pour ETH et SOL (H4 et D1) ainsi que
+pour BTC/D1 et BNB/D1, il élimine PUREMENT ET SIMPLEMENT toute activité (0 trade) — les campagnes
+qui s'ouvraient normalement sur ces couples ne coïncidaient jamais avec une fenêtre de Tendance
+Multi-timeframe confirmée. Aucune conclusion de performance n'a influencé cette implémentation
+(principe inviolable du projet) — mécanisme construit et livré tel quel, `use_mtf_cascade=False`
+par défaut (comme `use_breakout_space_gate`/`use_suivi_de_tendance` avant lui).
+
+**Ce que ce round ne tranche PAS, honnêtement** : la lecture retenue (H-MTF-Cascade-4/5) reste une
+EXTRAPOLATION acceptée explicitement par l'utilisateur, pas une lecture littérale supplémentaire du
+corpus — une lecture alternative (ex. sizing par risque aussi pour la jambe d'Accumulation, ou
+gate appliqué différemment) resterait tout aussi défendable sans plus de guidage du corpus. Ce
+round documente la lecture choisie et ses raisons, ne prétend pas qu'elle est la seule possible.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

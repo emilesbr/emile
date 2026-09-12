@@ -1091,7 +1091,21 @@ def step_campaign(campaign: dict, i: int, o, high, low, c, ev: dict, profile: di
         # pas la clé (dont `unified_protocol.py::_campaign_ev`, qui réplique
         # ce dict) garde un comportement BIT-À-BIT identique.
         if ev["breakout_raw"] and ev.get("breakout_space_ok", True):
-            actual_add = add_leg(campaign, profile["breakout_frac"], o[i])
+            # "Tendance Multi-timeframe" (42e round, cf. bloc dédié en tête de
+            # fichier) -- `ev.get(..., None)` : ABSENT/None -> comportement
+            # RIGOUREUSEMENT inchangé (fraction de profil), tout appelant
+            # existant garde le même résultat bit-à-bit. Présent (2%,
+            # H-MTF-Cascade-4) -> la jambe de Breakout est dimensionnée par
+            # le RISQUE plutôt que par la fraction fixe du profil -- même
+            # formule que `SUIVI_RISK_PCT` (H-Suivi-Cassure3BR-2), pas une
+            # 2e convention de sizing inventée pour ce mécanisme.
+            mtf_risk_pct = ev.get("mtf_cascade_risk_pct")
+            if mtf_risk_pct is not None:
+                stop_pct = (o[i] - campaign["stop"]) / o[i] if o[i] > 0 else 0.0
+                breakout_add_frac = mtf_risk_pct / stop_pct if stop_pct > 0 else 0.0
+            else:
+                breakout_add_frac = profile["breakout_frac"]
+            actual_add = add_leg(campaign, breakout_add_frac, o[i])
             # BUG TROUVÉ ET CORRIGÉ CE ROUND (cf. bloc "Suivi de tendance" en
             # tête de fichier, diagnostic du 35e round) : la transition
             # n'était PAS conditionnée à un remplissage réel. Pour un profil
@@ -1248,7 +1262,8 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
                      df_ut1: pd.DataFrame = None, df_ut2: pd.DataFrame = None,
                      space_mult: float = BREAKOUT_SPACE_MULT,
                      use_suivi_de_tendance: bool = False,
-                     local_duration=LOCAL_DURATION, context_duration=CONTEXT_DURATION) -> dict:
+                     local_duration=LOCAL_DURATION, context_duration=CONTEXT_DURATION,
+                     use_mtf_cascade: bool = False, mtf_cascade_gate: np.ndarray = None) -> dict:
     """Rejoue la table de tendance à 5 étapes sur `df` (H4 ou toute UT unique,
     colonnes date/open/high/low/close), avec `vol` (DataFrame aligné, même
     longueur, colonne "volume" de la même UT — cf. `load_volume`/
@@ -1284,12 +1299,47 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
     avec une fenêtre de maturité UT-AGNOSTIQUE (`LOCAL_DURATION_H4_BARS`/
     `CONTEXT_DURATION_H4_BARS` de `backtest_phase2_v7.py`) plutôt qu'une
     durée calendaire qui dégénère à cette échelle (38e round,
-    `mtf_cascade_diagnostic.py`)."""
+    `mtf_cascade_diagnostic.py`).
+
+    `use_mtf_cascade`/`mtf_cascade_gate` (42e round, défaut `False`/`None` --
+    comportement BIT-À-BIT inchangé pour tout appelant existant) : consomme
+    la détection "Tendance Multi-timeframe" du 38e round (H-MTF-Cascade-1..3,
+    bloc dédié en tête de fichier) -- décision explicite de l'utilisateur
+    d'accepter la lecture extrapolée nécessaire pour la câbler (H-MTF-
+    Cascade-4/5 ci-dessous, aucune n'est une lecture littérale supplémentaire
+    du corpus, seulement une extension du précédent déjà établi et accepté
+    pour "Cassure de 3BR"). `mtf_cascade_gate` : array booléen PRÉCALCULÉ par
+    l'appelant (`compute_multi_timeframe_trend`, joint sans lookahead sur LA
+    GRILLE DE `df` via `attach_regime_is_tendance` -- CE fichier ne le
+    recalcule pas lui-même : la "Tendance Multi-timeframe" est une propriété
+    du marché entier (H4+D1+Hebdomadaire), pas relative à l'UT actuellement
+    exécutée, contrairement à `df_ut1`/`df_ut2` du gate "espace libre"
+    ci-dessus -- réutiliser ces derniers ici aurait rebasé le triplet de
+    référence sur l'UT en cours, une erreur). Quand actif :
+    - **H-MTF-Cascade-4 (gate)** : une nouvelle campagne ne peut s'ouvrir en
+      Accumulation QUE si `mtf_cascade_gate[i-1]` est vrai, EN PLUS des
+      conditions habituelles (H1-H12) -- ce moteur n'ouvre alors QUE pendant
+      les fenêtres où le marché entier est confirmé en tendance sur les 3 UT,
+      littéral ("dans ce cas... vous pouvez trader chaque TF").
+    - **H-MTF-Cascade-5 (sizing)** : la jambe de Breakout (PAS la jambe
+      d'Accumulation, qui garde la fraction du profil choisi -- aucune
+      raison de la réinventer, le corpus ne la mentionne pas pour ce
+      mécanisme) est dimensionnée par le RISQUE (`MTF_CASCADE_RISK_PCT`,
+      "2% chacun") plutôt que par `profile["breakout_frac"]` -- même formule
+      que `SUIVI_RISK_PCT` (H-Suivi-Cassure3BR-2), jamais une 2e convention
+      de sizing inventée pour ce mécanisme précis."""
     p = PROFILES_TREND[profile_name]
     df = prepare(df, local_duration=local_duration, context_duration=context_duration)
     df = add_trend_context(df, local_duration=local_duration, context_duration=context_duration)
     n = len(df)
     assert len(vol) == n, "volume désaligné avec df (même resample requis)"
+
+    if use_mtf_cascade:
+        if mtf_cascade_gate is None or len(mtf_cascade_gate) != n:
+            raise ValueError(
+                "use_mtf_cascade=True exige mtf_cascade_gate (array booléen aligné sur `df`, "
+                "précalculé par l'appelant via attach_regime_is_tendance/"
+                "compute_multi_timeframe_trend -- cf. sa docstring)")
 
     obstacle_ut1 = obstacle_ut2 = None
     if use_breakout_space_gate:
@@ -1396,6 +1446,10 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
                 # potentielle à l'open de `i`).
                 ev["suivi_ok"] = bool(suivi_ok_v[i - 1])
                 ev["swing_low_confirmed"] = bool(swing_low_confirmed_v[i - 1])
+            if use_mtf_cascade:
+                # H-MTF-Cascade-5 : dimensionnement par le risque de la jambe
+                # de Breakout SEULEMENT (cf. docstring de tête de fonction).
+                ev["mtf_cascade_risk_pct"] = MTF_CASCADE_RISK_PCT
             closed, fee_frac, realized, reverse_request = step_campaign(campaign, i, o, high, low, c, ev, p)
             if fee_frac > 0:
                 equity *= (1 - fee * fee_frac)
@@ -1422,6 +1476,12 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
             channel_rejection = low[i - 1] <= ctx_support_v[i - 1] and c[i - 1] > ctx_support_v[i - 1]
             retracement_ok = ACCUM_RETRACEMENT_LOW <= retr_v[i - 1] <= ACCUM_RETRACEMENT_HIGH
             accumulation_active = regime_v[i - 1] == "TENDANCE" and mature and channel_rejection and retracement_ok
+            if use_mtf_cascade:
+                # H-MTF-Cascade-4 : n'ouvre QUE pendant les fenêtres où le
+                # marché entier (H4+D1+Hebdomadaire) est confirmé en
+                # tendance -- en PLUS des conditions habituelles ci-dessus,
+                # jamais à leur place.
+                accumulation_active = accumulation_active and bool(mtf_cascade_gate[i - 1])
             new_campaign, fee_frac = try_open_campaign(i, o, ctx_support_v[i - 1], accumulation_active, p)
             if new_campaign is not None:
                 campaign = new_campaign

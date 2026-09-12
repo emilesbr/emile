@@ -676,6 +676,16 @@ dédiée, pas une implémentation improvisée.
   vraie UT+2) — jamais testé avec la fenêtre en bougies (catégorie C, non fait ce round, cf.
   `PLAN.md` "39e application" pour le détail). Le money-management "2% par UT en parallèle" de la
   Tendance Multi-timeframe reste, lui, catégorie C (sizing non chiffré par le corpus).
+  **CÂBLÉ (42e round)**, sur décision directe de l'utilisateur d'accepter la lecture extrapolée
+  nécessaire (H-MTF-Cascade-4/5 : gate d'ouverture restreint aux fenêtres de Tendance Multi-
+  timeframe + jambe de Breakout dimensionnée par le risque à 2%, jambe d'Accumulation inchangée) —
+  `run_trend_table(use_mtf_cascade=True, mtf_cascade_gate=...)`, strictement additif, défaut
+  `False`. Mesuré sur BTC/ETH/BNB/SOL × H4/D1/Hebdomadaire (profil MODERE) : effet réel, 8/12
+  lignes actif×UT changent — BTC/H4 et BNB/H4 voient moins de trades ET un meilleur retour (gate
+  sélectif), ETH/SOL (H4+D1) et BTC/BNB (D1) tombent à 0 trade (le gate, très restrictif — 0,29-
+  3,27% des bougies — élimine toute activité pour ces couples). Aucune conclusion de performance
+  n'a influencé l'implémentation. Détail complet, tableau chiffré complet : `PLAN.md`
+  "42e application".
   **MESURÉ (40e round)** : `conf_px` retesté avec un `context_range` sourcé sur une VRAIE UT+2
   (Hebdomadaire, fenêtre en bougies) — résultat honnête, symétrique et opposé à celui du 16e round.
   Le 16e round avait trouvé les lectures STRUCTURELLES (niveau absolu) collapsant quasi
