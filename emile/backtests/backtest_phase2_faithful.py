@@ -358,7 +358,7 @@ from emile.core.position_engine import (
 )
 from emile.core.wall_street_pattern import add_wall_street_column
 from emile.core.capital_tiers import effective_sizing
-from emile.core.regime_classifier import compute_wide_channel
+from emile.core.regime_classifier import compute_wide_channel, compute_squeeze
 from emile.core.andrews_pitchfork import add_andrews_pitchfork_columns
 from emile.core.range_gates import range_gate, range_gate_extra
 
@@ -501,6 +501,12 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         # historiques ("regime_h4" ici, "regime" dans `unified_protocol.py`).
         "regime": h4["regime"].values,
         "regime_d1": ctx["D1"]["regime"],   # cf. CORRECTION CONFLIT MTF en tête de fichier
+        # Invalidation 3BR par SQUEEZE sur l'UT+1 (littérale, inconditionnelle
+        # -- guide officiel PRO Indicators, `docs/GUIDE_STRATEGIE_PRO_
+        # INDICATORS.md` section 3.2, citation exacte en tête de
+        # `range_gates.py`). MÊME niveau D1 que `regime_d1`/`ctx_support_d1`,
+        # MÊME jointure sans lookahead, jamais recalculé localement.
+        "squeeze_d1": compute_squeeze(ctx["D1"]["ctx_width_pct"]),
         "wall_street_active": h4["wall_street_active"].values,
         # Règle de volatilité "Stop Loss = taille du canal" (littérale,
         # inconditionnelle, cf. tête de fichier). Largeur du canal D1 -- le

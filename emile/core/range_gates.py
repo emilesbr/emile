@@ -38,15 +38,38 @@ def range_gate(feat: dict, i: int) -> bool:
     (ne jamais ouvrir si le contexte D1 est lui-même en régime range, source
     #5 "l'erreur numéro un") + Fourchette d'Andrews contextuelle ("prend le
     relais" seulement en régime RANGE_TENDANCIEL, cf. `backtest_phase2_
-    faithful.py`/`andrews_gate_alternative.py`)."""
+    faithful.py`/`andrews_gate_alternative.py`) + INVALIDATION 3BR PAR
+    SQUEEZE UT+1 (littérale, inconditionnelle -- guide officiel PRO
+    Indicators, `docs/GUIDE_STRATEGIE_PRO_INDICATORS.md` section 3.2,
+    citation exacte : *"Si le range se forme juste après un SQUEEZE sur
+    l'unité de temps supérieure, il faudra alors éviter de trader cette
+    3BR"*).
+
+    La 1ère moitié de cette règle du guide (squeeze sur la PROPRE UT du
+    range -> "ne plus la trader") est DÉJÀ couverte par la clause EXCES H4
+    ci-dessus (un canal H4 squeezé est déjà classé EXCES par
+    `regime_classifier.add_regime`, bloqué par `feat["regime"][i] != "EXCES"`)
+    -- par coïncidence de conception, pas parce que cette clause avait été
+    lue avant. La clause ajoutée ICI couvre la 2e moitié, jusqu'ici NON
+    couverte : un D1 SPÉCIFIQUEMENT squeezé (`feat["squeeze_d1"]`, canal
+    trop ÉTROIT) est distingué d'un D1 seulement trop LARGE (`EXCES` sans
+    squeeze) -- un D1 large ne bloquait déjà rien de plus que RANGE_NEUTRE/
+    RANGE_TENDANCIEL via `d1_not_range`, et cette règle ne porte QUE sur le
+    squeeze, pas sur "canal trop large" (les 2 sont pliés dans le même
+    régime `EXCES` par `add_regime`, mais `compute_squeeze` les redistingue
+    -- cf. sa docstring, même patron que `compute_wide_channel`). La 3e
+    clause du guide ("retour au niveau de la 1BR, double top/bottom") N'EST
+    PAS implémentée ici (aucun suivi du niveau de la 1ère borne dans ce
+    moteur -- backlog ouvert, cf. `docs/COUVERTURE_ENSEIGNEMENTS.md`)."""
     d1_not_range = feat["regime_d1"][i] not in ("RANGE_NEUTRE", "RANGE_TENDANCIEL")
+    d1_not_squeezed = not bool(feat["squeeze_d1"][i])
     andrews_ok = (
         feat["regime"][i] != "RANGE_TENDANCIEL"
         or (not np.isnan(feat["pitchfork_p1"][i]) and feat["close"][i] > feat["pitchfork_p1"][i])
     )
     return bool(
         feat["gate_score"][i] >= 2 and feat["gate_regime"][i] != "EXCES"
-        and feat["regime"][i] != "EXCES" and d1_not_range and andrews_ok
+        and feat["regime"][i] != "EXCES" and d1_not_range and d1_not_squeezed and andrews_ok
     )
 
 

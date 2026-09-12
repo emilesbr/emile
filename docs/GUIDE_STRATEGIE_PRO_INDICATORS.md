@@ -486,15 +486,16 @@ décision de conception requise pour chacun.
    (`n_borders`/`MIN_BORDERS=3`) sert de seuil de maturité binaire, jamais de bascule vers une
    seconde grille de money management. Il n'existe qu'UNE paire de grilles RANGE dans tout le code,
    jamais deux grilles nommées "3BR"/"Neuneu".
-2. **CONFIRMÉ (moitié) — Invalidation 3BR par squeeze UT+1 partiellement non couverte.**
-   `range_gates.py:42` — `d1_not_range = feat["regime_d1"][i] not in ("RANGE_NEUTRE",
-   "RANGE_TENDANCIEL")` — si `regime_d1[i] == "EXCES"` (un D1 squeezé EST classé EXCES par
-   `regime_classifier.py:82-84`), `d1_not_range` vaut `True` : cette clause NE bloque PAS l'entrée,
-   alors que la citation l'exige explicitement. La 1ère moitié (squeeze sur la PROPRE UT du range →
-   régime EXCES → déjà bloqué par `range_gate` ligne 48) EST couverte, par coïncidence de
-   conception plutôt que par lecture de cette citation précise. La 3ème clause ("retour au niveau
-   de la 1BR") n'a aucun équivalent codé (aucune notion de "1BR"/"première borne" dans
-   `emile/core/*.py`).
+2. **IMPLÉMENTÉ (31e round, cf. `PLAN.md`) — moitié manquante de l'invalidation 3BR par squeeze
+   UT+1.** Nouvelle fonction `regime_classifier.py::compute_squeeze` (miroir exact de
+   `compute_wide_channel`, même patron, seule la direction de comparaison change) expose
+   spécifiquement l'état "squeeze" du D1, distinct de l'état "canal trop large" — les deux étaient
+   pliés dans le même régime `EXCES` par `add_regime`, ce qui empêchait `range_gate` de bloquer
+   spécifiquement sur le squeeze sans aussi bloquer sur "D1 trop large" (déjà un cas différent,
+   non visé par cette citation). `range_gates.py::range_gate` bloque désormais l'entrée si
+   `feat["squeeze_d1"][i]` est vrai — strictement additif, testé (garde-fous "squeeze ⊆ EXCES",
+   causalité, cas de base) et mesuré. La 3ème clause ("retour au niveau de la 1BR") reste NON
+   implémentée (aucun suivi du niveau de la 1ère borne dans ce moteur — backlog ouvert).
 3. **CONFIRMÉ, et PLUS LARGE que prévu — pas seulement la variante squeeze.** L'audit a montré que
    c'est tout le mécanisme "Suivi de tendance" (§4.3 de ce document — 3 branches Repli à la
    moyenne/Cassure de 3BR/Repli sur 3BR squeezée, chacune avec sa propre grille STOPLOSS/

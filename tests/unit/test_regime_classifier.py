@@ -45,7 +45,7 @@ import pytest
 
 from emile.core.regime_classifier import (
     add_regime, PCTL_WINDOW, SQUEEZE_PCTL, EXCESS_PCTL, TREND_SLOPE_THRESHOLD,
-    RECENT_WINDOW, compute_wide_channel, WIDE_PCTL,
+    RECENT_WINDOW, compute_wide_channel, WIDE_PCTL, compute_squeeze,
 )
 
 N_WARMUP_MARGIN = 400  # >> PCTL_WINDOW (250) pour que les seuils adaptatifs soient toujours définis
@@ -473,6 +473,79 @@ def test_wide_channel_stricter_percentile_selects_a_subset():
         f"exister des bougies 'très larges' qui ne sont pas en EXCES"
     )
 
+# ---------------------------------------------------------------------------
+# compute_squeeze — détecteur "canal TRÈS ÉTROIT" pour l'invalidation 3BR par
+# squeeze UT+1 (guide officiel PRO Indicators, cf. `range_gates.py`). Miroir
+# exact de `compute_wide_channel` ci-dessus (même patron de tests).
+# ---------------------------------------------------------------------------
+def test_squeeze_ground_truth_hand_computed_quantile():
+    """Série choisie pour que le seuil glissant soit calculable À LA MAIN.
+
+    width  = [100, 4, 3, 2, 1, 0.5], window=4, pctl=0.50.
+    shift(1) -> [nan, 100, 4, 3, 2, 1]. Une fenêtre de 4 n'a 4 valeurs
+    non-NaN qu'à partir de l'indice 4 :
+      i=4 : fenêtre [100,4,3,2] -> médiane linéaire = (3+4)/2 = 3.5
+            width[4]=1   < 3.5  -> SQUEEZE
+      i=5 : fenêtre [4,3,2,1]   -> médiane linéaire = (2+3)/2 = 2.5
+            width[5]=0.5 < 2.5  -> SQUEEZE
+      i=0..3 : seuil NaN (warmup) -> FAUX (défaut prudent = pas squeeze)
+    """
+    width = np.array([100.0, 4.0, 3.0, 2.0, 1.0, 0.5])
+    got = compute_squeeze(width, pctl=0.50, window=4)
+    expected = np.array([False, False, False, False, True, True])
+    assert got.dtype == bool, f"doit retourner un array de bool, obtenu {got.dtype}"
+    assert np.array_equal(got, expected), (
+        f"vérité terrain calculée à la main : attendu {expected.tolist()}, "
+        f"obtenu {got.tolist()} (seuils glissants attendus : NaN,NaN,NaN,NaN,3.5,2.5)"
+    )
+
+def test_squeeze_nan_width_is_not_squeeze():
+    """NaN en entrée -> JAMAIS squeeze (défaut prudent, même esprit que
+    `compute_wide_channel`/"en cas de doute, toujours RANGE")."""
+    width = np.array([np.nan] * 5 + [4.0, 3.0, 2.0, 1.0] + [np.nan])
+    got = compute_squeeze(width, pctl=0.50, window=4)
+    assert not got[:5].any(), "les NaN de warmup ne doivent jamais être classés squeeze"
+    assert not got[-1], "un NaN de largeur ne doit jamais être classé squeeze"
+
+def test_squeeze_is_causal_truncating_future_changes_nothing():
+    """Régression de CAUSALITÉ, même protocole que
+    `test_wide_channel_is_causal_truncating_future_changes_nothing`."""
+    rng = np.random.default_rng(20260912)
+    width = np.abs(rng.normal(10.0, 4.0, size=300)) + 1.0
+    full = compute_squeeze(width)
+    cut = 240
+    truncated = compute_squeeze(width[:cut])
+    assert np.array_equal(full[:cut], truncated), (
+        "compute_squeeze n'est pas causal : la classification des bougies "
+        "déjà passées change quand on ajoute des bougies futures"
+    )
+
+def test_squeeze_is_subset_of_exces_regime():
+    """Garde-fou : `SQUEEZE_PCTL` est l'un des deux percentiles qui composent
+    `EXCES` dans `add_regime` (`w < squeeze_thresh OR w > excess_thresh`) --
+    donc toute bougie détectée `compute_squeeze` doit AUSSI être classée
+    `EXCES` par `add_regime` sur la MÊME série (même fenêtre, même
+    percentile). Vérifié directement plutôt que supposé, pour ne pas
+    reposer sur une coïncidence de constantes qui pourrait diverger un jour.
+
+    `_make_regime_df` construit par défaut une largeur CONSTANTE (seuils
+    triviaux, aucune bougie squeeze possible en comparaison stricte) --
+    remplacée ici par une largeur variable (même patron que les tests de
+    causalité ci-dessus), df/ctx_median réutilisés tels quels (leur valeur
+    ne conditionne pas ce garde-fou, seule la largeur compte pour EXCES)."""
+    df, ctx_median, _ = _make_regime_df(seed=7)
+    rng = np.random.default_rng(7)
+    ctx_width_pct = pd.Series(np.abs(rng.normal(10.0, 4.0, size=len(df))) + 1.0)
+    squeezed = compute_squeeze(ctx_width_pct)
+    regime_df = add_regime(df, ctx_median, ctx_width_pct)
+    is_exces = (regime_df["regime"] == "EXCES").to_numpy()
+    assert np.all(is_exces[squeezed]), (
+        "une bougie détectée squeeze par compute_squeeze n'est pas classée EXCES "
+        "par add_regime -- les deux fonctions doivent utiliser exactement le "
+        "même seuil (SQUEEZE_PCTL, même fenêtre PCTL_WINDOW, même construction causale)"
+    )
+    assert squeezed.sum() > 0, "test vacueux : aucune bougie squeeze détectée sur ce scénario"
+
 if __name__ == "__main__":
     tests = [
         test_regime_range_neutre_synthetic,
@@ -490,6 +563,10 @@ if __name__ == "__main__":
         test_wide_channel_is_causal_truncating_future_changes_nothing,
         test_wide_channel_threshold_strictly_between_median_and_exces,
         test_wide_channel_stricter_percentile_selects_a_subset,
+        test_squeeze_ground_truth_hand_computed_quantile,
+        test_squeeze_nan_width_is_not_squeeze,
+        test_squeeze_is_causal_truncating_future_changes_nothing,
+        test_squeeze_is_subset_of_exces_regime,
     ]
     for t in tests:
         t()

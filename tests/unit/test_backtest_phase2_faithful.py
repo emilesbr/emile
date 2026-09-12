@@ -26,6 +26,7 @@ import pytest
 from emile.backtests.backtest_phase2 import load_h1, resample
 from emile.backtests.backtest_phase2_v7 import prepare, PROFILES_V4
 from emile.backtests.backtest_phase2_ut2 import attach_multi_context, attach_context_level, CLOSURE_DELAY
+from emile.core.regime_classifier import compute_squeeze
 from emile.backtests.backtest_phase2_recommended import WARMUP
 from emile.backtests.backtest_phase2_faithful import (
     _prepare_features, _run_core, run_faithful, REVERSE_SCOPED_PROFILE,
@@ -75,6 +76,27 @@ def test_stop_is_d1_ctx_support_not_native_h4():
     assert not np.allclose(feat["ctx_support_d1"][valid], native[valid]), (
         "le stop D1 (UT+1) est identique au stop H4 natif sur toutes les bougies valides "
         "-- le test ne prouverait rien, vérifier que le mauvais tableau n'est pas branché"
+    )
+
+@_skip_if_no_data
+@pytest.mark.data_dependent
+def test_prepare_features_wires_squeeze_d1_from_d1_ctx_width():
+    """`_prepare_features` doit exposer `squeeze_d1` calculé sur la largeur
+    D1 (UT+1, MÊME niveau que `ctx_support_d1`) -- comparé directement à
+    `compute_squeeze` appelé à la main sur `ctx["D1"]["ctx_width_pct"]`, pas
+    une réimplémentation qui pourrait diverger."""
+    h4 = _H4_BTC.copy(); d1 = _D1_BTC.copy(); weekly = _WEEKLY_BTC.copy()
+    feat = _prepare_features(h4.copy(), d1.copy(), weekly.copy())
+
+    h4p = prepare(h4.copy())
+    d1p = prepare(d1.copy())
+    weeklyp = prepare(weekly.copy())
+    ctx_ref = attach_multi_context(h4p, [("D1", d1p), ("W", weeklyp)], closure_delay=CLOSURE_DELAY)
+    expected = compute_squeeze(ctx_ref["D1"]["ctx_width_pct"])
+
+    np.testing.assert_array_equal(feat["squeeze_d1"], expected)
+    assert feat["squeeze_d1"].sum() > 0, (
+        "test vacueux : aucune bougie squeeze_d1 détectée sur BTC H4/D1 réel"
     )
 
 @_skip_if_no_data
@@ -283,6 +305,13 @@ def _synthetic_pyramid_feat(n: int, regime_h4_value) -> dict:
         "regime_h4": np.full(n, regime_h4_value, dtype=object),
         "regime": np.full(n, regime_h4_value, dtype=object),   # alias, cf. range_gates.py
         "regime_d1": np.full(n, "TENDANCE", dtype=object),   # jamais en range -- isole le test du gate CONFLIT MTF
+        # Invalidation 3BR par squeeze UT+1 (littérale, inconditionnelle) :
+        # neutralisée ici (jamais squeezé), même raison que
+        # `wall_street_active` ci-dessous -- ce tableau isole l'effet de
+        # `regime_h4`. Le mécanisme lui-même (`compute_squeeze`) est testé à
+        # part dans `test_regime_classifier.py` ; son câblage dans le gate,
+        # par un test dédié plus bas dans ce fichier.
+        "squeeze_d1": np.zeros(n, dtype=bool),
         "wall_street_active": np.zeros(n, dtype=bool),
         # Règle de volatilité "Stop Loss = taille du canal" (littérale,
         # inconditionnelle, cf. tête de `backtest_phase2_faithful.py`) :
@@ -433,6 +462,36 @@ def test_entry_allowed_when_d1_regime_is_tendance():
         "entièrement favorable) -- le gate Conflit MTF bloque aussi le cas où il ne devrait pas"
     )
 
+def test_entry_blocked_when_d1_is_squeezed():
+    """Invalidation 3BR par SQUEEZE UT+1 (littérale, `docs/GUIDE_STRATEGIE_
+    PRO_INDICATORS.md` section 3.2, `range_gates.py`) : sur un scénario par
+    ailleurs entièrement favorable (régime D1 TENDANCE -- pas bloqué par le
+    gate Conflit MTF, isolé du test ci-dessus), AUCUN trade ne doit s'ouvrir
+    si `squeeze_d1` est vrai à chaque bougie."""
+    n = WARMUP + 40
+    feat = _synthetic_pyramid_feat(n, regime_h4_value="TENDANCE")
+    feat["regime_d1"] = np.full(n, "TENDANCE", dtype=object)
+    feat["squeeze_d1"] = np.full(n, True)
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) == 0, (
+        f"{len(res['trace'])} tranche(s) ouverte(s) alors que squeeze_d1 est vrai partout, "
+        "attendu 0 (le gate d'invalidation 3BR par squeeze UT+1 doit bloquer TOUTE ouverture)"
+    )
+
+def test_entry_allowed_when_d1_is_not_squeezed():
+    """Contrôle positif du test ci-dessus (sinon il pourrait passer
+    trivialement sur un moteur qui ne trade jamais) : le MÊME scénario,
+    `squeeze_d1` faux partout, doit produire au moins un trade."""
+    n = WARMUP + 40
+    feat = _synthetic_pyramid_feat(n, regime_h4_value="TENDANCE")
+    feat["regime_d1"] = np.full(n, "TENDANCE", dtype=object)
+    feat["squeeze_d1"] = np.full(n, False)
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) >= 1, (
+        "aucun trade ouvert alors que squeeze_d1 est faux partout (scénario par ailleurs "
+        "entièrement favorable) -- le gate squeeze UT+1 bloque aussi le cas où il ne devrait pas"
+    )
+
 @_skip_if_no_data
 @pytest.mark.data_dependent
 def test_run_faithful_end_to_end_produces_trades_all_profiles():
@@ -502,6 +561,7 @@ def _range_tendanciel_scenario_feat(n, regime_h4_value):
         "regime_h4": np.full(n, regime_h4_value, dtype=object),
         "regime": np.full(n, regime_h4_value, dtype=object),   # alias, cf. range_gates.py
         "regime_d1": np.full(n, "TENDANCE", dtype=object),
+        "squeeze_d1": np.zeros(n, dtype=bool),
         "wall_street_active": np.zeros(n, dtype=bool),
         "wide_channel": np.zeros(n, dtype=bool),
         "pitchfork_p1": close - 10.0,

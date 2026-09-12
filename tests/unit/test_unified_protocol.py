@@ -91,6 +91,7 @@ def _make_base_feat(n=N):
         "gate_regime": np.full(n, "RANGE_NEUTRE", dtype=object),
         "regime": np.full(n, "RANGE_NEUTRE", dtype=object),
         "regime_d1": np.full(n, "TENDANCE", dtype=object),   # jamais en range par défaut -- isole les tests du gate CONFLIT MTF (cf. tête de unified_protocol.py), overridé explicitement par les tests dédiés
+        "squeeze_d1": np.full(n, False),   # jamais squeezé par défaut -- isole les tests du gate d'invalidation 3BR, overridé explicitement par les tests dédiés
         "ctx_resistance": np.full(n, 110.0),
         "ctx_high": np.full(n, 105.0),
         "local_high": np.full(n, 102.0),
@@ -288,7 +289,7 @@ def test_pure_range_sequence_matches_faithful_engine():
     range_keys = [
         "date", "open", "high", "low", "close", "score", "atr", "ctx_support_d1",
         "local_range", "context_range", "n_borders", "gate_score", "gate_regime",
-        "wall_street_active", "wide_channel", "pitchfork_p1",
+        "wall_street_active", "wide_channel", "pitchfork_p1", "squeeze_d1",
         "squeeze_armed", "squeeze_mid", "squeeze_sup",
     ]
     feat_range_only = {k: feat[k] for k in range_keys}

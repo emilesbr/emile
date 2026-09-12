@@ -119,6 +119,37 @@ def compute_wide_channel(ctx_width_pct, pctl: float = WIDE_PCTL,
     thresh = w.shift(1).rolling(window).quantile(pctl)
     return (w > thresh).fillna(False).to_numpy(dtype=bool)
 
+def compute_squeeze(ctx_width_pct, pctl: float = SQUEEZE_PCTL,
+                     window: int = PCTL_WINDOW) -> np.ndarray:
+    """"SQUEEZE" (canal TRÈS ÉTROIT) — miroir exact de `compute_wide_channel`
+    ci-dessus, même machinerie, seule la direction de la comparaison change
+    (`<` au lieu de `>`) puisqu'un squeeze est un canal trop ÉTROIT, pas trop
+    large. Retourne un array booléen aligné sur `ctx_width_pct`.
+
+    Ajouté pour le mécanisme "invalidation 3BR par squeeze sur l'UT+1"
+    (`docs/GUIDE_STRATEGIE_PRO_INDICATORS.md` section 3.2, citation exacte :
+    *"Si le range se forme juste après un SQUEEZE sur l'unité de temps
+    supérieure, il faudra alors éviter de trader cette 3BR"*, `PLAN.md`
+    "31e application") -- ce niveau ("l'UT propre est en squeeze") est déjà
+    plié dans `add_regime` (régime `EXCES`, ligne `w < squeeze_thresh[i] or w
+    > excess_thresh[i]`), mais `add_regime` ne permet pas de savoir SI un
+    `EXCES` donné vient d'un squeeze ou d'un canal trop large -- exactement le
+    même besoin de granularité que celui qui a motivé `compute_wide_channel`
+    (une fonction dédiée, pas une nouvelle définition de canal).
+
+    H-Squeeze-UT1-1 (hypothèse d'opérationnalisation, le corpus ne chiffre
+    pas "juste après") : le squeeze D1 est lu de façon CONTEMPORAINE (même
+    jointure causale que `regime_d1`, aucun délai supplémentaire inventé) --
+    pas une fenêtre de recul explicite, le percentile glissant de 250 bougies
+    fait déjà persister l'état "squeeze" sur plusieurs bougies consécutives
+    de façon causale, ce qui capture "juste après" sans ajouter de paramètre.
+
+    NaN (warmup) -> False ("pas squeeze"), même convention prudente que
+    `compute_wide_channel`/`add_regime`."""
+    w = pd.Series(np.asarray(ctx_width_pct, dtype=float)).reset_index(drop=True)
+    thresh = w.shift(1).rolling(window).quantile(pctl)
+    return (w < thresh).fillna(False).to_numpy(dtype=bool)
+
 if __name__ == "__main__":
     import sys
 

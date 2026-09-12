@@ -495,24 +495,26 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   (exige une décision de conception : comment détecter causalement "range précédé d'une
   tendance" et "≥4 bornes", et si ça justifie une refonte du régime RANGE actuel ou une couche
   additionnelle) — PAS implémenté, backlog ouvert.
-- **Invalidation 3BR par SQUEEZE (`Range/3eme-borne/3ème-borne.png`), citation exacte** : *"On ne
+- ~~**Invalidation 3BR par SQUEEZE (`Range/3eme-borne/3ème-borne.png`), citation exacte** : *"On ne
   doit plus la trader si jamais le range produit un SQUEEZE... Si le range se forme juste après
-  un SQUEEZE sur l'unité de temps supérieure, il faudra alors éviter de trader cette 3BR. On fait
-  de même si le marché retourne au niveau de la 1BR (double top/bottom)."* **Vérifié dans le
-  code** : `regime_classifier.py` classe déjà un squeeze (largeur de canal < 5e percentile
-  glissant, `SQUEEZE_PCTL=0.05`) en régime `EXCES` sur l'UT propre — et `range_gate` bloque déjà
-  toute entrée si `feat["regime"][i] == "EXCES"`, donc la première moitié ("squeeze sur SA PROPRE
-  UT → ne plus trader") est déjà couverte, probablement par coïncidence de conception plutôt que
-  par lecture de cette citation précise. **MAIS la seconde moitié ne l'est pas** :
-  `range_gate`'s `d1_not_range` ne bloque que si `regime_d1 in ("RANGE_NEUTRE",
-  "RANGE_TENDANCIEL")` — un D1 en régime `EXCES` (donc potentiellement en SQUEEZE côté D1) N'EST
-  PAS bloqué par ce test, alors que la citation l'exige explicitement ("squeeze sur l'UT
-  SUPÉRIEURE juste avant → éviter cette 3BR"). La 3ème clause ("retour au niveau de la 1BR") n'a
-  aucun équivalent codé (aucun suivi du niveau de la 1ère borne). Catégorie C (le "juste avant"
-  n'est pas précisé dans le corpus — combien de bougies ? — nécessite une décision d'opérationnalisation
-  avant tout code) — PAS implémenté, backlog ouvert, candidat prioritaire (citation exacte + écart
-  concret déjà localisé dans `range_gate`, contrairement à la plupart des items C historiques qui
-  butent sur un paramètre totalement inventé).
+  un SQUEEZE sur l'unité de temps supérieure, il faudra alors éviter de trader cette 3BR..."*~~ —
+  **IMPLÉMENTÉ (31e round)** pour sa moitié manquante (la 1ère moitié — squeeze sur la PROPRE UT du
+  range — était déjà couverte par coïncidence via le régime `EXCES` H4, cf. `range_gate` ligne 48).
+  Nouvelle fonction `regime_classifier.py::compute_squeeze` (miroir exact de `compute_wide_channel`)
+  distingue "D1 squeezé" de "D1 trop large" — les deux étaient pliés dans le même régime `EXCES` par
+  `add_regime`, ce qui empêchait de bloquer spécifiquement sur le squeeze. `range_gates.py::
+  range_gate` bloque désormais l'entrée si `feat["squeeze_d1"][i]` est vrai. **H-Squeeze-UT1-1**
+  (hypothèse d'opérationnalisation, seule chose que le corpus ne chiffre pas — "juste après" n'a
+  pas de fenêtre explicite) : lecture CONTEMPORAINE du squeeze D1 (même jointure causale que
+  `regime_d1`, aucun délai supplémentaire inventé — la fenêtre glissante de 250 bougies du
+  percentile fait déjà persister l'état squeeze sur plusieurs bougies consécutives). **Résultat
+  honnête, mesuré (BTC/ETH/BNB/SOL × 4 profils)** : −17,2 trades en moyenne (gate PAS inerte,
+  contrairement à `MIN_BORDERS`), retour moyen −2,78 pt (12/16 combinaisons dégradées, 4/16
+  améliorées), drawdown quasi inchangé (+0,06 pt). Implémenté quand même, conformément au principe
+  inviolable du projet. La 3ème clause du guide ("retour au niveau de la 1BR, double top/bottom")
+  RESTE NON implémentée (aucun suivi du niveau de la 1ère borne dans ce moteur — backlog ouvert,
+  pas tentée car ça exigerait une nouvelle primitive de suivi de niveau, pas juste un nouveau gate
+  booléen comme celui-ci).
 - **Variante d'entrée "Repli sur 3BR squeezée" en contexte TENDANCE/Suivi-de-tendance**
   (`Tendance/Tendance-primaire/Suivi-de-tendance/Repli-sur-3br-Squizee.png`) — même famille que la
   variante déjà implémentée côté RANGE (18e/22e rounds, `compute_squeezed_third_border`), mais ICI

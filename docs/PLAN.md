@@ -1179,6 +1179,59 @@ citations fichier:ligne à l'appui — aucune régression de conclusion sur ces 
 Suite complète inchangée (aucun fichier de code touché). Les écarts identifiés restent ouverts
 pour des rounds séparés, chacun avec sa propre décision de conception.
 
+### 31e application (cycle suivant) — invalidation 3BR par squeeze UT+1 implémentée, mesurée, effet réel
+
+**Décision directe de l'utilisateur, en tant que "directeur ingénieur senior"** : après audit du
+guide (29e/30e rounds), traiter l'écart le plus mûr du backlog — l'invalidation 3BR par squeeze
+UT+1 (citation exacte, emplacement déjà localisé dans `range_gates.py`, un seul point
+d'opérationnalisation à trancher).
+
+**Diagnostic avant code** : `regime_classifier.py::add_regime` plie DEUX conditions distinctes
+dans le même régime `EXCES` (`w < squeeze_thresh OR w > excess_thresh` — canal trop étroit OU trop
+large), ce qui empêchait `range_gate` de bloquer spécifiquement sur le squeeze sans aussi bloquer
+sur "D1 trop large" (un cas différent, non visé par cette citation). Solution : une fonction dédiée
+plutôt qu'une nouvelle définition de canal — exactement le patron déjà établi par
+`compute_wide_channel` (ajoutée au 6e round pour un besoin de granularité identique, entre `EXCES`
+et "canal très large").
+
+**Implémenté, strictement additif** :
+- `regime_classifier.py::compute_squeeze(ctx_width_pct, pctl=SQUEEZE_PCTL, window=PCTL_WINDOW)` —
+  miroir exact de `compute_wide_channel` (même fenêtre causale, même construction), seule la
+  direction de comparaison change (`<` au lieu de `>`).
+- `backtest_phase2_faithful.py::_prepare_features` expose `feat["squeeze_d1"]` (même niveau D1 que
+  `regime_d1`/`ctx_support_d1`, même jointure sans lookahead).
+- `range_gates.py::range_gate` bloque désormais l'entrée si `feat["squeeze_d1"][i]` est vrai —
+  propagé automatiquement à `unified_protocol.py` et `risk_aggregation_triple_system.py` grâce à la
+  déduplication du 24e-27e round (aucun code à toucher dans ces 2 fichiers).
+- **H-Squeeze-UT1-1** (seule hypothèse nécessaire — le corpus ne chiffre pas "juste après") :
+  lecture CONTEMPORAINE du squeeze D1, aucun délai supplémentaire inventé — la fenêtre glissante de
+  250 bougies du percentile fait déjà persister l'état squeeze sur plusieurs bougies consécutives
+  de façon causale.
+
+**7 nouveaux tests** : `compute_squeeze` à vérité terrain calculée à la main + NaN + causalité +
+garde-fou "squeeze ⊆ EXCES" (`test_regime_classifier.py`, mirroirs exacts des tests
+`compute_wide_channel`) ; câblage dans `_prepare_features` comparé directement à `compute_squeeze`
+appelé à la main (`test_backtest_phase2_faithful.py`, même patron que `test_stop_is_d1_ctx_support_
+not_native_h4`) ; blocage/contrôle positif du gate sur un scénario synthétique isolé (même patron
+que les tests Conflit MTF existants). Suite complète **227 → 234 tests, tous verts**.
+
+**Résultat honnête, mesuré sur les VRAIS moteurs (BTC/ETH/BNB/SOL × 4 profils)** — gate PAS inerte,
+contrairement à `MIN_BORDERS` : **−17,2 trades en moyenne** (de −8 sur BTC à −26 sur SOL selon
+l'actif), retour moyen **−2,78 pt** (12/16 combinaisons dégradées, 4/16 améliorées — signe mixte,
+la performance ne tranche pas), drawdown quasi inchangé (+0,06 pt, négligeable). Implémenté quand
+même, conformément au principe inviolable du projet ("la performance ne décide jamais d'utiliser
+ou non une règle littérale"). `results/backtest_phase2_faithful_results.csv`,
+`results/backtest_phase2_unified_results.csv`, `results/risk_aggregation_full_history.csv` et
+`results/risk_aggregation_walkforward.csv` régénérés (les 2 derniers changent aussi, via
+`_prepare_unified`/`_range_gate` partagés — vérifié, pas supposé).
+
+**Ce que ce round NE fait PAS** : la 3ème clause du guide ("retour au niveau de la 1BR, double
+top/bottom") reste NON implémentée — exigerait une nouvelle primitive de suivi de niveau (où est la
+1ère borne, actuellement jamais trackée), pas juste un nouveau gate booléen comme celui-ci ; laissée
+en backlog, pas tentée par manque de définition opérationnelle prête. Les écarts n°1 (routage RANGE
+3BR/Neuneu) et n°3/nouveau (Suivi de tendance absent de `trend_table.py`) restent également ouverts,
+plus gros chantiers chacun nécessitant leur propre décision de conception.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.
