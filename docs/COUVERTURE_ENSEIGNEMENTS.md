@@ -318,11 +318,29 @@ La règle UT+2 littérale (Hebdo seul, D1 sauté) confirme la direction déjà c
 - **"Gradient de confiance" 0-100 à bandes** (`TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` : "&lt;50 abstention totale... 80-90+ zone de confort maximale", "carton plein") — suppose une sortie continue 0-100 du PRO Framework, jamais divulguée ; notre proxy ne produit qu'un score discret 0-3.
 - **Compensation Fibonacci par qualité de signal** (couleur→61% Fibo vs gris→76% Fibo, même source) — suppose la classification en 9 catégories de signal (`RULES_EXTRACTION.md` §2 : TP/Overload/DIV standard/DIV cachée/EXIT/SurAchat/SurVente/BULL/BEAR/SQUEEZE/CONTEXT, Gris/Rouge/Bleu/Noir/Jaune/Orange) — sortie directe de l'algorithme propriétaire, pas de notre proxy.
 - **"Cas d'urgence : renversement de contexte"** (bascule de couleur bleu→rouge, `TRADING_LESSONS_PULLBACK_MATURITE.md`) — même dépendance à la classification couleur.
+- **NOUVEAU (36e round) — le régime "Chaos" du guide officiel PRO Indicators** (`Chaos/Chaos.png`,
+  1ère des 4 branches du menu d'accueil "QUEL EST MON CONTEXTE ?") **n'avait JAMAIS été croisé
+  contre le code, dans aucun round précédent** (l'audit du 29e/30e round n'avait couvert que
+  Excès/Range/Tendance — un oubli, pas un choix) — trouvé en revérifiant la structure de décision
+  du guide à la demande directe de l'utilisateur : à CHAQUE niveau (l'actif/UT lui-même, puis
+  chaque sous-dossier), le guide pose la MÊME question à 4 issues, jamais 3. `regime_classifier.py::
+  add_regime` ne connaît QUE 4 régimes (`RANGE_NEUTRE`/`RANGE_TENDANCIEL`/`TENDANCE`/`EXCES`) —
+  **aucune notion de "Chaos"** (grep confirmé, 0 occurrence dans tout `emile/`). Absent aussi du
+  manuel PDF (`RULES_EXTRACTION.md`, l'autorité la plus haute) ; `TRADING_LESSONS_CHAOS_DOPAMINE.md`
+  (source #7) évoque un "chaos" théorique (Feigenbaum) sans rapport avec les 3 critères
+  opérationnels de cet écran (**Contextes irréguliers**, **Moyenne plate**, **Momentum bruyant** →
+  action **PARTEZ**). Comme Neuneu, cette notion est propre à ce seul guide. **Catégorie A** : les 3
+  critères ne sont assortis d'AUCUN seuil chiffré nulle part (contrairement au 76%/61% ailleurs) —
+  rien à implémenter sans inventer. **Conséquence pratique à connaître, réelle malgré tout** :
+  `add_regime` classe aujourd'hui tout bar ambigu en `RANGE_NEUTRE` ("en cas de doute, range",
+  commentaire du fichier lui-même) — un choix différent de celui du guide, qui traiterait la même
+  ambiguïté comme potentiellement Chaos ("PARTEZ") plutôt que comme un Range tradable. Détail
+  complet : `docs/GUIDE_STRATEGIE_PRO_INDICATORS.md` section 5, item 8 ; `PLAN.md` "36e application".
 
 ### Catégorie B — littéral, computable, PAS reproductibilité-limité : candidats d'implémentation directe
 
 - ~~**"Règle des 50%" du Pull-Back** (`TRADING_LESSONS_PULLBACK_MATURITE.md`) : condition COMPOSITE à 2 volets — retracement ≥23% ET pénétration dans les 50% inférieurs du contexte. `code/fibonacci.py` cite cette règle verbatim dans son propre commentaire (lignes 25-27) mais `classify_retracement` (lignes 172-178) n'implémente QUE le premier volet (fraction de retracement) — le second (position dans le contexte) n'est calculé nulle part. Trouvé absent de la table ❌ ci-dessus malgré être cité en toutes lettres dans le code de production.~~ — **Fait ce cycle**, cf. note "MISE À JOUR ... Règle des 50% complétée" dans la note Fibonacci ci-dessus pour le détail complet (implémentation, distinction avec H7, résultat chiffré honnête).
-- **"Stop Loss = taille du canal"** (`TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md`) : si le canal de tendance est très large, réduire de moitié SIMULTANÉMENT la taille du stop ET la taille de position. `code/position_engine.py` calcule `size_frac = risk_pct / stop_pct` (normalisation par le risque), pas ce mécanisme de double réduction symétrique — un mécanisme distinct, jamais implémenté ni documenté comme manque.
+- ~~**"Stop Loss = taille du canal"** (`TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md`) : si le canal de tendance est très large, réduire de moitié SIMULTANÉMENT la taille du stop ET la taille de position. `code/position_engine.py` calcule `size_frac = risk_pct / stop_pct` (normalisation par le risque), pas ce mécanisme de double réduction symétrique — un mécanisme distinct, jamais implémenté ni documenté comme manque.~~ — **Fait (6e round)**, cf. bloc "STOP LOSS = TAILLE DU CANAL" en tête de `code/position_engine.py` (`WIDE_CHANNEL_STOP_FRAC`/`WIDE_CHANNEL_SIZE_FRAC`, hypothèses H-Canal-Large-1..4). **Trouvaille (42e round)** : cette puce était restée non barrée malgré l'implémentation — corrigé ici, pas un nouvel écart.
 - ~~**Tension "3 vs 4 bornes"** (maturité de range) : `TRADING_LESSONS_ZONE_ACCUMULATION.md` dit "minimum 4 bornes", d'autres sources disent 3 — `MIN_BORDERS=3` utilisé partout, la tension étant déjà notée en commentaire (`backtest_phase2_v4.py:32`, "règle des '3-4 bornes'") mais jamais remontée en tension formelle à trancher ni testée en sensibilité (`MIN_BORDERS=4` jamais essayé).~~ — **Mesurée ce cycle (mobilisation multi-agents, 6e round)**, trouvaille plus significative que la question posée : `code/min_borders_sensitivity.py` (`test_min_borders_sensitivity.py`, 9/9) rejoue les VRAIS moteurs de production (`run_v7`/`trend_table`, override temporaire, aucun fichier modifié) sur une grille 2/3/4/5 × BTC/ETH/BNB/SOL × 4 profils — **0,0 pt d'écart sur les 32 couples testés, quel que soit le seuil**. Diagnostic dédié : `n_borders` (fenêtre glissante fixe de 15 jours) vaut au minimum 5 chez les bougies candidates (médiane 9) — le premier seuil qui "mordrait" est 6, pas 3 ou 4. **Le gate est INERTE, ce n'est PAS une preuve que 3 est le bon choix** — la grandeur calculée (comptage sur fenêtre fixe) et celle décrite par le corpus (points de contact d'une structure de range identifiée) ne sont pas au même ordre de grandeur. Relecture complète confirmée : le corpus est réellement partagé entre "min 4" et "min 3" bornes selon la source (`TRADING_LESSONS_ZONE_ACCUMULATION.md`/`PULLBACK_MATURITE.md` vs `BREAKOUT_RATIO11.md`/`STRUCTURES_ALTERATIONS.md`), avec une lecture qui réconcilie les deux (`TRADING_LESSONS_MTF_SUIVI_TENDANCE.md` : 3e et 4e borne = deux ÉTAPES successives, pas deux valeurs concurrentes du même seuil). Décision de conception NON tranchée (catégorie C) : recalibrer `n_borders` sur une structure de range identifiée (seul point qui rendrait "3 vs 4" à nouveau mesurable), ou lire le corpus comme 2 gates distincts. Détail complet, citations exactes par source, chiffres complets par actif/profil/seuil : `PLAN.md` section "6e application".
 
 ### Catégorie C — réels, littéraux, mais exigent une décision de conception avant tout code (même discipline que Fibonacci RANGE/Conflit MTF — pas une invention silencieuse)
@@ -341,7 +359,7 @@ La règle UT+2 littérale (Hebdo seul, D1 sauté) confirme la direction déjà c
 
   **Mesures (BTC/ETH/BNB/SOL, historique complet ; harnais validé — il reproduit les 7/9/16/8 déclenchements Accumulation qui donnent les `n_trades` de `code/phase2_trend_table_results.csv`)** : (1) joindre un niveau EN DESSOUS est mécaniquement gratuit et causal (`attach_context_level` fonctionne à l'identique avec `closure_delay=1h` — la dernière bougie H1 close à l'instant d'une bougie H4 est la 4e sous-bougie de la H4 précédente) ; (2) **mais n'apporte aucune information** : `ctx_high`/`ctx_low` calculés en H1 puis joints au H4 sont identiques aux valeurs H4 natives sur 94,6-95,5% des barres et sur **100,00%** après neutralisation de l'artefact de granularité du `shift(1)` — un max/min sur fenêtre **calendaire** est exactement invariant par agrégation de bougies (généralisation exacte du "ratio médian 1,00" du 7e round), et la clôture H1 jointe est celle de la bougie H4 précédente sur 100% des barres ; donc `accum_retracement_frac`, seule grandeur numérique du gate Accumulation, est insensible au choix T/T-1 ; (3) le gate **additif** « exiger une structure T-1 mature » est **inerte bit-à-bit — 7/7, 9/9, 16/16, 8/8, écart 0 sur 4/4 actifs** (`n_borders` = comptage sur fenêtre calendaire de 15 j, donc médiane 37 en H1 contre 9 en H4 et **32-34 au minimum** sur les barres candidates, contre `MIN_BORDERS=3` : 3e confirmation indépendante du "gate inerte" des 6e/8e rounds) ; (4) la seule composante réellement dépendante du niveau est la bande EMA±ATR (écart médian 2,1-3,8% vers le bas, 7,4-12,7% vers le haut ; rejets de canal BTC 902 en H4 vs 825 en H1, **115 communs**) — artefact de notre proxy, non spécifié par le corpus, et placé **au-dessus** par celui-ci ; (5) dans la direction prescrite, le chantier est **incompatible avec H3 dans ce moteur** : stop D1 = 14,75-19,88% de distance au lieu de 1,20-2,26% (×8,6-14,6), donc plafond de campagne H3 (5%) tombant de 2,2-4,2 fois U à **0,25-0,34** — les 4 profils s'écrasent sur le même plafond et la table §4 (Renfort +25/+50/+100/+150/+200%) devient inexprimable (`position_engine.py` échappe à ce problème : tranches dimensionnées indépendamment, sans plafond cumulé) ; et utiliser le canal D1 comme référence du **rejet** fait tomber les déclenchements de 7/9/16/8 à **0/0/0/3**.
 
-  **Correction honnête d'une contrainte supposée** : le NO-GO H1/M15 de `STATUS.md` ne bloque PAS ce chantier — il porte sur H1/M15 comme **UT d'exécution** (*"détruits par les frais de transaction"*), or un gate de structure ne paie aucun frais et le H1 est la donnée BRUTE du projet (`load_h1`, 4 actifs). Ce sont la lecture du corpus et les mesures qui bloquent, pas la faisabilité. (Seule vraie limite : M15 n'existe que pour BTC.)
+  **Correction honnête d'une contrainte supposée** : le NO-GO H1/M15 de `STATUS.md` ne bloque PAS ce chantier — il porte sur H1/M15 comme **UT d'exécution** (*"détruits par les frais de transaction"*), or un gate de structure ne paie aucun frais et le H1 est la donnée BRUTE du projet (`load_h1`, 4 actifs). Ce sont la lecture du corpus et les mesures qui bloquent, pas la faisabilité. (Note obsolète corrigée au 43e round : au moment de ce 11e round, M15 n'existait que pour BTC — la donnée M15 native couvre désormais BTC/ETH/BNB/SOL, cf. `CLAUDE.md`, section données ; n'affecte pas la conclusion de ce chantier, qui n'utilisait pas M15.)
 
   **Deux items nouveaux, mieux étayés, ajoutés à la catégorie C à sa place** : (1) **le `ctx_support` de `trend_table.py` n'est PAS l'« Extreme Channel » du corpus** — #16:12 le définit comme le contexte de l'UT SUPÉRIEURE affiché sur l'UT de trading, `faithful.py` l'honore (`ctx_support_d1`), mais `trend_table.py` (comme v6 et `run_ut2` sans `use_mtf_stop`) donne ce nom à la bande `ema_slow - 2*ATR` de l'UT tradée elle-même (écart médian mesuré 7,4-12,7%) : ce n'est plus une hypothèse de scope mais un niveau de stop non conforme, avec un blocage concret identifié (H3) — soit porter le stop UT+1 ET redéfinir H1/H3 pour que la table §4 reste exprimable, soit renommer honnêtement la bande H4 ; (2) **tension #10:18 vs #11:9/18 sur le statut de la structure inférieure** (intrant de validation contre *"inexistante et non-avenue"* / *"« bruit »"*), jamais consignée — à trancher avant tout futur chantier descendant, les deux lectures produisant des gates de signe opposé. Aucun changement de comportement ce cycle, aucun CSV régénéré, **157/157** tests avant et après ; seule modification de code : une note de docstring insérée entre H11 et H12 dans `code/trend_table.py` (insertion pure, zéro ligne exécutable). Détail complet : `PLAN.md` section "11e application".
 - ~~**Contrainte "espace libre" MTF avant breakout** (`TRADING_LESSONS_BREAKOUT_RATIO11.md`, vérifier l'absence d'obstacles UT+1/UT+2 avant un breakout) — `trend_table.py::breakout_raw` ne teste qu'un niveau de prix + volume, aucune distance/espace disponible.~~ — **IMPLÉMENTÉ (10e round de mobilisation), mesuré, résultat honnête mitigé à dégradé, gardé optionnel comme banc de mesure.** Détail complet : `PLAN.md` section "10e application". Résumé :
@@ -477,6 +495,210 @@ La règle UT+2 littérale (Hebdo seul, D1 sauté) confirme la direction déjà c
   - Aucun changement de comportement, **aucun CSV régénéré** (rien ne change numériquement) — vérifié : `phase2_v7_mtf_results.csv` recalculé est **bit-à-bit identique** au CSV commité (64 × 9). **Aucun test ajouté** (le bloc est purement documentaire). **Comptage rendu ambigu par des sessions concurrentes écrivant dans le même checkout** — mesuré proprement plutôt que rapporté de mémoire : sur un checkout **HEAD propre** (`git archive HEAD`), la suite est à **164/164** ; en y appliquant **uniquement les deux éditions de ce round** (+150 lignes de commentaire dans `position_engine.py`, +11 dans `trend_table.py`), elle reste à **164/164** — **contribution nette : 0 test ajouté, 0 test cassé, comportement identique**. Le checkout partagé a par ailleurs traversé un état transitoire à **7 échecs** (`test_backtest_phase2_faithful.py` ×6, `test_unified_protocol.py` ×1), tous sur `backtest_phase2_faithful.py` — fichier **jamais touché par ce round**, alors en cours d'édition par une autre session ; non imputables ici, délibérément non "corrigés" pour ne pas écraser le travail en vol d'autrui, et **résolus depuis par cette session** : le checkout partagé termine à **172/172 verts** (ce round + trois sessions concurrentes). Modifications de code de ce round : bloc de commentaire PUR en tête de `code/position_engine.py` + note documentaire adossée à `PROFILES_TREND` dans `code/trend_table.py` (zéro ligne exécutable dans les deux cas).
 - ~~**"Hiérarchie UT Supérieure = Le Potentiel"** (vérifier la marge de progression disponible avant d'engager un objectif, `TRADING_LESSONS_PULLBACK_MATURITE.md`) — non implémenté.~~ — **COUVERT par la contrainte "espace libre" MTF implémentée au 10e round** (cf. item correspondant ci-dessus) : relecture faite ce round, c'est le MÊME enseignement que la contrainte de la source #12, formulé plus brièvement (`TRADING_LESSONS_PULLBACK_MATURITE.md` l.14, *"vérifier qu'il reste assez de 'jus' (marge de progression) pour un nouvel objectif"*) — il était listé ici comme un item distinct par erreur de classification, pas parce qu'il décrivait un mécanisme différent. Sa présence en 2 sources indépendantes a au contraire servi d'argument POUR l'implémenter.
 - **Nuance "Règle de Non-Existence" (#11) vs Conflit MTF implémenté** : le mécanisme codé (`regime_d1`, un proxy d'état continu par percentiles glissants) capture l'esprit de la source mais pas le déclencheur événementiel précis ("apparition d'une 3ème borne sur le Contexte") ni sa condition de levée exacte ("jusqu'à sortie de la structure de range"). Pas un défaut caché (le choix du niveau D1 reste bien étayé et déjà documenté), mais une équivalence approximative à ne pas confondre avec une implémentation littérale exacte.
+
+**Nouvelle source, 29e application (`docs/GUIDE_STRATEGIE_PRO_INDICATORS.md`, guide officiel
+"Guide de Stratégie" PRO-INDICATORS.com, extraction texte de 38 captures d'écran officielles fournies
+par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CONTRE LE CODE RÉEL
+(`emile/core/range_gates.py`, `emile/core/regime_classifier.py`), pas seulement supposés :
+
+- **Routage RANGE "3ème borne" vs "Neuneu" (`Range/Range.png`)** — le guide décrit DEUX
+  structures RANGE distinctes, choisies par une question explicite (*"range précédé d'une
+  tendance ? (moyenne hors des contextes = tendance)"* → 3ème borne ; sinon, ou si range ≥4
+  bornes, ou Forex UT hebdo → Neuneu), chacune avec sa PROPRE grille de money management.
+  **PARTIELLEMENT IMPLÉMENTÉ (32e round)** — la grille "3ème borne" elle-même s'est révélée être
+  DÉJÀ le mécanisme §3/§3bis existant (mêmes seuils 76%/61%, même renvoi au PDF pour les fractions
+  de clôture) : le vrai travail neuf était la DÉCISION DE ROUTAGE. Construite et mesurée :
+  `regime_classifier.py::compute_range_precedes_by_trend` (réutilise le régime H4 déjà classé,
+  aucune invention) + `compute_range_border_count` (compte de bornes REMIS À ZÉRO par épisode de
+  range — PAS une réutilisation de `n_borders`, dont la médiane glissante perpétuelle vaut 9 sur
+  BTC H4 réel, >4 sur 99,7% des bougies : le réutiliser aurait rendu ce routage trivialement vrai
+  partout, trouvaille faite AVANT d'écrire le code final) + `compute_use_neuneu`. Exposé dans
+  `feat["use_neuneu"]`, mesuré non trivial (~82% des bougies RANGE routeraient vers Neuneu sur les
+  4 actifs — cohérent avec le guide lui-même : "la stratégie à privilégier au moindre doute").
+  **PAS ENCORE CONSOMMÉ par aucun moteur** : la grille "3BR" reste appliquée sans condition,
+  comportement inchangé, vérifié bit-à-bit. Le mécanisme NEUNEU lui-même (grille de risque
+  distincte) reste catégorie C, différé.
+  **Diagnostic revu et corrigé (36e round)** — le blocage "stop trailing" du 32e round était
+  SURESTIMÉ : la citation exacte (*"SL déplacé au sommet récent"* à la Validation) décrit un
+  ajustement PONCTUEL, pas un stop réévalué en continu — structurellement identique au `conf_to_be`
+  déjà existant (`process_tranche`), juste déclenché à un autre point et vers un autre niveau (même
+  primitive que `swing_high` de `trend_table.py`). **Mais un blocage PLUS FONDAMENTAL, trouvé en
+  revérifiant les captures elles-mêmes (pas seulement leur transcription texte), remplace celui-là** :
+  Neuneu est en réalité **BIDIRECTIONNEL** — "Repli Neuneu" (`Repli-neuneu.png`, pattern creux→
+  rebond→retour fibo 14,6-23,6%) est un LONG classique, compatible avec l'architecture existante ;
+  "Borne Neuneu" (`Borne-neuneu.png`, *"Stoploss = au-dessus du plus haut du range"* — cohérent
+  seulement pour un SHORT, un stop au-dessus de l'entrée n'ayant aucun sens pour un LONG) est un
+  **SHORT**, structure qui n'existe NULLE PART dans `position_engine.py` (la seule jambe short du
+  fichier, `H-Reverse-Range`, est explicitement BORNÉE — un seul stop/une seule cible, jamais une
+  table à étapes) — construire "Borne Neuneu" fidèlement exigerait une vraie table RANGE short
+  symétrique, chantier d'architecture à part entière. **Et "Repli Neuneu" (la moitié long,
+  a priori compatible) bute à son tour sur un blocage catégorie A** : aucun chiffre, nulle part
+  dans le corpus (grep confirmé sur les 17 sources + `RULES_EXTRACTION.md` : "Neuneu" n'existe que
+  dans ce guide), ne définit la "dumb zone" elle-même (le point intermédiaire du pattern) — un
+  seuil inventé de toutes pièces, ce que le principe du projet interdit. **Conclusion : toujours
+  PAS implémenté, backlog ouvert, décision de conception (Borne Neuneu) + parties non chiffrables
+  (Repli Neuneu) à traiter dans un round séparé** — détail complet : `PLAN.md`, section
+  "36e application".
+- ~~**Invalidation 3BR par SQUEEZE (`Range/3eme-borne/3ème-borne.png`), citation exacte** : *"On ne
+  doit plus la trader si jamais le range produit un SQUEEZE... Si le range se forme juste après
+  un SQUEEZE sur l'unité de temps supérieure, il faudra alors éviter de trader cette 3BR..."*~~ —
+  **IMPLÉMENTÉ (31e round)** pour sa moitié manquante (la 1ère moitié — squeeze sur la PROPRE UT du
+  range — était déjà couverte par coïncidence via le régime `EXCES` H4, cf. `range_gate` ligne 48).
+  Nouvelle fonction `regime_classifier.py::compute_squeeze` (miroir exact de `compute_wide_channel`)
+  distingue "D1 squeezé" de "D1 trop large" — les deux étaient pliés dans le même régime `EXCES` par
+  `add_regime`, ce qui empêchait de bloquer spécifiquement sur le squeeze. `range_gates.py::
+  range_gate` bloque désormais l'entrée si `feat["squeeze_d1"][i]` est vrai. **H-Squeeze-UT1-1**
+  (hypothèse d'opérationnalisation, seule chose que le corpus ne chiffre pas — "juste après" n'a
+  pas de fenêtre explicite) : lecture CONTEMPORAINE du squeeze D1 (même jointure causale que
+  `regime_d1`, aucun délai supplémentaire inventé — la fenêtre glissante de 250 bougies du
+  percentile fait déjà persister l'état squeeze sur plusieurs bougies consécutives). **Résultat
+  honnête, mesuré (BTC/ETH/BNB/SOL × 4 profils)** : −17,2 trades en moyenne (gate PAS inerte,
+  contrairement à `MIN_BORDERS`), retour moyen −2,78 pt (12/16 combinaisons dégradées, 4/16
+  améliorées), drawdown quasi inchangé (+0,06 pt). Implémenté quand même, conformément au principe
+  inviolable du projet. La 3ème clause du guide ("retour au niveau de la 1BR, double top/bottom")
+  RESTE NON implémentée (aucun suivi du niveau de la 1ère borne dans ce moteur — backlog ouvert,
+  pas tentée car ça exigerait une nouvelle primitive de suivi de niveau, pas juste un nouveau gate
+  booléen comme celui-ci).
+- **Variante d'entrée "Repli sur 3BR squeezée" en contexte TENDANCE/Suivi-de-tendance**
+  (`Tendance/Tendance-primaire/Suivi-de-tendance/Repli-sur-3br-Squizee.png`) — même famille que la
+  variante déjà implémentée côté RANGE (18e/22e rounds, `compute_squeezed_third_border`), mais ICI
+  scopée à la table TENDANCE (pas RANGE) avec un niveau d'entrée alternatif explicite ("sinon au
+  niveau du fibo 50%"). **VÉRIFIÉ depuis (30e application, audit indépendant) : ce n'est qu'un
+  TIERS du trou réel** — voir item ci-dessous, plus large.
+
+**30e application — audit indépendant demandé par l'utilisateur ("vérifier que nous avons bien
+extrait toute la propriété [intellectuelle] et croisé avec le code, voir ce qui est erroné")** :
+2 agents adversariaux mobilisés, l'un a rouvert les 38 captures une par une contre
+`docs/GUIDE_STRATEGIE_PRO_INDICATORS.md`, l'autre a revérifié le croisement code ligne par ligne.
+Corrections déjà appliquées au document d'extraction — retenu ici, ce qui change le diagnostic
+du round précédent :
+
+- **Le mécanisme "Suivi de tendance" (§4.3, PAS seulement sa variante squeeze) est ABSENT de
+  `trend_table.py` en entier.** L'item ci-dessus (Repli sur 3BR squeezée) ne couvrait qu'une des 3
+  branches (Repli à la moyenne / Cassure de 3BR / Repli sur 3BR squeezée), chacune avec sa propre
+  grille STOPLOSS/VALIDATION/CONFIRMATION/OBJECTIF et ses 5 conditions d'activation. Le code actuel
+  modélise le Breakout comme un simple "Renfort +X%" figé par profil puis saute directement à
+  Divergence, sans aucune des 3 branches de ré-entrée par ordre en attente.
+  **PARTIELLEMENT IMPLÉMENTÉ (33e round)** : les 5 conditions d'ACTIVATION construites et mesurées
+  — `trend_table.py::compute_suivi_conditions` (moyenne haussière + pas de squeeze sur le canal H4,
+  H-Suivi-1 : conditions 3/4 du guide traitées comme la même contrainte, le mot "alerte" désignant
+  déjà le signal SQUEEZE ailleurs dans le corpus) + `SUIVI_MAX=2`. Mesuré non trivial (~93-94% des
+  bougies TENDANCE satisfont ces conditions). Fonction NON appelée par `run_trend_table` — zéro
+  changement de comportement.
+  **Branche "Cassure de 3BR" IMPLÉMENTÉE (34e round)** — swing bas confirmé arme un ordre virtuel
+  stop-achat au plus haut de campagne, remplissage sans bouger le stop (H-Suivi-Cassure3BR-1 :
+  réutilise le stop de campagne existant plutôt que de plomber une donnée D1 pour une seule
+  branche) ; taille = "risque max 2%" littéral (H-Suivi-Cassure3BR-2, `SUIVI_RISK_PCT`, pas une
+  fraction inventée). **Résultat honnête, mesuré : EFFET NUL sur BTC/ETH/BNB/SOL × 4 profils** —
+  cause identifiée, pas juste constatée : `stage_time_%["POST_BREAKOUT"]` vaut 0,0% sur 15/16
+  combinaisons (campagnes traversant cette étape quasi instantanément avant Divergence) — aucune
+  fenêtre réelle pour qu'un pattern de swing bas + cassure ait le temps de se former sur ces
+  données. Implémenté quand même (littéral, testé), `use_suivi_de_tendance=False` par défaut.
+  **Les 2 autres branches (Repli à la moyenne, Repli sur 3BR squeezée) restent catégorie C,
+  différées** — même contrainte de fenêtre temporelle identifiée ci-dessus s'appliquerait
+  probablement à elles aussi, quel que soit leur déclencheur propre.
+  **Investigation plus poussée (35e round)** — la 16e combinaison (seule à ne PAS être à 0,0% :
+  BTC/FAIBLE, 48,9% de temps POST_BREAKOUT) cachait en réalité un **vrai bug** (indépendant de
+  "Suivi de tendance"), pas une fenêtre d'opportunité réelle : une campagne à `accum_frac=0.00`
+  (profil FAIBLE) peut voir son stop devenir obsolète pendant l'Accumulation (rien ne le surveille
+  tant qu'aucun capital n'est engagé) puis, au Breakout, se voir refuser tout remplissage par
+  `add_leg` (prix déjà sous ce stop périmé) tout en basculant quand même vers POST_BREAKOUT —
+  une campagne "zombie" (`remaining=0`) plus jamais clôturable, bloquant 48,2% de l'historique BTC
+  (~7400 bougies H4, la quasi-totalité de la 2e moitié des données) jusqu'à la fin du dataset, 0
+  trade. **Corrigé** (`trend_table.py::step_campaign`, transition conditionnée à `remaining>0`
+  après l'appel — pas `actual_add>0`, qui casserait le cas légitime d'un plafond H3 déjà saturé par
+  l'Accumulation d'un profil AGRESSIF/TRES_AGRESSIF), 2 nouveaux tests de non-régression, mesuré
+  avant/après : impact confiné à BTC/FAIBLE/`space_gate=off` (0→2 trades, 0,0%→-1,8%), les 15
+  autres combinaisons inchangées, `unified_protocol.py`/`risk_aggregation_triple_system.py` (mêmes
+  fonctions réelles réutilisées) bit-à-bit identiques. **Effet sur `use_suivi_de_tendance` lui-même
+  inchangé après correctif : toujours 0/16 différence** — le diagnostic "fenêtre quasi nulle" du
+  34e round reste la conclusion opérationnelle valable pour ce mécanisme précis, une fois ce bug
+  par ailleurs corrigé. Détail complet : `PLAN.md`, section "35e application".
+- **Nouvel item trouvé** : les sous-patterns "Trend Follow"/"Exit" en régime Excès (§2.1 du guide,
+  grilles de risque complètes, niveau EXPERT) ne sont jamais implémentés — `range_gates.py:48`
+  bloque INCONDITIONNELLEMENT toute entrée en régime EXCES. Cohérent avec le choix déjà documenté
+  ("Bulle/Excès → NE PAS TRADER"), mais mériterait d'être reconfirmé explicitement plutôt que de
+  rester un silence face à ce nouveau contenu. Catégorie C — PAS implémenté.
+- **Une conclusion du 29e round était FAUSSE, corrigée** : l'affirmation "confirme les seuils déjà
+  codés dans `fibonacci.py`/`regime_classifier.py`" (à propos des seuils de retracement 3BR
+  76%/61%) ne résiste pas à la relecture — `regime_classifier.py::add_regime` ne calcule AUCUN
+  retracement Fibonacci ; `fibonacci.py::FAVORABLE_MIN/MAX` sert un mécanisme TENDANCE distinct
+  (plafond d'invalidation du Pull-Back, pas plancher d'entrée RANGE) qui ne partage que la valeur
+  numérique 0,618 par coïncidence ; et `backtest_phase2_faithful.py:299-313` documente LUI-MÊME,
+  depuis un round antérieur, qu'aucun gate RANGE par retracement Fibonacci n'est implémenté — cette
+  information était déjà dans le projet et aurait dû être croisée avant d'écrire "confirme".
+  Détail complet, correction appliquée dans `docs/GUIDE_STRATEGIE_PRO_INDICATORS.md` section 5.
+- **Erreurs de transcription/catégorisation corrigées dans le document d'extraction lui-même**
+  (pas des écarts corpus↔code, des erreurs de ma propre extraction) : le contenu réel de
+  `Bulle-spéculative.png` n'avait jamais été transcrit (un écran voisin, `Screenshot 2026-09-11
+  23.20.54.png`, avait été présenté à sa place) ; "3ème conditions" aurait dû être "4 conditions"
+  (`3br.png`) ; une citation "stop suiveur" était attribuée au mauvais champ (Objectif, pas
+  Confirmation) ; un bloc entier ("Exemples des erreurs classiques", `3br.png`) et les 3 critères
+  propres à l'écran `3ème-borne.png` n'étaient pas transcrits ; l'écran d'accueil et le placeholder
+  "IMAGE A VENIR" de `Divergence.png` n'étaient pas signalés. Toutes corrigées, mêmes fichiers
+  images revérifiés directement (pas la seule parole des agents) avant correction.
+
+Aucun changement de comportement de code apporté par ce round ou le précédent (investigation +
+correction documentaire uniquement) — les écarts ci-dessus attendent une décision de conception
+dédiée, pas une implémentation improvisée.
+
+- **NOUVEAU (38e round) — "Tendance Multi-timeframe" (trader chaque UT en parallèle avec 2% de
+  risque chacun) : DÉTECTION implémentée et mesurée, CONSOMMATION bloquée par un angle mort GÉNÉRAL
+  de l'architecture, pas spécifique à ce mécanisme.** Constat direct de l'utilisateur ("Philippe
+  utilise sa stratégie pour trader un actif sur les différentes timeframes, nous devons agréger
+  toute cette stratégie en une seule") vérifié juste : TOUS les moteurs existants (`unified_
+  protocol.py` compris, malgré son nom) exécutent sur H4 SEUL, D1/Hebdomadaire n'étant jamais que
+  des contextes/gates — aucune UT supérieure n'est elle-même tradée. Détection construite et
+  testée (`trend_table.py::attach_regime_is_tendance`/`compute_multi_timeframe_trend`,
+  `MTF_CASCADE_RISK_PCT=0.02`) : incidence réelle mesurée, ni nulle ni omniprésente (BTC 2,96% des
+  bougies H4/27 épisodes, ETH 0,29%, BNB 2,34%, SOL 0,80%). **Trouvaille la plus importante** : en
+  tentant de mesurer l'exposition résultante (illustration, profil MODERE), `run_trend_table` sur
+  D1/Hebdomadaire ouvre 0 trade sur les 4 actifs — diagnostiqué (pas conclu au hasard) :
+  `LOCAL_DURATION="5D"`/`CONTEXT_DURATION="15D"` (`backtest_phase2_v7.py`) sont des durées
+  CALENDAIRES ABSOLUES, jamais recalibrées par UT depuis leur création — 15 jours = une fraction
+  d'une seule bougie Hebdomadaire, `n_borders` ne peut structurellement jamais atteindre
+  `MIN_BORDERS=3` à cette échelle (maximum observé : 1). **Ce n'est pas un défaut de "Tendance"
+  mais de `prepare()` lui-même**, utilisé par TOUS les moteurs de ce projet — resté invisible
+  jusqu'ici car ce projet n'avait jamais exécuté sur une UT autre que H4. **Catégorie C** :
+  recalibrer `LOCAL_DURATION`/`CONTEXT_DURATION` par UT est un chantier À PART, plus large que ce
+  round, sans valeur donnée par le corpus (inventer un facteur d'échelle serait la même erreur
+  que d'inventer un seuil). Détail complet, chiffres exacts : `PLAN.md` section "38e application".
+  **LEVÉ (39e round)** : `LOCAL_DURATION`/`CONTEXT_DURATION` acceptent désormais une fenêtre en
+  NOMBRE DE BOUGIES (`local_duration=LOCAL_DURATION_H4_BARS=30`/`context_duration=CONTEXT_
+  DURATION_H4_BARS=90`, mêmes valeurs que 5D/15D exprimées en bougies H4 — aucune invention),
+  strictement additif, comportement inchangé par défaut. Mesuré après correction : `n_borders_
+  median` ~9 sur les 3 UT (comparable), `D1_n_trades` n'est PLUS 0 (BTC 3, ETH 1, BNB 1, SOL 3) —
+  le mécanisme "Tendance" transfère bien à D1. `Weekly_n_trades` reste à 0 mais pour une raison
+  honnête différente (historique trop court en nombre de bougies, 303-367 selon l'actif — pas un
+  artefact de calibration). Trouvaille venue d'un second angle : la clarification directe de
+  l'utilisateur sur le contexte UT+2 utilisé pour le TP ("Confirmation") a révélé que `conf_px`
+  (`position_engine.py`) souffre du MÊME défaut (`context_range` calculé sur H4, jamais sur une
+  vraie UT+2) — jamais testé avec la fenêtre en bougies (catégorie C, non fait ce round, cf.
+  `PLAN.md` "39e application" pour le détail). Le money-management "2% par UT en parallèle" de la
+  Tendance Multi-timeframe reste, lui, catégorie C (sizing non chiffré par le corpus).
+  **CÂBLÉ (42e round)**, sur décision directe de l'utilisateur d'accepter la lecture extrapolée
+  nécessaire (H-MTF-Cascade-4/5 : gate d'ouverture restreint aux fenêtres de Tendance Multi-
+  timeframe + jambe de Breakout dimensionnée par le risque à 2%, jambe d'Accumulation inchangée) —
+  `run_trend_table(use_mtf_cascade=True, mtf_cascade_gate=...)`, strictement additif, défaut
+  `False`. Mesuré sur BTC/ETH/BNB/SOL × H4/D1/Hebdomadaire (profil MODERE) : effet réel, 8/12
+  lignes actif×UT changent — BTC/H4 et BNB/H4 voient moins de trades ET un meilleur retour (gate
+  sélectif), ETH/SOL (H4+D1) et BTC/BNB (D1) tombent à 0 trade (le gate, très restrictif — 0,29-
+  3,27% des bougies — élimine toute activité pour ces couples). Aucune conclusion de performance
+  n'a influencé l'implémentation. Détail complet, tableau chiffré complet : `PLAN.md`
+  "42e application".
+  **MESURÉ (40e round)** : `conf_px` retesté avec un `context_range` sourcé sur une VRAIE UT+2
+  (Hebdomadaire, fenêtre en bougies) — résultat honnête, symétrique et opposé à celui du 16e round.
+  Le 16e round avait trouvé les lectures STRUCTURELLES (niveau absolu) collapsant quasi
+  immédiatement (98-100% en 1 bougie, TROP TÔT). La lecture AMPLITUDE avec une vraie UT+2 donne
+  l'inverse : sur les 200 tranches réelles ayant atteint la Validation (`backtest_phase2_
+  faithful.py`), **0/200 atteignent cette Confirmation** (contre 164/200, 82%, pour la version H4
+  actuellement en production) — le niveau résultant se situe à une distance médiane de **62,3%**
+  au-dessus de l'entrée (le range Hebdomadaire sur 90 bougies vaut ~106% du prix pour BTC, cohérent
+  avec son historique réel de cycles haussier/baissier). **Conclusion** : aucune des 3 lectures
+  mesurées à ce jour (structurelle H4/D1, amplitude H4, amplitude UT+2 réelle) ne satisfait à la
+  fois la citation et la praticabilité — le mécanisme en production (amplitude H4) reste le plus
+  praticable PAR ÉLIMINATION, pas par fidélité littérale. Aucun changement de code de production.
+  Détail complet : `PLAN.md` "40e application".
 
 ### Ce qui reste correctement classé, confirmé par les 3 agents (rien à changer)
 Tout le reste des 17 sources + le manuel — UT+2 (mécanisme général), stop UT+1 réel, breakeven différé à la Confirmation, abstention Wall Street, canal manuel, Andrews, diversification 1%+1%, +Reverse scopé TRES_AGRESSIF, EXCES-H4, pyramidalisation-régime, TSI(14,7,9), garde-fous Phase 4 (hors périmètre code, correctement noté comme tel) — vérifié directement dans le code par les 3 agents, pas simplement relu dans ce document.

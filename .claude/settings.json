@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /home/emilesbr/emile/.claude/hooks/test_claim_check.py"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/test_claim_check.py\""
           }
         ]
       }

@@ -86,6 +86,41 @@ VÉRIFIÉ SOURCE PAR SOURCE (pas supposé) :
     performance du proxy ne décide jamais si une règle littéralement
     documentée de l'IP de Philippe est implémentée ou non.
 
+**Fourchette d'Andrews — lecture CONTEXTUELLE (AJOUTÉE ce cycle, littérale,
+non conditionnelle sur son périmètre)** : `andrews_gate_alternative.py`
+(H-Andrews-Contextuel) établit, par lecture textuelle du corpus (pas par
+balayage de paramètres) : *"[la Fourchette d'Andrews] PREND LE RELAIS QUAND
+la tendance est BRISÉE. Couvre ~90% des cas CORRECTIFS"* (#3/#4, tableau
+§3) -- un relais est par nature CONDITIONNEL à un état de marché précis, pas
+un filtre permanent. Le seul régime de `regime_classifier.py` correspondant
+à une tendance qui a cessé de progresser mais garde un biais directionnel
+HÉRITÉ (ni TENDANCE encore intacte, ni RANGE_NEUTRE sans biais, ni EXCES
+exclu ailleurs) est `RANGE_TENDANCIEL` -- lecture retenue à ce jour dans ce
+seul fichier séparé, jamais combinée aux 4 autres règles littérales
+ci-dessus jusqu'à cette mobilisation. **Activée ici sans condition, SCOPÉE
+au régime RANGE_TENDANCIEL du H4 natif** (`gate()` bloque désormais aussi
+quand `regime_h4[i] == "RANGE_TENDANCIEL"` et `close[i] <= pitchfork_p1[i]`
+-- dans tout autre régime, condition triviale, comportement inchangé) :
+même principe que les 4 règles précédentes, la performance mesurée (dans
+`andrews_gate_alternative.py` seul, hors des autres corrections de ce
+fichier : +315,6% vs +501,4% sans gate, moyenne 4 actifs x 4 profils) ne
+décide PAS de l'activer, elle documente honnêtement l'effet d'UNE lecture
+retenue a priori pour son adéquation au texte. Impact chiffré dans CE
+moteur (toutes règles combinées) : cf. `PLAN.md`.
+
+**Variante d'entrée "3ème borne squeezée" (AJOUTÉE ce cycle, littérale,
+non conditionnelle)** : `position_engine.py::compute_squeezed_third_border`
+(#15 Variante 2, 18e round -- citation exacte `TRADING_LESSONS_
+PYRAMIDALISATION.md:24`, aucun des 4 motifs de refus ne tenant) existait
+déjà, testée et mesurée isolément sur `backtest_phase2_v7_squeeze.py` (banc
+dédié), jamais combinée aux 4 autres règles littérales ci-dessus. **Activée
+ici sans condition** (`_add_squeeze_columns`, câblée dans `make_open_tranche_
+fn` via `squeeze_armed_v`/`squeeze_mid_v`/`squeeze_sup_v`/`low_v`) : même
+principe que les règles précédentes, la mesure isolée déjà publiée (effet
+quasi nul, 1 seul ordre rempli en 6 ans sur 4 actifs) ne décide pas de
+l'activer. Impact chiffré dans CE moteur (toutes règles combinées) : cf.
+`PLAN.md`.
+
 CE QUI RESTE VOLONTAIREMENT NON COMBINÉ ICI (limite documentée, pas une
 invention silencieuse) :
   - **Confirmation comme NIVEAU STRUCTUREL ABSOLU** (`use_structural_
@@ -141,11 +176,12 @@ invention silencieuse) :
     fait `use_fib_gate` dans `backtest_phase2_fib.py`) reste une
     extrapolation À NOUS, pas ce que le corpus dit pour CE protocole précis
     -- laissé backtest-tunable, cohérent avec `CONFIGURATION_RECOMMANDEE.md`.
-  - **Gate Andrews Pitchfork sur l'entrée** : le corpus documente le rôle et
-    le chiffre de l'outil (90% des cas correctifs), jamais comment
-    l'utiliser comme filtre d'entrée -- hypothèse de gating explicitement
-    reconnue comme telle dans `andrews_pitchfork.py`/`andrews_gate_
-    alternative.py` -- laissé backtest-tunable.
+  - **Gate Andrews Pitchfork, lecture PERMANENTE** (`mode="andrews_permanent"`
+    de `andrews_gate_alternative.py`) : reproduction de l'hypothèse
+    ORIGINALE (filtre à CHAQUE bougie, quel que soit le régime) -- écartée
+    au profit de la lecture CONTEXTUELLE ci-dessus (activée sans condition),
+    jugée plus fidèle au mot "relais" du corpus. Gardée dans son fichier
+    dédié pour comparaison directe, jamais combinée ici.
 
 CORRECTION EXCES H4 (mobilisation multi-agents, audit systématique de
 fidélité IP) : `RULES_EXTRACTION.md` §1 ("Bulle / Excès -> NE PAS TRADER",
@@ -311,24 +347,79 @@ import sys
 from emile.backtests.backtest_phase2 import FEE, load_h1, resample
 from emile.backtests.backtest_phase2_v7 import (
     prepare, PROFILES_V4, MIN_BORDERS, RULE3_STREAK, RULE3_SIZE_MULT,
-    MAX_TRANCHES, EMA_SLOW,
+    MAX_TRANCHES, EMA_SLOW, SWING_ORDER,
 )
-from emile.backtests.backtest_phase2_ut2 import attach_multi_context, CLOSURE_DELAY
+from emile.core.proxy_v2 import compute_swing_low_confirmed
+from emile.backtests.backtest_phase2_ut2 import attach_multi_context, attach_context_level, CLOSURE_DELAY
 from emile.backtests.backtest_phase2_recommended import run_recommended, WARMUP
 from emile.core.position_engine import (
     run_position_engine, make_open_tranche_fn, make_structural_conf_update_fn,
+    compute_squeezed_third_border,
 )
 from emile.core.wall_street_pattern import add_wall_street_column
 from emile.core.capital_tiers import effective_sizing
-from emile.core.regime_classifier import compute_wide_channel
+from emile.core.regime_classifier import (
+    compute_wide_channel, compute_squeeze, compute_use_neuneu, compute_range_border_count,
+)
+from emile.core.andrews_pitchfork import add_andrews_pitchfork_columns
+from emile.core.range_gates import range_gate, range_gate_extra
 
 # RULES_EXTRACTION.md §3, table Money Management range : "+Reverse" (Limite,
 # TP100%+Reverse) n'apparaît QUE sur la ligne "Très agressif" -- scope
 # littéral du corpus, pas une extension arbitraire de notre part.
 REVERSE_SCOPED_PROFILE = "TRES_AGRESSIF"
 
+# RULES_EXTRACTION.md §3bis, tableau Range TENDANCIEL (distinct de §3, Range
+# Neutre) -- 19e round : SEULEMENT les profils où c'est codable SANS
+# INVENTION. Vérifié ligne à ligne contre §3 (pas supposé) :
+#   - FAIBLE   : §3bis Validation=TP25%/Confirmation=TP50%+SL BE, DIFFÉRENT
+#     de §3 (TP50%/SL BE=0%) -- override réel, ci-dessous.
+#   - MODERE   : §3bis Validation=TP25%/Confirmation=TP25%+SL BE est
+#     NUMÉRIQUEMENT IDENTIQUE à §3 (TP25%+SL payé/TP25%+SL BE) -- 0,25/0,25
+#     dans les deux cas. Aucune entrée nécessaire : le profil applique déjà
+#     la bonne grille sans branchement, "SL payé" ne changeant rien
+#     (aucune action sur le stop avant Confirmation dans ce moteur, cf.
+#     tête de `position_engine.py`, "correction la mieux établie du corpus").
+#   - AGRESSIF/TRES_AGRESSIF : EXCLUS. §3bis introduit "SL gain" à l'étape
+#     Target 1 (TP25%+SL gain) -- AUCUNE définition codable (0 occurrence
+#     dans les 17 sources vidéo, le corpus ou le code, y compris "trailing"
+#     -- même motif de refus que le gate Fibonacci RANGE, cf. 19e round).
+#     Ces 2 profils gardent §3 SANS CONDITION, même en régime RANGE_TENDANCIEL.
+# "Target 1" (§3bis) = TP100% pour FAIBLE/MODERE, textuellement IDENTIQUE à
+# "Limite" de §3 (déjà TP100% pour ces 2 profils) -- le mécanisme de clôture
+# à 100% est déjà câblé en dur dans `process_tranche` (`c[i] >= tr["lim_px"]`),
+# AUCUN nouveau stage n'est nécessaire (vérifié au 19e round : pas un
+# changement structurel pour ces 2 profils, contrairement à Agressif/Très
+# Agressif qui en auraient exigé un).
+RANGE_TENDANCIEL_CLOSE_FRACS = {
+    "FAIBLE": {"val_close": 0.25, "conf_close": 0.50},
+}
+
+
+def range_money_management_fracs(profile_name: str, regime_h4_v) -> tuple:
+    """Retourne `(val_close_frac_v, conf_close_frac_v)`, un array PAR BOUGIE
+    (même longueur que `regime_h4_v`) : la grille §3bis ci-dessus si le
+    profil a une entrée dans `RANGE_TENDANCIEL_CLOSE_FRACS` ET que la bougie
+    est en régime RANGE_TENDANCIEL, sinon la grille §3 par défaut du profil
+    (`PROFILES_V4`) -- fonction PURE, ne recalcule aucun indicateur, réutilisée
+    à l'identique par `unified_protocol.py` (pas de copie, cf. chantier
+    d'architecture 24e round)."""
+    p = PROFILES_V4[profile_name]
+    default_val, default_conf = p["val_close"], p["conf_close"]
+    override = RANGE_TENDANCIEL_CLOSE_FRACS.get(profile_name)
+    n = len(regime_h4_v)
+    if override is None:
+        return np.full(n, default_val), np.full(n, default_conf)
+    regime_h4_v = np.asarray(regime_h4_v)
+    is_tendanciel = regime_h4_v == "RANGE_TENDANCIEL"
+    val_v = np.where(is_tendanciel, override["val_close"], default_val)
+    conf_v = np.where(is_tendanciel, override["conf_close"], default_conf)
+    return val_v, conf_v
+
 def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
-                       use_mtf_gate: bool = True) -> dict:
+                       use_mtf_gate: bool = True,
+                       closure_delay_d1: pd.Timedelta = None,
+                       closure_delay_weekly: pd.Timedelta = None) -> dict:
     """Calcule toutes les colonnes une seule fois sur l'historique complet.
     `d1` : fournit le VRAI stop cross-timeframe UT+1 (littéral, cf. tête de
     fichier) -- rôle DIFFÉRENT du D1 dans `backtest_phase2_ut2.py` (qui s'en
@@ -347,15 +438,38 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
     concerné et reste inconditionnel dans les deux cas, cf. tête de fichier.
     Raison d'être : `code/oos_xrp_faithful.py` (donnée disponible trop
     courte pour faire converger un niveau de gate placé DEUX crans au-dessus
-    du niveau d'exécution)."""
+    du niveau d'exécution).
+
+    `closure_delay_d1`/`closure_delay_weekly` (AJOUTÉS ce cycle, additifs,
+    défaut `None` -> `CLOSURE_DELAY` chacun, comportement EXACTEMENT
+    inchangé pour tout appelant existant, dont `unified_protocol.py`) :
+    permettent de recalibrer le délai de clôture par niveau quand cette
+    fonction sert à un couple (niveau bas, niveau haut) DIFFÉRENT de
+    (H4, D1)/(H4, Hebdomadaire) -- ex. expérience H1 (H1 exécution, H4 au
+    rôle `d1`, D1 au rôle `weekly`, cf. `h1_timeframe_bench.py`). `D1`/`W`
+    sont des offsets pandas ANCRÉS différemment (`resample(df, rule)` de
+    `backtest_phase2.py` -- vérifié empiriquement, pas supposé) : "D"/"4h"
+    sont des offsets à fréquence FIXE, label=début de période -- une bougie
+    D1 n'est intégralement close qu'1 jour après son `date`, une bougie H4
+    que 4h après (`CLOSURE_DELAY`=1 jour EST la durée exacte d'une bougie
+    D1, mais serait 6x trop tardif -- pas un lookahead, juste une fraîcheur
+    inutilement dégradée -- si réutilisé tel quel pour une bougie H4).
+    "W" est un offset ANCRÉ, label=FIN de période par défaut pandas : une
+    bougie Hebdomadaire est déjà entièrement close AU MOMENT de son `date`
+    -- `CLOSURE_DELAY`=1 jour n'est ici qu'une marge de sécurité, pas la
+    durée d'attente réelle (d'où le commentaire historique "1 jour, PAS 1
+    semaine, pour W" : aucun bug, les deux offsets ont juste des
+    conventions de label différentes)."""
     h4 = prepare(h4)
     h4 = add_wall_street_column(h4)
+    h4 = add_andrews_pitchfork_columns(h4)
     d1 = prepare(d1)
-    ctx_levels = [("D1", d1)]
+    d1_delay = CLOSURE_DELAY if closure_delay_d1 is None else closure_delay_d1
+    weekly_delay = CLOSURE_DELAY if closure_delay_weekly is None else closure_delay_weekly
+    ctx = {"D1": attach_context_level(h4, d1, closure_delay=d1_delay)}
     if use_mtf_gate:
         weekly = prepare(weekly)
-        ctx_levels.append(("W", weekly))
-    ctx = attach_multi_context(h4, ctx_levels, closure_delay=CLOSURE_DELAY)
+        ctx["W"] = attach_context_level(h4, weekly, closure_delay=weekly_delay)
 
     if use_mtf_gate:
         gate_score = ctx["W"]["score"]
@@ -364,7 +478,7 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         gate_score = np.full(len(h4), np.inf)
         gate_regime = np.full(len(h4), "RANGE_NEUTRE", dtype=object)
 
-    return {
+    feat = {
         "date": h4["date"].values,
         "open": h4["open"].values, "high": h4["high"].values,
         "low": h4["low"].values, "close": h4["close"].values,
@@ -383,7 +497,37 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         "gate_score": gate_score,
         "gate_regime": gate_regime,
         "regime_h4": h4["regime"].values,   # cf. CORRECTION EXCES H4 en tête de fichier
+        # Alias -- MÊME array que "regime_h4" ci-dessus, jamais recalculé --
+        # pour que `range_gates.range_gate`/`range_gate_extra` (chantier
+        # d'architecture, cf. PLAN.md) fonctionnent sans connaître les 2 noms
+        # historiques ("regime_h4" ici, "regime" dans `unified_protocol.py`).
+        "regime": h4["regime"].values,
+        # Routage RANGE "3ème borne" vs "Neuneu" (littéral, guide officiel PRO
+        # Indicators, `docs/GUIDE_STRATEGIE_PRO_INDICATORS.md` section 3.1,
+        # `PLAN.md` "32e application"). Calculé sur le régime/n_borders H4
+        # NATIFS (l'échelle propre du range, pas D1/Hebdomadaire) -- même
+        # niveau que "regime_h4"/"n_borders" ci-dessus, jamais recalculé.
+        # EXPOSÉ mais PAS ENCORE CONSOMMÉ par aucun moteur : la structure
+        # "3ème borne" (déjà codée, §3/§3bis) reste appliquée SANS CONDITION
+        # à ce stade -- seul le mécanisme "Neuneu" lui-même (grille de
+        # risque distincte, stop trailing non-séquentiel, cf. PLAN.md pour
+        # le diagnostic complet) reste à construire, dans un round séparé.
+        # Strictement additif : cette clé de plus ne change AUCUN calcul
+        # existant, vérifié par la suite complète + régénération bit-à-bit
+        # des CSV.
+        "use_neuneu": compute_use_neuneu(
+            h4["regime"].values,
+            compute_range_border_count(
+                h4["regime"].values, compute_swing_low_confirmed(h4["low"].values, order=SWING_ORDER)
+            ),
+        ),
         "regime_d1": ctx["D1"]["regime"],   # cf. CORRECTION CONFLIT MTF en tête de fichier
+        # Invalidation 3BR par SQUEEZE sur l'UT+1 (littérale, inconditionnelle
+        # -- guide officiel PRO Indicators, `docs/GUIDE_STRATEGIE_PRO_
+        # INDICATORS.md` section 3.2, citation exacte en tête de
+        # `range_gates.py`). MÊME niveau D1 que `regime_d1`/`ctx_support_d1`,
+        # MÊME jointure sans lookahead, jamais recalculé localement.
+        "squeeze_d1": compute_squeeze(ctx["D1"]["ctx_width_pct"]),
         "wall_street_active": h4["wall_street_active"].values,
         # Règle de volatilité "Stop Loss = taille du canal" (littérale,
         # inconditionnelle, cf. tête de fichier). Largeur du canal D1 -- le
@@ -391,7 +535,31 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         # (H-Canal-Large-2), joint par la MÊME jointure sans lookahead, jamais
         # recalculé localement.
         "wide_channel": compute_wide_channel(ctx["D1"]["ctx_width_pct"]),
+        # Fourchette d'Andrews, lecture CONTEXTUELLE (littérale, inconditionnelle
+        # sur son périmètre RANGE_TENDANCIEL, cf. tête de fichier et
+        # `andrews_gate_alternative.py`).
+        "pitchfork_p1": h4["pitchfork_p1"].values,
     }
+    return _add_squeeze_columns(feat)
+
+def _add_squeeze_columns(feat: dict) -> dict:
+    """Variante d'entrée "3ème borne squeezée" (#15 Variante 2, 18e round,
+    citation exacte, effet mesuré quasi nul mais réel -- cf. tête de fichier
+    pour le principe d'agrégation). `compute_squeezed_third_border` ne
+    recalcule aucun indicateur : `low`/`high`/`local_range` viennent de
+    `_prepare_features` ci-dessus, `is_swing_low_confirmed` réutilise la
+    MÊME primitive causale (`compute_swing_low_confirmed`, P0-bis) que
+    `n_borders`/`fibonacci.py`, jamais une redéfinition locale. Fonction
+    séparée (pas inline dans `_prepare_features`) pour rester appelable sur
+    un `feat` déjà construit (tests, `unified_protocol.py`)."""
+    is_swing_low = compute_swing_low_confirmed(feat["low"], order=SWING_ORDER)
+    squeeze_armed, squeeze_mid, squeeze_sup = compute_squeezed_third_border(
+        feat["low"], feat["high"], feat["local_range"], is_swing_low, SWING_ORDER)
+    feat = dict(feat)
+    feat.update({
+        "squeeze_armed": squeeze_armed, "squeeze_mid": squeeze_mid, "squeeze_sup": squeeze_sup,
+    })
+    return feat
 
 def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
               start: int = 0, end: int = None, record_trace: bool = False,
@@ -416,12 +584,20 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
     local_range_v = feat["local_range"][start_:end]
     context_range_v = feat["context_range"][start_:end]
     n_borders_v = feat["n_borders"][start_:end]
-    gate_score = feat["gate_score"][start_:end]
-    gate_regime = feat["gate_regime"][start_:end]
-    regime_h4_v = feat["regime_h4"][start_:end]
-    regime_d1_v = feat["regime_d1"][start_:end]
+    # gate_score/gate_regime/regime_d1_v/pitchfork_p1_v : plus extraits ici --
+    # `gate`/`gate_extra` délèguent à `range_gates.range_gate`/`range_gate_
+    # extra`, qui lisent `feat` directement (cf. chantier d'architecture,
+    # suite du 24e round, ci-dessous).
+    regime_h4_v = feat["regime_h4"][start_:end]   # encore utilisé par range_money_management_fracs
     wall_street_v = feat["wall_street_active"][start_:end]
     wide_channel_v = feat["wide_channel"][start_:end]   # littéral, non conditionnel
+    # Variante d'entrée "3ème borne squeezée" (littérale, non conditionnelle,
+    # cf. tête de fichier et `_add_squeeze_columns`) : inerte par construction
+    # tant que `squeeze_armed_v` est faux partout (aucun changement pour un
+    # `feat` synthétique qui ne l'active jamais explicitement).
+    squeeze_armed_v = feat["squeeze_armed"][start_:end]
+    squeeze_mid_v = feat["squeeze_mid"][start_:end]
+    squeeze_sup_v = feat["squeeze_sup"][start_:end]
     # OPTIONNEL (défaut OFF) : la clé n'est LUE que si le mode structurel est
     # demandé, pour qu'un appelant qui construit son propre `feat` (tests
     # synthétiques, harnais externes) ne soit jamais cassé par l'ajout de
@@ -438,41 +614,38 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
 
     local_warmup = max(0, WARMUP - start_)
 
+    # Chantier d'architecture, SUITE du 24e round (cf. PLAN.md) : `gate`/
+    # `gate_extra` DÉLÉGUENT désormais à `range_gates.range_gate`/
+    # `range_gate_extra` -- l'UNIQUE implémentation, partagée avec
+    # `unified_protocol.py`/`risk_aggregation_triple_system.py` (avant ce
+    # chantier, cette fonction était une SECONDE copie à la main du même
+    # texte, exactement le risque déjà corrigé pour `risk_aggregation_
+    # triple_system.py` au 24e round -- juste jamais traité pour CE côté-ci).
+    # `i`/`j` ici sont des index LOCAUX (dans la fenêtre `[start_:end)`) ;
+    # `range_gate`/`range_gate_extra` indexent `feat` de façon ABSOLUE (même
+    # convention que dans `unified_protocol.py`, qui ne découpe jamais) --
+    # d'où la traduction `start_ + i`. `feat` ici est le dict COMPLET reçu en
+    # paramètre (jamais réassigné), pas les arrays locaux déjà tranchés.
     def gate(i: int) -> bool:
-        # CORRECTION EXCES H4 (cf. tête de fichier) : le régime EXCES du H4
-        # natif (timeframe d'exécution) doit bloquer, pas seulement celui du
-        # contexte Hebdomadaire -- "Bulle/Excès -> NE PAS TRADER"
-        # (RULES_EXTRACTION.md §1) porte sur le marché qu'on trade, pas
-        # seulement sur son contexte supérieur.
-        # CORRECTION CONFLIT MTF (cf. tête de fichier) : ne jamais ouvrir une
-        # tranche RANGE H4 si le contexte immédiatement supérieur (D1) est
-        # LUI-MÊME en régime range (Neutre ou Tendanciel) -- source #5,
-        # "L'erreur numéro un".
-        d1_not_range = regime_d1_v[i] not in ("RANGE_NEUTRE", "RANGE_TENDANCIEL")
-        return bool(
-            gate_score[i] >= 2 and gate_regime[i] != "EXCES"
-            and regime_h4_v[i] != "EXCES" and d1_not_range
-        )
+        return range_gate(feat, start_ + i)
 
     def gate_extra(j):
-        # Abstention Wall Street NON CONDITIONNELLE (littérale, cf. tête de
-        # fichier) : bloque entrée fraîche ET renfort, même comportement que
-        # le mode "wall_street_abstention" de `backtest_phase2_patterns.py`
-        # (réutilisé à l'identique, pas réinventé).
-        abstain = bool(wall_street_v[j])
-        g = gate(j) and not abstain
-        # CORRECTION PYRAMIDALISATION-RÉGIME (cf. tête de fichier) : le
-        # renfort (pas l'entrée fraîche) exige EN PLUS que le régime H4 natif
-        # soit TENDANCE/RANGE_TENDANCIEL -- "Renfort" n'apparaît jamais dans
-        # la table Money Management RANGE (§3), réservé à la table TENDANCE.
-        pyramiding_allowed = regime_h4_v[j] in ("TENDANCE", "RANGE_TENDANCIEL")
-        return g, (g and pyramiding_allowed)
+        return range_gate_extra(feat, start_ + j)
+
+    # Tableau Range TENDANCIEL (§3bis, 19e/24e rounds) : val_close/conf_close
+    # PAR BOUGIE, branchés sur le régime H4 natif à l'ouverture -- cf.
+    # `range_money_management_fracs` (no-op bit-à-bit pour MODERE/AGRESSIF/
+    # TRES_AGRESSIF, override réel seulement pour FAIBLE en RANGE_TENDANCIEL).
+    val_close_frac_v, conf_close_frac_v = range_money_management_fracs(profile_name, regime_h4_v)
 
     state = {"last_pyramid_high": -np.inf}
     open_tranche_fn = make_open_tranche_fn(
         atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v, high, o, score,
         local_warmup, MIN_BORDERS, MAX_TRANCHES, RULE3_STREAK, RULE3_SIZE_MULT, risk_pct, state,
         extra_gate_fn=gate_extra, wide_channel_v=wide_channel_v,
+        squeeze_armed_v=squeeze_armed_v, squeeze_mid_v=squeeze_mid_v,
+        squeeze_sup_v=squeeze_sup_v, low_v=low,
+        val_close_frac_v=val_close_frac_v, conf_close_frac_v=conf_close_frac_v,
     )
 
     gated_long_signal = np.array([
@@ -505,14 +678,20 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
 def run_faithful(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profile_name: str,
                   capital_eur: float = None, record_trace: bool = False,
                   use_mtf_gate: bool = True,
-                  use_structural_confirmation: bool = False) -> dict:
+                  use_structural_confirmation: bool = False,
+                  closure_delay_d1: pd.Timedelta = None,
+                  closure_delay_weekly: pd.Timedelta = None) -> dict:
     """Point d'entrée principal -- moteur RANGE avec les 3 règles littérales
     du corpus activées SANS CONDITION (cf. tête de fichier). `capital_eur`
     (optionnel) : même paramètre de sizing que `recommended.py`, décision #9,
     inchangée. `use_mtf_gate` (AJOUTÉ ce cycle, additif, défaut `True` =
     comportement inchangé) : cf. docstring de `_prepare_features` --
-    neutralise SEULEMENT le gate Hebdomadaire, jamais le stop D1 littéral."""
-    feat = _prepare_features(h4, d1, weekly, use_mtf_gate=use_mtf_gate)
+    neutralise SEULEMENT le gate Hebdomadaire, jamais le stop D1 littéral.
+    `closure_delay_d1`/`closure_delay_weekly` : transmis tels quels, cf.
+    docstring de `_prepare_features`."""
+    feat = _prepare_features(h4, d1, weekly, use_mtf_gate=use_mtf_gate,
+                              closure_delay_d1=closure_delay_d1,
+                              closure_delay_weekly=closure_delay_weekly)
     risk_pct = None
     if capital_eur is not None:
         sizing = effective_sizing(capital_eur, profile_name, PROFILES_V4, MAX_TRANCHES)

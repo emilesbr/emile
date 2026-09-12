@@ -652,6 +652,8 @@ from emile.backtests.backtest_phase2_v7 import prepare, LOCAL_DURATION, CONTEXT_
 # bit-à-bit dans `backtest_phase2_ut2.py`/`test_ut2.py`) : réutilisée telle
 # quelle ici plutôt que redécidée, cf. H13/H16.
 from emile.backtests.backtest_phase2_ut2 import CLOSURE_DELAY  # lecture seule, aucune modification
+from emile.core.regime_classifier import compute_squeeze  # lecture seule, aucune modification
+from emile.core.proxy_v2 import compute_swing_low_confirmed, SWING_ORDER  # lecture seule, aucune modification
 
 # --- Constantes de détection des étapes (cf. hypothèses H5-H9 ci-dessus) ---
 ACCUM_RETRACEMENT_LOW, ACCUM_RETRACEMENT_HIGH = 0.38, 0.61        # RULES_EXTRACTION §1
@@ -661,6 +663,209 @@ VOLUME_MA_WINDOW = 20
 VOLUME_EXPANSION_MULT = 1.5                                       # H9
 MAX_CAMPAIGN_RISK_PCT = 0.05                                      # H3, RULES_EXTRACTION §5
 BREAKOUT_SPACE_MULT = 1.0                                         # H15, "Ratio 1:1"
+SUIVI_MAX = 2   # "pas plus de 2 suivis dans une tendance" -- guide officiel PRO Indicators, cf. ci-dessous
+MTF_CASCADE_RISK_PCT = 0.02   # "2% chacun" -- citation exacte, cf. bloc "TENDANCE MULTI-TIMEFRAME" ci-dessous
+
+# ============================================================================
+# "TENDANCE MULTI-TIMEFRAME" (36e-37e rounds, décision directe de l'utilisateur
+# "directeur ingénieur senior" -- "Philippe utilise sa stratégie pour trader un
+# actif sur les différentes timeframes, nous devons agréger toute cette
+# stratégie en une seule"). Citation exacte, `docs/GUIDE_STRATEGIE_PRO_
+# INDICATORS.md` section 4.1 (`Tendance/Tendance.png`) :
+# *"Si votre marché est en train de breaker sur 3 timeframes consécutifs,
+# vous avez alors à faire à une TENDANCE MULTI-TIMEFRAME. Dans ce cas si vous
+# avez le NIVEAU EXPERT vous pouvez trader chaque TF en parallèle avec 2% de
+# risque chacun."*
+#
+# CE QUE CE MÉCANISME EST / N'EST PAS
+# -----------------------------------------------------------------------------
+# Jusqu'ici (`unified_protocol.py`, tous les moteurs `backtest_phase2_*.py`),
+# "multi-timeframe" signifie exclusivement "H4 EXÉCUTÉ, D1/Hebdomadaire comme
+# CONTEXTE/GATE" (validation croisée, stop UT+1, espace libre) -- l'UT
+# supérieure n'est JAMAIS elle-même tradée, seulement consultée. Ce mécanisme
+# est le premier de ce projet où PLUSIEURS UT SONT TRADÉES CONCURREMMENT SUR
+# LE MÊME ACTIF -- exactement l'angle mort identifié par l'utilisateur.
+# Portée : la DÉTECTION de la "Tendance Multi-timeframe" (ci-dessous) et la
+# MESURE de son incidence + du risque agrégé qui en résulterait. La
+# consommation réelle (ouvrir 3 campagnes concurrentes avec risk_pct=0.02
+# chacune) est un chantier séparé, cf. section dédiée de `PLAN.md`.
+#
+# HYPOTHÈSES D'IMPLÉMENTATION (aucune ne recalibre un seuil déjà établi
+# ailleurs -- H1-H12 de ce fichier, H13-H17 du gate "espace libre", restent
+# la référence pour tout ce qui n'est pas propre à CE mécanisme) :
+#
+# H-MTF-Cascade-1 (lecture de "breaker sur 3 timeframes consécutifs") :
+# mesuré AVANT de coder (cf. `PLAN.md` "38e application") que `breakout_raw`
+# (l'événement PONCTUEL de cassure) synchronisé au jour près sur H4 ET D1 ET
+# Hebdomadaire est quasi inexistant (0-1 jour sur 4 actifs, ~6 ans de
+# donnée) -- une lecture littérale au pied de la lettre rendrait la règle
+# vide de sens, exactement le piège "gate inerte" déjà rencontré plusieurs
+# fois dans ce projet (MIN_BORDERS, Cassure de 3BR). Lu à la place comme un
+# ÉTAT SOUTENU : le régime TENDANCE (déjà classé par `regime_classifier.
+# add_regime`, réutilisé tel quel) actif SIMULTANÉMENT sur les 3 UT à un
+# instant donné -- cohérent avec "chaque tendance primaire suit un schéma
+# récurrent" (guide, section 4.2) et avec le fait que le régime TENDANCE
+# lui-même EST la conséquence directe d'un breakout structurel qui a déjà eu
+# lieu sur cette UT (H1 de ce fichier). Mesuré non trivial (ni 0%, ni
+# omniprésent) : cf. `PLAN.md`.
+# H-MTF-Cascade-2 (UT retenues) : H4 (exécution, convention de tout ce
+# fichier) + D1 (UT+1) + Hebdomadaire (UT+2) -- MÊME triplet que le gate
+# "espace libre" (H13-H17 ci-dessous), pas une nouvelle convention inventée.
+# H-MTF-Cascade-3 (délai de disponibilité) : même `CLOSURE_DELAY` (1 jour)
+# que `attach_obstacle_level`/`_attach_channel_support_d1` -- une bougie D1
+# ou Hebdomadaire n'est disponible qu'après sa clôture + ce délai, aucun
+# lookahead, décision déjà prise ailleurs dans ce fichier, pas retranchée ici.
+# ============================================================================
+def attach_regime_is_tendance(low_dates: np.ndarray, df_high_with_regime: pd.DataFrame,
+                               closure_delay: pd.Timedelta = CLOSURE_DELAY) -> np.ndarray:
+    """Pour chaque date de `low_dates` (l'UT dont on veut connaître le
+    contexte), indique si le régime de la DERNIÈRE bougie de `df_high_with_
+    regime` (une UT quelconque, `df_high` par convention car pensé pour une UT
+    SUPÉRIEURE -- H-MTF-Cascade-2 -- mais la fonction ne suppose rien sur la
+    fréquence relative des deux UT) ENTIÈREMENT CLÔTURÉE à cet instant valait
+    "TENDANCE". Aucun lookahead -- même jointure `merge_asof` causale que
+    `attach_obstacle_level` (H-MTF-Cascade-3), jamais de fuseau horaire forcé
+    (H2 corrigé au 37e round -- `_attach_channel_support_d1` -- même
+    convention naive de bout en bout que le reste de ce projet)."""
+    high = df_high_with_regime[["date", "regime"]].copy()
+    high["available_at"] = high["date"] + closure_delay
+    high = high.sort_values("available_at")
+    low = pd.DataFrame({"date": pd.to_datetime(low_dates)}).sort_values("date")
+    merged = pd.merge_asof(
+        low, high, left_on="date", right_on="available_at", direction="backward",
+    )
+    return (merged["regime"].values == "TENDANCE")
+
+def compute_multi_timeframe_trend(regime_exec: np.ndarray, is_tendance_ut1: np.ndarray,
+                                   is_tendance_ut2: np.ndarray) -> np.ndarray:
+    """"Tendance Multi-timeframe" (H-MTF-Cascade-1) : régime TENDANCE
+    simultanément sur l'UT d'exécution (`regime_exec`, ex. H4) ET les 2 UT
+    supérieures déjà jointes sans lookahead (`is_tendance_ut1`/`_ut2`, ex.
+    D1/Hebdomadaire via `attach_regime_is_tendance`). Les 3 arrays doivent
+    déjà être alignés sur la MÊME grille temporelle (celle de `regime_exec`)."""
+    return (regime_exec == "TENDANCE") & is_tendance_ut1 & is_tendance_ut2
+
+# ============================================================================
+# "SUIVI DE TENDANCE" (guide officiel PRO Indicators, `docs/GUIDE_STRATEGIE_
+# PRO_INDICATORS.md` section 4.3, `PLAN.md` "33e application") -- sous-étape
+# ABSENTE de la table à 5 étapes ci-dessus (Accumulation -> Breakout -> ce
+# qui manque ICI -> Divergence -> Pull-Back -> Excès final). Citation exacte
+# des 5 conditions d'activation :
+# *"Rappel des conditions réunies pour activer le suivi de tendance : 1
+# BREAKOUT VALIDÉ ET CONFIRMÉ, 2 MOYENNE HAUSSIÈRE, 3 ÉVITER SI ALERTE DE
+# VOLATILITÉ RÉCENTE, 4 ÉVITER SI SQUEEZE SUR LES PRIX, 5 PAS PLUS DE 2
+# SUIVIS DANS UNE TENDANCE."*
+#
+# Chantier scindé en deux, comme le routage RANGE 3ème borne/Neuneu (32e
+# round) -- même raison : la partie GATING (ce bloc) est vectorisable et
+# testable indépendamment de tout état de campagne ; les 3 branches de
+# RÉ-ENTRÉE elles-mêmes (Repli à la moyenne / Cassure de 3BR / Repli sur 3BR
+# squeezée), chacune avec sa propre grille STOPLOSS/VALIDATION/CONFIRMATION/
+# OBJECTIF, restent un chantier séparé (backlog, cf. PLAN.md) -- elles
+# exigeraient chacune leur propre détecteur de déclenchement (pattern de prix
+# spécifique), pas juste ce gate générique.
+#
+# Correspondance des 5 conditions avec ce qui est DÉJÀ disponible, sans rien
+# inventer au-delà d'UNE seule hypothèse (H-Suivi-1 ci-dessous) :
+#   1. "Breakout validé et confirmé" -- DÉJÀ garanti par construction : cette
+#      condition n'a de sens QUE pendant l'étape POST_BREAKOUT de
+#      `step_campaign`, qui n'est atteinte qu'après `ev["breakout_raw"]`
+#      (cassure + volume + score Framework, RULES_EXTRACTION §1). Aucun calcul
+#      supplémentaire nécessaire -- le simple fait d'appeler cette fonction
+#      DANS ce contexte suffit.
+#   2. "Moyenne haussière" -- pente de l'EMA de fond (`ema_trend_v`, MÊME
+#      filtre que `run_trend_table`/`proxy_v2`, jamais recalculé séparément) :
+#      `ema_trend_v[i] > ema_trend_v[i-1]`, comparaison directe, aucun seuil
+#      à inventer.
+#   3+4. "Alerte de volatilité récente" / "squeeze sur les prix" -- **H-Suivi-1
+#      (hypothèse documentée, la seule nécessaire ici)** : traitées comme LA
+#      MÊME contrainte plutôt que deux mécanismes distincts, faute de
+#      définition séparée pour "récente" dans le corpus (le seul autre usage
+#      du mot "alerte" dans tout le corpus est justement le signal SQUEEZE,
+#      RULES_EXTRACTION.md §2 : *"SQUEEZE | Jaune/Orange (ALERTE)"* -- ce
+#      n'est PAS une coïncidence de vocabulaire, c'est la même notion nommée
+#      deux fois). Lue via `regime_classifier.compute_squeeze` appliqué au
+#      canal H4 natif (`ctx_width_pct` de CE DataFrame, pas D1 -- "sur les
+#      prix" désigne l'UT d'exécution de la tendance, pas l'UT+1), lecture
+#      CONTEMPORAINE (même choix qu'H-Squeeze-UT1-1 au 31e round : le corpus
+#      ne chiffre pas "récente", pas de fenêtre de recul inventée).
+#   5. "Pas plus de 2 suivis" -- **stateful** (dépend du nombre de suivis déjà
+#      pris PAR CETTE campagne) : `campaign["n_suivis"]`, plafonné à
+#      `SUIVI_MAX`, cf. implémentation de la branche ci-dessous.
+# ============================================================================
+
+def compute_suivi_conditions(ema_trend, ctx_width_pct) -> np.ndarray:
+    """Combine les conditions 2/3/4 ci-dessus (celles vectorisables sans état
+    de campagne) : moyenne haussière ET pas de squeeze sur le canal H4.
+    Retourne un array booléen aligné sur `ema_trend`/`ctx_width_pct`.
+
+    Ne couvre PAS les conditions 1 (implicite au contexte d'appel) ni 5
+    (stateful, cf. bloc ci-dessus) -- l'appelant doit les combiner lui-même."""
+    ema_v = np.asarray(ema_trend, dtype=float)
+    ema_rising = np.concatenate(([False], ema_v[1:] > ema_v[:-1]))
+    squeeze_h4 = compute_squeeze(ctx_width_pct)
+    return ema_rising & ~squeeze_h4
+
+# ============================================================================
+# Branche "CASSURE DE 3BR" (34e round, `PLAN.md`) -- PREMIÈRE des 3 branches
+# de ré-entrée implémentée (Repli à la moyenne / Repli sur 3BR squeezée
+# restent backlog). Citation exacte (`Suivi-de-tendance/Cassure-de-3br.png`) :
+# *"1 LA 3BR DOIT ÊTRE VALIDÉE ET CONFIRMÉE, 2 PAS DE SQUEEZE DE PRIX UT+1,
+# 3 ENTREE AU BREAKOUT DE LA 3BR, 4 MOMENTUM > 80 (OPTIONNEL), 5 BREAK
+# SINEWAVE (OPTIONNEL). Gestion du risque, risque max 2% : Stoploss = sous
+# le point bas du range ou sous le contexte UT+1. Validation = cassure du
+# point haut précédent (NE SURTOUT PAS DÉPLACER LE STOPLOSS). Confirmation
+# = report du range. Objectif : le plus simple est de placer un ordre
+# d'entrée de type stop-achat au-dessus du niveau de la 3BR une fois que
+# cette dernière est validée et confirmée... vous pouvez mettre une alerte !"*
+#
+# Choisie en PREMIER (recommandation directeur, cf. PLAN.md) car sa grille
+# de risque (stop inchangé à la Validation, breakeven optionnel à la
+# Confirmation) correspond EXACTEMENT au modèle DÉJÀ en place dans ce
+# fichier (stop de campagne unique, bascule breakeven à un point précis --
+# comme `div_to_be` à la Divergence) -- contrairement au mécanisme Neuneu
+# (32e round, RANGE), elle n'exige AUCUNE nouvelle primitive de stop
+# trailing ni d'ordre non séquentiel.
+#
+# Modélisation retenue, 2 hypothèses explicites (tout le reste est littéral
+# ou déjà disponible) :
+#   - **H-Suivi-Cassure3BR-1 (stop)** : la citation donne un stop DÉDIÉ à
+#     cette jambe ("sous le point bas du range ou sous le contexte UT+1"),
+#     ce qui exigerait de faire circuler une donnée D1 (UT+1) jusque dans
+#     cette boucle -- absent aujourd'hui de `run_trend_table` sauf activation
+#     du gate "espace libre" (`df_ut1`). Plutôt que d'ajouter cette
+#     plomberie pour une seule branche, réutilisation du stop DE CAMPAGNE
+#     déjà existant (jamais indépendant par jambe dans ce fichier, y
+#     compris pour Accumulation/Breakout/Pull-Back) -- cohérent avec le
+#     modèle déjà en place, pas une invention.
+#   - **H-Suivi-Cassure3BR-2 (taille)** : AUCUNE fraction de profil n'existe
+#     pour "Suivi de tendance" (absent de `RULES_EXTRACTION.md`/`PROFILES_
+#     TREND` -- ce mécanisme vient exclusivement du nouveau guide). Plutôt
+#     que d'inventer une fraction, réutilisation LITTÉRALE du "risque max 2%"
+#     donné par la citation elle-même : taille = `SUIVI_RISK_PCT / stop_pct`
+#     (même formule que le sizing par risque de `position_engine.py` côté
+#     RANGE), plafonnée comme toute jambe par `MAX_CAMPAIGN_RISK_PCT` (H3)
+#     via `add_leg`.
+#   - "3BR validée et confirmée" (condition 1) = un swing bas CONFIRMÉ
+#     (`compute_swing_low_confirmed`, MÊME primitive que `n_borders`/
+#     `compute_range_border_count` -- jamais une 2e définition de "borne")
+#     s'est produit depuis le dernier plus haut de la campagne. "Triangle de
+#     confirmation" (mentionné dans la version RANGE du même concept) reste
+#     NON implémenté ici, comme partout ailleurs dans ce projet (pattern
+#     géométrique jamais défini précisément dans le corpus, catégorie A).
+#   - "Pas de débordement du sommet, sinon 3BR squeezée" (distinction avec
+#     la branche "Repli sur 3BR squeezée", RESTÉE backlog) N'EST PAS testée
+#     ici -- en l'absence de cette autre branche pour "récupérer" les cas
+#     débordants, cette implémentation les traite comme des Cassures de 3BR
+#     normales. Documenté honnêtement, pas masqué : un sur-déclenchement
+#     mineur tant que l'autre branche n'existe pas.
+#
+# Paramètre `use_suivi_de_tendance` (défaut `False`, cf. `run_trend_table`)
+# -- même convention que `use_breakout_space_gate` : mécanisme chargé
+# d'hypothèses, activé explicitement pour comparaison, PAS le comportement
+# par défaut du moteur tant qu'il n'a pas été mesuré et décidé.
+# ============================================================================
+SUIVI_RISK_PCT = 0.02   # "risque max 2%" -- citation exacte, cf. bloc ci-dessus
 
 # --- Table de money management "trade de tendance" (RULES_EXTRACTION §4) ---
 # accum_frac / breakout_frac / pullback_frac : fractions de l'unité U ajoutées
@@ -692,12 +897,22 @@ PROFILES_TREND = {
 # Préparation des données (indicateurs, réutilisant proxy_v2/regime_classifier
 # via backtest_phase2_v7.prepare, + colonnes propres à la table de tendance)
 # ---------------------------------------------------------------------------
-def add_trend_context(df: pd.DataFrame) -> pd.DataFrame:
+def add_trend_context(df: pd.DataFrame, local_duration=LOCAL_DURATION, context_duration=CONTEXT_DURATION) -> pd.DataFrame:
     """Ajoute les colonnes propres à la détection des 5 étapes, en plus de
     celles déjà posées par `backtest_phase2_v7.prepare` (score, atr, regime,
     ctx_support, local_range, context_range, n_borders). Toutes les colonnes
     ajoutées ici sont calculées de façon causale (rolling, jamais de
-    lookahead)."""
+    lookahead).
+
+    `local_duration`/`context_duration` (39e round, mêmes défauts, mêmes
+    paramètres, même justification que `backtest_phase2_v7.prepare` -- cf.
+    sa docstring) : transmis tels quels au rolling de `ctx_high`/`ctx_low`/
+    `local_high` ci-dessous, pour qu'un appelant qui recalibre `prepare` en
+    nombre de bougies (UT autre que H4) obtienne des niveaux `local_high`/
+    `ctx_high` COHÉRENTS avec ses propres `local_range`/`context_range` --
+    sinon `breakout_raw` (`c[i-1] > local_high_v[i-1]`) resterait calibré sur
+    l'ancienne échelle calendaire alors même que `n_borders` serait corrigé,
+    un mélange d'échelles pire que de ne rien corriger du tout."""
     df = df.copy()
     ema_slow = df["ctx_support"] + 2 * df["atr"]        # inverse de v7::prepare (ctx_support = ema_slow - 2*atr)
     df["ctx_resistance"] = ema_slow + 2 * df["atr"]      # bande haute du canal (jamais calculée par v7, qui ne stoppe que long)
@@ -708,9 +923,9 @@ def add_trend_context(df: pd.DataFrame) -> pd.DataFrame:
     # glissant inclurait toujours la bougie qu'on teste, qui majore forcément
     # sa propre clôture).
     ts = df.set_index("date")
-    df["ctx_high"] = ts["high"].rolling(CONTEXT_DURATION).max().shift(1).values
-    df["ctx_low"] = ts["low"].rolling(CONTEXT_DURATION).min().shift(1).values
-    df["local_high"] = ts["high"].rolling(LOCAL_DURATION).max().shift(1).values  # base immédiate ("accumulation"), plus proche que ctx_high
+    df["ctx_high"] = ts["high"].rolling(context_duration).max().shift(1).values
+    df["ctx_low"] = ts["low"].rolling(context_duration).min().shift(1).values
+    df["local_high"] = ts["high"].rolling(local_duration).max().shift(1).values  # base immédiate ("accumulation"), plus proche que ctx_high
 
     ctx_span = (df["ctx_high"] - df["ctx_low"]).replace(0, np.nan)
     df["accum_retracement_frac"] = ((df["ctx_high"] - df["close"]) / ctx_span).values
@@ -836,6 +1051,14 @@ def step_campaign(campaign: dict, i: int, o, high, low, c, ev: dict, profile: di
     pas-ci en Excès final. Le Pull-Back (path-dependent : dépend du plus haut
     et du creux propres à CETTE campagne) est calculé ICI, pas dans `ev`.
 
+    `ev["suivi_ok"]`/`ev["swing_low_confirmed"]` (OPTIONNELS, `.get(...,
+    False)` -- absents ou faux -> comportement RIGOUREUSEMENT inchangé pour
+    tout appelant existant) : branche "Cassure de 3BR" du mécanisme "Suivi de
+    tendance" (34e round, cf. bloc dédié en tête de fichier). `campaign`
+    porte alors en plus, une fois utilisées, les clés `n_suivis`/
+    `suivi_armed_level` (absentes tant que la branche ne s'est jamais
+    déclenchée pour cette campagne).
+
     Retourne (closed: bool, fee_frac: float, realized_pnl: float|None,
     reverse_request: dict|None). `reverse_request` n'est renseigné que si la
     campagne se clôture en Excès final ET que le profil prévoit +Reverse."""
@@ -868,13 +1091,90 @@ def step_campaign(campaign: dict, i: int, o, high, low, c, ev: dict, profile: di
         # pas la clé (dont `unified_protocol.py::_campaign_ev`, qui réplique
         # ce dict) garde un comportement BIT-À-BIT identique.
         if ev["breakout_raw"] and ev.get("breakout_space_ok", True):
-            actual_add = add_leg(campaign, profile["breakout_frac"], o[i])
-            campaign["stage"] = "POST_BREAKOUT"
-            campaign["swing_high"] = high[i]
+            # "Tendance Multi-timeframe" (42e round, cf. bloc dédié en tête de
+            # fichier) -- `ev.get(..., None)` : ABSENT/None -> comportement
+            # RIGOUREUSEMENT inchangé (fraction de profil), tout appelant
+            # existant garde le même résultat bit-à-bit. Présent (2%,
+            # H-MTF-Cascade-4) -> la jambe de Breakout est dimensionnée par
+            # le RISQUE plutôt que par la fraction fixe du profil -- même
+            # formule que `SUIVI_RISK_PCT` (H-Suivi-Cassure3BR-2), pas une
+            # 2e convention de sizing inventée pour ce mécanisme.
+            mtf_risk_pct = ev.get("mtf_cascade_risk_pct")
+            if mtf_risk_pct is not None:
+                stop_pct = (o[i] - campaign["stop"]) / o[i] if o[i] > 0 else 0.0
+                breakout_add_frac = mtf_risk_pct / stop_pct if stop_pct > 0 else 0.0
+            else:
+                breakout_add_frac = profile["breakout_frac"]
+            actual_add = add_leg(campaign, breakout_add_frac, o[i])
+            # BUG TROUVÉ ET CORRIGÉ CE ROUND (cf. bloc "Suivi de tendance" en
+            # tête de fichier, diagnostic du 35e round) : la transition
+            # n'était PAS conditionnée à un remplissage réel. Pour un profil
+            # à `accum_frac=0.00` (FAIBLE, seul concerné : aucun autre profil
+            # n'entre avec 0 capital engagé), `campaign["stop"]` est fixé une
+            # fois pour toutes à l'ouverture de l'Accumulation et ne bouge
+            # plus tant que `remaining==0` (le stop de protection en tête de
+            # fonction exige `remaining>0`, donc rien ne l'invalide). Si le
+            # Breakout finit par se déclencher (cassure LOCALE, indépendante
+            # du niveau global) longtemps après, à un prix `o[i]` qui a entre
+            # temps glissé SOUS ce stop devenu obsolète, `add_leg` refuse le
+            # remplissage (`stop_dist_pct <= 0` -> `actual_add=0.0`) --
+            # observé une fois sur BTC/FAIBLE (entrée 29300, stop 28949.8,
+            # remplissage refusé à 28940.7). Basculer quand même vers
+            # POST_BREAKOUT créait une campagne "zombie" (remaining=0,
+            # stage != ACCUMULATION) : plus AUCUNE sortie de `step_campaign`
+            # n'est atteignable sans `remaining>0` (Divergence, Cassure de
+            # 3BR, Excès), et `campaign is not None` bloque à vie toute
+            # nouvelle Accumulation -- mesuré : bloque 48,2% de l'historique
+            # BTC/FAIBLE (~7400 bougies H4 sur 15360) jusqu'à la fin des
+            # données, 0 trade. `campaign["remaining"] > 0` (pas
+            # `actual_add > 0`, qui casserait le cas légitime où le plafond
+            # de risque H3 est déjà saturé par la jambe d'Accumulation d'un
+            # profil AGRESSIF/TRES_AGRESSIF -- capital réellement engagé,
+            # transition légitime même si CETTE jambe précise est plafonnée à
+            # 0) : ne bascule que si du capital est RÉELLEMENT engagé après
+            # cet appel : sinon la campagne reste en ACCUMULATION (aucun
+            # capital perdu, attend un futur Breakout ou l'abandon-EXCES,
+            # comportement inchangé pour ce cas).
+            if campaign["remaining"] > 0:
+                campaign["stage"] = "POST_BREAKOUT"
+                campaign["swing_high"] = high[i]
             return False, actual_add, None, None
         return False, 0.0, None, None
 
     if campaign["stage"] == "POST_BREAKOUT":
+        # --- Suivi de tendance, branche "Cassure de 3BR" (34e round, cf. bloc
+        # dédié en tête de fichier) -- STRICTEMENT ADDITIF : `ev.get(...,
+        # False)` retombe sur `False` pour tout appelant qui ne fournit pas
+        # ces 2 clés, comportement RIGOUREUSEMENT inchangé.
+        if ev.get("suivi_ok", False) and campaign.get("n_suivis", 0) < SUIVI_MAX:
+            if ev.get("swing_low_confirmed", False) and campaign.get("suivi_armed_level") is None:
+                # Un swing bas vient de se confirmer -- arme un ordre virtuel
+                # de type stop-achat au niveau du plus haut DÉJÀ ATTEINT par
+                # cette campagne ("cassure du point haut précédent", citation
+                # exacte). `campaign["swing_high"]` inclut déjà `high[i]`
+                # (mis à jour en tête de fonction, avant ce bloc) -- aucun
+                # remplissage possible sur CETTE même bougie (high[i] ne peut
+                # jamais être strictement supérieur à lui-même).
+                campaign["suivi_armed_level"] = campaign["swing_high"]
+            armed_level = campaign.get("suivi_armed_level")
+            if armed_level is not None and campaign["remaining"] > 0 and high[i] > armed_level:
+                # Remplissage réaliste : au niveau armé, ou pire (open) si le
+                # marché a gappé au-dessus -- même convention que la Variante
+                # 2 de #15 (`position_engine.py::compute_squeezed_third_
+                # border`) pour un ordre en attente.
+                fill_price = max(armed_level, o[i])
+                stop_pct = (fill_price - campaign["stop"]) / fill_price if fill_price > 0 else 0.0
+                campaign["suivi_armed_level"] = None
+                if stop_pct > 0:
+                    # H-Suivi-Cassure3BR-2 : sizing par risque, "risque max
+                    # 2%" littéral -- PAS une fraction de profil inventée
+                    # (cf. bloc dédié en tête de fichier). Plafonné comme
+                    # toute jambe par MAX_CAMPAGNE_RISK_PCT via `add_leg`.
+                    add_frac = SUIVI_RISK_PCT / stop_pct
+                    actual_add = add_leg(campaign, add_frac, fill_price)
+                    if actual_add > 0:
+                        campaign["n_suivis"] = campaign.get("n_suivis", 0) + 1
+                        return False, actual_add, None, None
         if ev["divergence_raw"] and campaign["remaining"] > 0:
             close_amt = campaign["remaining"] * profile["div_close_frac"]
             fee_frac = 0.0
@@ -960,7 +1260,10 @@ def step_reverse(reverse_pos: dict, i: int, high, low, c) -> tuple:
 def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
                      use_breakout_space_gate: bool = False,
                      df_ut1: pd.DataFrame = None, df_ut2: pd.DataFrame = None,
-                     space_mult: float = BREAKOUT_SPACE_MULT) -> dict:
+                     space_mult: float = BREAKOUT_SPACE_MULT,
+                     use_suivi_de_tendance: bool = False,
+                     local_duration=LOCAL_DURATION, context_duration=CONTEXT_DURATION,
+                     use_mtf_cascade: bool = False, mtf_cascade_gate: np.ndarray = None) -> dict:
     """Rejoue la table de tendance à 5 étapes sur `df` (H4 ou toute UT unique,
     colonnes date/open/high/low/close), avec `vol` (DataFrame aligné, même
     longueur, colonne "volume" de la même UT — cf. `load_volume`/
@@ -980,12 +1283,63 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
     sont passés par `prepare` + `add_trend_context` ici, puis joints sans
     lookahead par `attach_obstacle_level`. `space_mult` : multiplicateur du
     rendement escompté, 1.0 = Ratio 1:1 (la seule valeur citée par le corpus,
-    H15) ; paramétrable pour la mesure de sensibilité uniquement."""
+    H15) ; paramétrable pour la mesure de sensibilité uniquement.
+
+    `use_suivi_de_tendance` (défaut `False`, préserve BIT-À-BIT le
+    comportement historique -- même convention que `use_breakout_space_gate`
+    ci-dessus) : active la branche "Cassure de 3BR" du mécanisme "Suivi de
+    tendance" (34e round, cf. bloc dédié en tête de fichier, 2 hypothèses
+    documentées H-Suivi-Cassure3BR-1/2). Les 2 autres branches (Repli à la
+    moyenne / Repli sur 3BR squeezée) restent backlog, non activables ici.
+
+    `local_duration`/`context_duration` (39e round, défauts `LOCAL_DURATION`/
+    `CONTEXT_DURATION` -- comportement BIT-À-BIT inchangé pour tout appelant
+    existant) : transmis tels quels à `prepare` (cf. sa docstring, 39e round)
+    -- permet de rejouer ce moteur sur une UT autre que H4 (D1/Hebdomadaire)
+    avec une fenêtre de maturité UT-AGNOSTIQUE (`LOCAL_DURATION_H4_BARS`/
+    `CONTEXT_DURATION_H4_BARS` de `backtest_phase2_v7.py`) plutôt qu'une
+    durée calendaire qui dégénère à cette échelle (38e round,
+    `mtf_cascade_diagnostic.py`).
+
+    `use_mtf_cascade`/`mtf_cascade_gate` (42e round, défaut `False`/`None` --
+    comportement BIT-À-BIT inchangé pour tout appelant existant) : consomme
+    la détection "Tendance Multi-timeframe" du 38e round (H-MTF-Cascade-1..3,
+    bloc dédié en tête de fichier) -- décision explicite de l'utilisateur
+    d'accepter la lecture extrapolée nécessaire pour la câbler (H-MTF-
+    Cascade-4/5 ci-dessous, aucune n'est une lecture littérale supplémentaire
+    du corpus, seulement une extension du précédent déjà établi et accepté
+    pour "Cassure de 3BR"). `mtf_cascade_gate` : array booléen PRÉCALCULÉ par
+    l'appelant (`compute_multi_timeframe_trend`, joint sans lookahead sur LA
+    GRILLE DE `df` via `attach_regime_is_tendance` -- CE fichier ne le
+    recalcule pas lui-même : la "Tendance Multi-timeframe" est une propriété
+    du marché entier (H4+D1+Hebdomadaire), pas relative à l'UT actuellement
+    exécutée, contrairement à `df_ut1`/`df_ut2` du gate "espace libre"
+    ci-dessus -- réutiliser ces derniers ici aurait rebasé le triplet de
+    référence sur l'UT en cours, une erreur). Quand actif :
+    - **H-MTF-Cascade-4 (gate)** : une nouvelle campagne ne peut s'ouvrir en
+      Accumulation QUE si `mtf_cascade_gate[i-1]` est vrai, EN PLUS des
+      conditions habituelles (H1-H12) -- ce moteur n'ouvre alors QUE pendant
+      les fenêtres où le marché entier est confirmé en tendance sur les 3 UT,
+      littéral ("dans ce cas... vous pouvez trader chaque TF").
+    - **H-MTF-Cascade-5 (sizing)** : la jambe de Breakout (PAS la jambe
+      d'Accumulation, qui garde la fraction du profil choisi -- aucune
+      raison de la réinventer, le corpus ne la mentionne pas pour ce
+      mécanisme) est dimensionnée par le RISQUE (`MTF_CASCADE_RISK_PCT`,
+      "2% chacun") plutôt que par `profile["breakout_frac"]` -- même formule
+      que `SUIVI_RISK_PCT` (H-Suivi-Cassure3BR-2), jamais une 2e convention
+      de sizing inventée pour ce mécanisme précis."""
     p = PROFILES_TREND[profile_name]
-    df = prepare(df)
-    df = add_trend_context(df)
+    df = prepare(df, local_duration=local_duration, context_duration=context_duration)
+    df = add_trend_context(df, local_duration=local_duration, context_duration=context_duration)
     n = len(df)
     assert len(vol) == n, "volume désaligné avec df (même resample requis)"
+
+    if use_mtf_cascade:
+        if mtf_cascade_gate is None or len(mtf_cascade_gate) != n:
+            raise ValueError(
+                "use_mtf_cascade=True exige mtf_cascade_gate (array booléen aligné sur `df`, "
+                "précalculé par l'appelant via attach_regime_is_tendance/"
+                "compute_multi_timeframe_trend -- cf. sa docstring)")
 
     obstacle_ut1 = obstacle_ut2 = None
     if use_breakout_space_gate:
@@ -1012,6 +1366,14 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
     # "Rendement escompté" du breakout = amplitude du range d'accumulation
     # local, déjà calculée par `prepare` (H15) et jusqu'ici jamais lue ici.
     local_range_v = df["local_range"].values
+
+    # Suivi de tendance, branche "Cassure de 3BR" (34e round, cf. bloc dédié
+    # en tête de fichier) -- calculé INCONDITIONNELLEMENT (coût négligeable,
+    # mêmes primitives déjà utilisées ailleurs) mais consommé dans `ev`
+    # SEULEMENT si `use_suivi_de_tendance=True`, pour ne rien changer par
+    # défaut.
+    suivi_ok_v = compute_suivi_conditions(ema_trend_v, df["ctx_width_pct"].values)
+    swing_low_confirmed_v = compute_swing_low_confirmed(low, order=SWING_ORDER)
 
     vol_v = vol["volume"].values
     vol_ma = pd.Series(vol_v).rolling(VOLUME_MA_WINDOW).mean().values
@@ -1078,6 +1440,16 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
                 ev["breakout_space_ok"] = breakout_space_ok(
                     c[i - 1], local_range_v[i - 1] / c[i - 1] if c[i - 1] > 0 else float("nan"),
                     (obstacle_ut1[i - 1], obstacle_ut2[i - 1]), space_mult)
+            if use_suivi_de_tendance:
+                # Même convention causale que le reste de `ev` : évalué à
+                # `i - 1` (dernière bougie entièrement close avant l'entrée
+                # potentielle à l'open de `i`).
+                ev["suivi_ok"] = bool(suivi_ok_v[i - 1])
+                ev["swing_low_confirmed"] = bool(swing_low_confirmed_v[i - 1])
+            if use_mtf_cascade:
+                # H-MTF-Cascade-5 : dimensionnement par le risque de la jambe
+                # de Breakout SEULEMENT (cf. docstring de tête de fonction).
+                ev["mtf_cascade_risk_pct"] = MTF_CASCADE_RISK_PCT
             closed, fee_frac, realized, reverse_request = step_campaign(campaign, i, o, high, low, c, ev, p)
             if fee_frac > 0:
                 equity *= (1 - fee * fee_frac)
@@ -1104,6 +1476,12 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
             channel_rejection = low[i - 1] <= ctx_support_v[i - 1] and c[i - 1] > ctx_support_v[i - 1]
             retracement_ok = ACCUM_RETRACEMENT_LOW <= retr_v[i - 1] <= ACCUM_RETRACEMENT_HIGH
             accumulation_active = regime_v[i - 1] == "TENDANCE" and mature and channel_rejection and retracement_ok
+            if use_mtf_cascade:
+                # H-MTF-Cascade-4 : n'ouvre QUE pendant les fenêtres où le
+                # marché entier (H4+D1+Hebdomadaire) est confirmé en
+                # tendance -- en PLUS des conditions habituelles ci-dessus,
+                # jamais à leur place.
+                accumulation_active = accumulation_active and bool(mtf_cascade_gate[i - 1])
             new_campaign, fee_frac = try_open_campaign(i, o, ctx_support_v[i - 1], accumulation_active, p)
             if new_campaign is not None:
                 campaign = new_campaign

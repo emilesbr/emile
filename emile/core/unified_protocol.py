@@ -269,17 +269,20 @@ from emile.backtests.backtest_phase2_v7 import (
     prepare, PROFILES_V4, MIN_BORDERS, RULE3_STREAK, RULE3_SIZE_MULT,
     MAX_TRANCHES, EMA_SLOW,
 )
-from emile.backtests.backtest_phase2_recommended import _prepare_features, WARMUP
-from emile.backtests.backtest_phase2_faithful import REVERSE_SCOPED_PROFILE, run_faithful
-from emile.backtests.backtest_phase2_ut2 import attach_multi_context, CLOSURE_DELAY
+from emile.backtests.backtest_phase2_recommended import WARMUP
+from emile.backtests.backtest_phase2_faithful import (
+    REVERSE_SCOPED_PROFILE, run_faithful, _add_squeeze_columns,
+    range_money_management_fracs, _prepare_features as _prepare_range_features,
+)
+from emile.backtests.backtest_phase2_ut2 import CLOSURE_DELAY
 from emile.core.position_engine import make_open_tranche_fn, process_tranche, process_reverse
-from emile.core.wall_street_pattern import add_wall_street_column
-from emile.core.regime_classifier import compute_wide_channel
+from emile.core.range_gates import range_gate as _range_gate, range_gate_extra as _range_gate_extra
 from emile.core.trend_table import (
     PROFILES_TREND, add_trend_context, add_leg, make_campaign, step_campaign,
     try_open_campaign, step_reverse, load_volume, resample_volume,
     ACCUM_RETRACEMENT_LOW, ACCUM_RETRACEMENT_HIGH, VOLUME_MA_WINDOW,
-    VOLUME_EXPANSION_MULT,
+    VOLUME_EXPANSION_MULT, attach_obstacle_level, breakout_space_ok,
+    BREAKOUT_SPACE_MULT,
 )
 from emile.core.capital_tiers import effective_sizing
 
@@ -302,14 +305,19 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
     """Calcule TOUTES les colonnes nécessaires aux deux moteurs, une fois,
     sur l'historique complet fourni.
 
-    RANGE : réutilise `backtest_phase2_recommended._prepare_features` tel
-    quel (cycle+structure causaux, gate Hebdomadaire "UT+2 strict"), PLUS
-    (CONSOLIDATION, cf. tête de fichier) le stop D1 réel UT+1
-    (`ctx_support_d1`, même jointure sans lookahead que `backtest_phase2_faithful.py`)
-    et la colonne Wall Street (`wall_street_active`).
+    CHANTIER D'ARCHITECTURE (SUITE des 24e/26e rounds, cf. PLAN.md) : le côté
+    RANGE réutilise désormais `backtest_phase2_faithful._prepare_features`
+    (`_prepare_range_features`) TEL QUEL -- stop D1 réel UT+1 (`ctx_support_d1`),
+    abstention Wall Street, canal large, Fourchette d'Andrews contextuelle,
+    3ème borne squeezée, gate Hebdomadaire "UT+2 strict" : tout ça n'est plus
+    RECALCULÉ ici séparément (avant ce chantier, ce fichier maintenait sa
+    PROPRE copie de ces 4 jointures/colonnes, texte quasi identique à
+    `faithful.py` -- même risque de dérive que le `gate`/`gate_extra` déjà
+    unifié au 26e round, jamais traité pour la préparation des features
+    elle-même).
     TENDANCE : réutilise `backtest_phase2_v7.prepare` +
     `trend_table.add_trend_context` tels quels (stop natif H4, hypothèse H4
-    de `trend_table.py`, inchangé -- pas le même stop que RANGE), plus la
+    de `trend_table.py`, inchangé -- PAS le même stop que RANGE), plus la
     détection volume de `trend_table.py` (H9) calculée ici EXACTEMENT comme
     dans `run_trend_table` (même fenêtre glissante, même seuil)."""
     if "volume" not in h4.columns:
@@ -319,21 +327,22 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
             "avec resample_h4_with_volume(h1)."
         )
 
-    range_feat = _prepare_features(h4, weekly, use_mtf_gate=use_mtf_gate)
-
-    # CONSOLIDATION : stop D1 réel (UT+1, cf. backtest_phase2_faithful.py)
-    # et colonne Wall Street (abstention totale, non conditionnelle), côté
-    # RANGE uniquement -- même jointure sans lookahead que `faithful.py`.
-    d1p = prepare(d1.copy())
-    ctx = attach_multi_context(h4, [("D1", d1p)], closure_delay=CLOSURE_DELAY)
-    ctx_support_d1 = ctx["D1"]["ctx_support"]
-
-    h4_ws = prepare(h4[["date", "open", "high", "low", "close"]].copy())
-    h4_ws = add_wall_street_column(h4_ws)
-    wall_street_active = h4_ws["wall_street_active"].values
+    # RANGE (+ tout ce qui est déjà partagé, cf. docstring) : UNIQUE calcul,
+    # plus de copie séparée ici.
+    range_feat = _prepare_range_features(h4, d1, weekly, use_mtf_gate=use_mtf_gate)
 
     trend_df = prepare(h4[["date", "open", "high", "low", "close"]].copy())
     trend_df = add_trend_context(trend_df)
+
+    # Contrainte "espace libre" MTF avant Breakout (H13-H17, littérale,
+    # inconditionnelle côté TENDANCE, cf. trend_table.py::run_trend_table).
+    # Niveaux d'obstacle D1 (UT+1) et Hebdomadaire (UT+2), joints sans
+    # lookahead -- même construction que `run_trend_table(use_breakout_space_
+    # gate=True)`, jamais recalculée ailleurs.
+    d1_trend_ctx = add_trend_context(prepare(d1[["date", "open", "high", "low", "close"]].copy()))
+    weekly_trend_ctx = add_trend_context(prepare(weekly[["date", "open", "high", "low", "close"]].copy()))
+    obstacle_ut1 = attach_obstacle_level(h4[["date"]], d1_trend_ctx, closure_delay=CLOSURE_DELAY)
+    obstacle_ut2 = attach_obstacle_level(h4[["date"]], weekly_trend_ctx, closure_delay=CLOSURE_DELAY)
 
     vol_v = h4["volume"].values
     vol_ma = pd.Series(vol_v).rolling(VOLUME_MA_WINDOW).mean().values
@@ -344,25 +353,27 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
 
     feat = dict(range_feat)
     feat.update({
-        "ctx_support_d1": ctx_support_d1,
-        "regime_d1": ctx["D1"]["regime"],   # cf. CORRECTION CONFLIT MTF en tête de fichier
-        "wall_street_active": wall_street_active,
-        # Règle de volatilité "Stop Loss = taille du canal" (littérale,
-        # inconditionnelle côté RANGE, cf. `backtest_phase2_faithful.py`) --
-        # largeur du canal D1, le MÊME niveau que `ctx_support_d1` qui porte
-        # le stop RANGE ici (H-Canal-Large-2, `position_engine.py`). Répliquée
-        # ici pour que le côté RANGE du protocole unifié reste STRICTEMENT
-        # identique à `faithful.py` (invariant vérifié par
-        # `test_unified_protocol.py::test_pure_range_sequence_matches_faithful_engine`).
-        # Le côté TENDANCE n'est PAS concerné (H-Canal-Large-4 : la règle est
-        # scopée à la table RANGE par le corpus).
-        "wide_channel": compute_wide_channel(ctx["D1"]["ctx_width_pct"]),
-        "regime": trend_df["regime"].values,
+        # "regime"/"regime_d1"/"ctx_support_d1"/"wall_street_active"/
+        # "wide_channel"/"pitchfork_p1"/"squeeze_*" : déjà présents via
+        # `range_feat` ci-dessus -- PAS réajoutés ici (chantier d'architecture,
+        # élimine la duplication qui existait avant ce round).
+        # "ctx_support" (H4 NATIF, hypothèse H4 de trend_table.py -- PAS le
+        # même niveau que "ctx_support_d1") : vérifié bit-à-bit identique à
+        # ce qu'une 2e jointure via `range_feat` produirait (même `prepare()`
+        # sur le même H4 OHLC) -- réutilisé depuis `trend_df`, déjà là pour
+        # le côté TENDANCE, plutôt que dupliqué.
+        "ctx_support": trend_df["ctx_support"].values,
         "ctx_resistance": trend_df["ctx_resistance"].values,
         "ctx_high": trend_df["ctx_high"].values,
         "local_high": trend_df["local_high"].values,
         "accum_retracement_frac": trend_df["accum_retracement_frac"].values,
         "cycle_favorable": trend_df["cycle_favorable"].values,
+        # "local_range" (H15, "rendement escompté" du breakout) N'EST PAS
+        # rajouté ici : déjà présent via `range_feat` (même calcul `prepare()`
+        # sur le même H4 OHLC côté RANGE) -- vérifié bit-à-bit identique à
+        # `trend_df["local_range"]`, réutilisé tel quel plutôt que dupliqué.
+        "obstacle_ut1": obstacle_ut1,
+        "obstacle_ut2": obstacle_ut2,
         "ema_trend": ema_trend_v,
         "volume_expansion": volume_expansion,
     })
@@ -411,6 +422,17 @@ def _campaign_ev(feat: dict, i: int) -> dict:
         "reverse_stop": (max(feat["ctx_resistance"][j], feat["close"][i] * 1.001) if valid_j
                          else feat["close"][i] * 1.03),
         "reverse_target": feat["ctx_support"][j] if valid_j else feat["close"][i] * 0.97,
+        # Contrainte "espace libre" MTF avant Breakout (H13-H17, littérale,
+        # inconditionnelle, cf. tête de fichier et trend_table.py). Évaluée
+        # sur la MÊME bougie j que `breakout_raw` ci-dessus -- consommée par
+        # `step_campaign` via `ev.get("breakout_space_ok", True)`, jamais
+        # bypassée : True seulement si CE calcul le confirme explicitement.
+        "breakout_space_ok": breakout_space_ok(
+            feat["close"][j],
+            feat["local_range"][j] / feat["close"][j] if feat["close"][j] > 0 else float("nan"),
+            (feat["obstacle_ut1"][j], feat["obstacle_ut2"][j]),
+            BREAKOUT_SPACE_MULT,
+        ),
     }
 
 def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profile_name: str,
@@ -456,6 +478,16 @@ def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profil
         sizing = effective_sizing(capital_eur, profile_name, PROFILES_V4, MAX_TRANCHES)
         risk_pct = sizing.risk_pct
     return _run_core_unified(feat, profile_name, risk_pct=risk_pct, record_state=record_state)
+
+# NOTE (chantier d'architecture, SUITE du 24e round, cf. PLAN.md) :
+# `_range_gate`/`_range_gate_extra` (extraits comme fonctions de module au
+# 24e round, mais encore DUPLIQUÉS avec la copie -- fermeture imbriquée --
+# qui vivait dans `backtest_phase2_faithful.py::_run_core`) ont déménagé
+# dans `range_gates.py` (module NEUTRE, sans dépendance vers ce fichier ni
+# vers `backtest_phase2_faithful.py`, pour casser le cycle d'import) --
+# importés en tête de fichier, désormais l'UNIQUE implémentation, réutilisée
+# ICI, dans `backtest_phase2_faithful.py` ET dans `risk_aggregation_triple_
+# system.py`.
 
 def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
                        record_state: bool = False, start: int = 0, end: int = None) -> dict:
@@ -507,35 +539,17 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
     n_total = len(o)
     end = n_total if end is None else end
 
-    def gate(i: int) -> bool:
-        # CORRECTION EXCES H4 (mobilisation multi-agents, audit systématique
-        # de fidélité IP -- cf. CORRECTION dans backtest_phase2_faithful.py) :
-        # le régime EXCES du H4 natif (feat["regime"], déjà calculé pour le
-        # côté TENDANCE, jamais lu ici jusqu'à cette correction) doit aussi
-        # bloquer côté RANGE -- "Bulle/Excès -> NE PAS TRADER"
-        # (RULES_EXTRACTION.md §1) porte sur le marché qu'on trade, pas
-        # seulement sur son contexte Hebdomadaire.
-        # CORRECTION CONFLIT MTF (cf. tête de fichier) : ne jamais ouvrir une
-        # tranche RANGE H4 si le contexte immédiatement supérieur (D1) est
-        # LUI-MÊME en régime range (Neutre ou Tendanciel) -- source #5,
-        # "L'erreur numéro un".
-        d1_not_range = feat["regime_d1"][i] not in ("RANGE_NEUTRE", "RANGE_TENDANCIEL")
-        return bool(
-            feat["gate_score"][i] >= 2 and feat["gate_regime"][i] != "EXCES"
-            and feat["regime"][i] != "EXCES" and d1_not_range
-        )
+    # `gate`/`gate_extra` : alias locaux vers les fonctions de MODULE
+    # `_range_gate`/`_range_gate_extra` ci-dessus (cf. bloc "Chantier
+    # d'architecture") -- plus de fermeture imbriquée à dupliquer ailleurs.
+    gate = lambda i: _range_gate(feat, i)
+    gate_extra = lambda j: _range_gate_extra(feat, j)
 
-    def gate_extra(j):
-        # Abstention Wall Street NON CONDITIONNELLE (littérale, cf.
-        # backtest_phase2_faithful.py) : bloque entrée fraîche ET renfort.
-        abstain = bool(wall_street_v[j])
-        g = gate(j) and not abstain
-        # CORRECTION PYRAMIDALISATION-RÉGIME (cf. tête de fichier) : le
-        # renfort (pas l'entrée fraîche) exige EN PLUS que le régime H4 natif
-        # soit TENDANCE/RANGE_TENDANCIEL -- "Renfort" n'apparaît jamais dans
-        # la table Money Management RANGE (§3), réservé à la table TENDANCE.
-        pyramiding_allowed = feat["regime"][j] in ("TENDANCE", "RANGE_TENDANCIEL")
-        return g, (g and pyramiding_allowed)
+    # Tableau Range TENDANCIEL (§3bis, 19e/24e rounds) : cf.
+    # `backtest_phase2_faithful.py::range_money_management_fracs` (réutilisée
+    # telle quelle, pas dupliquée) -- no-op bit-à-bit pour MODERE/AGRESSIF/
+    # TRES_AGRESSIF, override réel seulement pour FAIBLE en RANGE_TENDANCIEL.
+    val_close_frac_v, conf_close_frac_v = range_money_management_fracs(profile_name, feat["regime"])
 
     range_state = {"last_pyramid_high": -np.inf}
     open_tranche_fn = make_open_tranche_fn(
@@ -543,6 +557,9 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
         feat["n_borders"], high, o, score, WARMUP, MIN_BORDERS, MAX_TRANCHES,
         RULE3_STREAK, RULE3_SIZE_MULT, risk_pct, range_state, extra_gate_fn=gate_extra,
         wide_channel_v=feat["wide_channel"],   # littéral, non conditionnel (cf. faithful.py)
+        squeeze_armed_v=feat["squeeze_armed"], squeeze_mid_v=feat["squeeze_mid"],
+        squeeze_sup_v=feat["squeeze_sup"], low_v=low,
+        val_close_frac_v=val_close_frac_v, conf_close_frac_v=conf_close_frac_v,
     )
     gated_long_signal = np.array([
         (score[i] >= 2) and gate(i) and not bool(wall_street_v[i]) for i in range(n_total)

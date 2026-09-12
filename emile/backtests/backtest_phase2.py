@@ -93,6 +93,34 @@ def load_h1(symbol: str) -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["datetime"])
     return df.sort_values("date")[["date", "open", "high", "low", "close"]].reset_index(drop=True)
 
+_MIN_M15_ROWS = 4000  # meme principe que _MIN_H1_ROWS, mis a l'echelle : une
+                      # bougie M15 dure 1/4 d'une bougie H1, donc une meme
+                      # duree calendaire minimale se traduit par ~4x plus de
+                      # lignes (verifie sur la vraie donnee restauree : BTC/
+                      # ETH/BNB/SOL font 210 085-245 751 lignes M15 pour
+                      # 52 521-61 439 lignes H1 sur la meme periode, ratio
+                      # 4,00-4,01x, pas juste suppose). Valeur non inventee :
+                      # 1000 x 4 = 4000, meme marge de securite que le seuil
+                      # H1 (tres en dessous de tout fichier reel, tres au
+                      # dessus d'un stub degenere) exprimee dans l'unite M15.
+
+def load_m15(symbol: str) -> pd.DataFrame:
+    """Analogue M15 de `load_h1` -- meme garde-fou anti-stub, seuil mis a
+    l'echelle (cf. `_MIN_M15_ROWS`). Donnee M15 native disponible pour BTC/
+    ETH/BNB/SOL uniquement (pas XRP) -- cf. `CLAUDE.md`, section donnees."""
+    path = DATA_DIR / f"{symbol}_15m_processed.csv"
+    df = pd.read_csv(path, usecols=["datetime", "open", "high", "low", "close"])
+    if len(df) < _MIN_M15_ROWS:
+        raise ValueError(
+            f"{path} ne contient que {len(df)} ligne(s) (< {_MIN_M15_ROWS}) -- "
+            f"donnee manifestement absente ou degeneree (stub/placeholder), "
+            f"pas une vraie serie 15m. Refus explicite plutot qu'une sortie "
+            f"degeneree silencieuse (0-1 trade) qui ressemblerait a un "
+            f"resultat honnete. Voir CLAUDE.md, section donnees."
+        )
+    df["date"] = pd.to_datetime(df["datetime"])
+    return df.sort_values("date")[["date", "open", "high", "low", "close"]].reset_index(drop=True)
+
 def resample(df, rule):
     r = df.set_index("date").resample(rule).agg({"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
     return r.reset_index()

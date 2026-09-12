@@ -51,7 +51,10 @@ import sys
 from emile.backtests.backtest_phase2_v7 import MIN_BORDERS
 from emile.backtests.backtest_phase2_recommended import WARMUP
 from emile.backtests.backtest_phase2_faithful import _run_core as _run_core_faithful
-from emile.core.unified_protocol import _run_core_unified, _accumulation_active, decide_now, _aggregate_risk_warning
+from emile.core.unified_protocol import (
+    _run_core_unified, _accumulation_active, _campaign_ev, decide_now, _aggregate_risk_warning,
+)
+from emile.core.trend_table import breakout_space_ok, BREAKOUT_SPACE_MULT
 
 N = WARMUP + 25   # marge suffisante après warmup pour dérouler un scénario complet
 
@@ -76,6 +79,11 @@ def _make_base_feat(n=N):
         # défaut (aucune bougie "très large") -- comme `wall_street_active`
         # ci-dessus, un test dédié l'override pour injecter SON scénario.
         "wide_channel": np.full(n, False),
+        # Fourchette d'Andrews, lecture contextuelle : neutralisée ici
+        # (`close` toujours strictement au-dessus) -- même raison que
+        # `wall_street_active`/`wide_channel` ci-dessus, un test dédié
+        # override pour injecter SON scénario RANGE_TENDANCIEL.
+        "pitchfork_p1": close.copy() - 10.0,
         "local_range": np.full(n, 5.0),
         "context_range": np.full(n, 10.0),
         "n_borders": np.full(n, float(MIN_BORDERS)),
@@ -83,6 +91,7 @@ def _make_base_feat(n=N):
         "gate_regime": np.full(n, "RANGE_NEUTRE", dtype=object),
         "regime": np.full(n, "RANGE_NEUTRE", dtype=object),
         "regime_d1": np.full(n, "TENDANCE", dtype=object),   # jamais en range par défaut -- isole les tests du gate CONFLIT MTF (cf. tête de unified_protocol.py), overridé explicitement par les tests dédiés
+        "squeeze_d1": np.full(n, False),   # jamais squeezé par défaut -- isole les tests du gate d'invalidation 3BR, overridé explicitement par les tests dédiés
         "ctx_resistance": np.full(n, 110.0),
         "ctx_high": np.full(n, 105.0),
         "local_high": np.full(n, 102.0),
@@ -90,7 +99,56 @@ def _make_base_feat(n=N):
         "cycle_favorable": np.full(n, True),
         "ema_trend": np.full(n, 95.0),
         "volume_expansion": np.full(n, False),
+        # Contrainte "espace libre" MTF avant Breakout : neutralisée ici
+        # (niveaux d'obstacle déjà SOUS le prix -> marge infinie, cf.
+        # `trend_table.free_room_frac`) -- même raison que `pitchfork_p1`
+        # ci-dessus, un test dédié override pour injecter SON scénario.
+        "obstacle_ut1": close.copy() - 10.0,
+        "obstacle_ut2": close.copy() - 10.0,
+        # Variante d'entrée "3ème borne squeezée" : neutralisée ici
+        # (`squeeze_armed` toujours faux), même raison que ci-dessus.
+        "squeeze_armed": np.zeros(n, dtype=bool),
+        "squeeze_mid": np.full(n, np.nan),
+        "squeeze_sup": np.full(n, np.nan),
     }
+
+# ---------------------------------------------------------------------------
+# Contrainte "espace libre" MTF avant Breakout (H13-H17) : `_campaign_ev`
+# doit câbler `breakout_space_ok` depuis `feat["local_range"]`/
+# `feat["obstacle_ut1"]`/`feat["obstacle_ut2"]` -- comparé DIRECTEMENT à
+# `trend_table.breakout_space_ok` appelé à la main (pas une réimplémentation
+# qui pourrait diverger), pour un niveau bloquant ET un niveau non bloquant.
+# ---------------------------------------------------------------------------
+def test_campaign_ev_wires_breakout_space_ok_blocking():
+    feat = _make_base_feat()
+    j = WARMUP + 5
+    feat["close"][j] = 100.0
+    feat["local_range"][j] = 20.0   # "rendement escompté" = 20% du prix
+    # Obstacle à 105 -> marge (105-100)/100 = 5%, < 20% requis -> bloquant.
+    feat["obstacle_ut1"][j] = 105.0
+    feat["obstacle_ut2"][j] = 105.0
+    ev = _campaign_ev(feat, j + 1)
+    expected = breakout_space_ok(100.0, 0.20, (105.0, 105.0), BREAKOUT_SPACE_MULT)
+    assert expected is False, "scénario invalide : le calcul de référence devrait déjà être bloquant"
+    assert ev["breakout_space_ok"] is False, (
+        "_campaign_ev doit câbler breakout_space_ok=False quand l'obstacle est trop proche du "
+        "rendement escompté (H13-H17), pas laisser passer par défaut"
+    )
+
+def test_campaign_ev_wires_breakout_space_ok_passing():
+    feat = _make_base_feat()
+    j = WARMUP + 5
+    feat["close"][j] = 100.0
+    feat["local_range"][j] = 5.0   # "rendement escompté" = 5% du prix
+    # Obstacle à 200 -> marge (200-100)/100 = 100%, >= 5% requis -> passant.
+    feat["obstacle_ut1"][j] = 200.0
+    feat["obstacle_ut2"][j] = 200.0
+    ev = _campaign_ev(feat, j + 1)
+    expected = breakout_space_ok(100.0, 0.05, (200.0, 200.0), BREAKOUT_SPACE_MULT)
+    assert expected is True, "scénario invalide : le calcul de référence devrait déjà être passant"
+    assert ev["breakout_space_ok"] is True, (
+        "_campaign_ev doit câbler breakout_space_ok=True quand l'espace libre est suffisant"
+    )
 
 # ---------------------------------------------------------------------------
 # Test 1 (décision #1 révisée, indépendance) : accumulation_active devient
@@ -231,14 +289,19 @@ def test_pure_range_sequence_matches_faithful_engine():
     range_keys = [
         "date", "open", "high", "low", "close", "score", "atr", "ctx_support_d1",
         "local_range", "context_range", "n_borders", "gate_score", "gate_regime",
-        "wall_street_active", "wide_channel",
+        "wall_street_active", "wide_channel", "pitchfork_p1", "squeeze_d1",
+        "squeeze_armed", "squeeze_mid", "squeeze_sup",
     ]
     feat_range_only = {k: feat[k] for k in range_keys}
     # "regime" (unified) et "regime_h4" (faithful) désignent la MÊME grandeur
     # (régime H4 natif) sous deux noms différents -- cf. CORRECTION EXCES H4
     # dans les deux fichiers. "regime_d1" porte le même nom dans les deux
-    # fichiers (cf. CORRECTION CONFLIT MTF) -- copié tel quel.
+    # fichiers (cf. CORRECTION CONFLIT MTF) -- copié tel quel. Les DEUX clés
+    # ("regime_h4" ET "regime") sont désormais nécessaires côté faithful.py
+    # (l'alias "regime" alimente `range_gates.range_gate`, chantier
+    # d'architecture -- cf. PLAN.md).
     feat_range_only["regime_h4"] = feat["regime"]
+    feat_range_only["regime"] = feat["regime"]
     feat_range_only["regime_d1"] = feat["regime_d1"]
 
     for profile in ("FAIBLE", "MODERE", "AGRESSIF", "TRES_AGRESSIF"):
@@ -332,6 +395,80 @@ def test_range_entry_blocked_when_h4_regime_is_exces():
     assert n_open == 0, (
         f"{n_open} tranche(s) RANGE ouverte(s) alors que le régime H4 natif est EXCES, attendu 0 "
         "(le gate EXCES-H4 doit bloquer TOUTE ouverture, entrée fraîche incluse)"
+    )
+
+# ---------------------------------------------------------------------------
+# Tableau Range TENDANCIEL (§3bis, 19e/24e rounds) : câblage dans
+# `_run_core_unified` -- `range_money_management_fracs` (réutilisée de
+# `backtest_phase2_faithful.py`, pas dupliquée) doit fixer les fractions de
+# clôture PAR TRANCHE dès l'ouverture, lisibles sur `live_state["range_
+# tranches"]`.
+# ---------------------------------------------------------------------------
+def test_range_tranche_carries_range_tendanciel_fracs_for_faible():
+    feat = _make_pyramid_range_feat("RANGE_TENDANCIEL")
+    res = _run_core_unified(feat, "FAIBLE", record_state=True)
+    trs = res["live_state"]["range_tranches"]
+    assert len(trs) >= 1, "aucune tranche RANGE ouverte -- scénario invalide"
+    assert abs(trs[0]["val_close_frac"] - 0.25) < 1e-9, (
+        f"val_close_frac={trs[0]['val_close_frac']}, attendu 0.25 (§3bis FAIBLE, RANGE_TENDANCIEL)"
+    )
+    assert abs(trs[0]["conf_close_frac"] - 0.50) < 1e-9, (
+        f"conf_close_frac={trs[0]['conf_close_frac']}, attendu 0.50 (§3bis FAIBLE, RANGE_TENDANCIEL)"
+    )
+
+def test_range_tranche_carries_range_neutre_fracs_for_faible():
+    """Contrôle positif : le MÊME profil FAIBLE, mais régime RANGE_NEUTRE --
+    doit porter la grille §3 par défaut (0,50/0,00), pas celle de §3bis."""
+    feat = _make_pyramid_range_feat("RANGE_NEUTRE")
+    res = _run_core_unified(feat, "FAIBLE", record_state=True)
+    trs = res["live_state"]["range_tranches"]
+    assert len(trs) >= 1, "aucune tranche RANGE ouverte -- scénario invalide"
+    assert abs(trs[0]["val_close_frac"] - 0.50) < 1e-9, (
+        f"val_close_frac={trs[0]['val_close_frac']}, attendu 0.50 (§3, RANGE_NEUTRE)"
+    )
+    assert abs(trs[0]["conf_close_frac"] - 0.00) < 1e-9, (
+        f"conf_close_frac={trs[0]['conf_close_frac']}, attendu 0.00 (§3, RANGE_NEUTRE)"
+    )
+
+def test_range_tranche_modere_unaffected_by_regime():
+    """MODERE : §3bis est un no-op bit-à-bit (cf. `backtest_phase2_
+    faithful.py`) -- mêmes fractions dans les 2 régimes."""
+    feat_n = _make_pyramid_range_feat("RANGE_NEUTRE")
+    feat_t = _make_pyramid_range_feat("RANGE_TENDANCIEL")
+    tr_n = _run_core_unified(feat_n, "MODERE", record_state=True)["live_state"]["range_tranches"][0]
+    tr_t = _run_core_unified(feat_t, "MODERE", record_state=True)["live_state"]["range_tranches"][0]
+    assert abs(tr_n["val_close_frac"] - tr_t["val_close_frac"]) < 1e-9
+    assert abs(tr_n["conf_close_frac"] - tr_t["conf_close_frac"]) < 1e-9
+    assert abs(tr_n["val_close_frac"] - 0.25) < 1e-9
+    assert abs(tr_n["conf_close_frac"] - 0.25) < 1e-9
+
+def test_range_entry_blocked_by_andrews_contextual_gate_when_below_pitchfork_p1():
+    """Fourchette d'Andrews, lecture CONTEXTUELLE (cf. `backtest_phase2_
+    faithful.py`, `andrews_gate_alternative.py`) : régime H4 RANGE_TENDANCIEL
+    partout, `close <= pitchfork_p1` partout -- AUCUNE tranche RANGE ne doit
+    s'ouvrir ("prend le relais" bloque tant que le prix n'a pas repassé
+    au-dessus de la médiane P1)."""
+    feat = _make_pyramid_range_feat("RANGE_TENDANCIEL")
+    feat["pitchfork_p1"] = feat["close"] + 10.0
+    res = _run_core_unified(feat, "MODERE", record_state=True)
+    n_open = len(res["live_state"]["range_tranches"])
+    assert n_open == 0, (
+        f"{n_open} tranche(s) RANGE ouverte(s) alors que le régime H4 est RANGE_TENDANCIEL et "
+        "close <= pitchfork_p1 partout, attendu 0 (le gate Andrews contextuel doit bloquer)"
+    )
+
+def test_range_entry_allowed_by_andrews_contextual_gate_outside_range_tendanciel():
+    """Contrôle positif du test ci-dessus : le MÊME `pitchfork_p1`
+    défavorable, mais régime H4 TENDANCE (pas RANGE_TENDANCIEL) -- le gate
+    Andrews contextuel ne s'applique QUE dans RANGE_TENDANCIEL, donc
+    plusieurs tranches doivent s'ouvrir malgré tout."""
+    feat = _make_pyramid_range_feat("TENDANCE")
+    feat["pitchfork_p1"] = feat["close"] + 10.0
+    res = _run_core_unified(feat, "MODERE", record_state=True)
+    n_open = len(res["live_state"]["range_tranches"])
+    assert n_open > 1, (
+        f"{n_open} tranche(s) RANGE ouverte(s) en régime TENDANCE malgré pitchfork_p1 défavorable, "
+        "attendu plusieurs (le gate Andrews contextuel ne doit s'appliquer qu'en RANGE_TENDANCIEL)"
     )
 
 # ---------------------------------------------------------------------------

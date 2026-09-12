@@ -25,10 +25,13 @@ import pytest
 
 from emile.backtests.backtest_phase2 import load_h1, resample
 from emile.backtests.backtest_phase2_v7 import prepare, PROFILES_V4
-from emile.backtests.backtest_phase2_ut2 import attach_multi_context, CLOSURE_DELAY
+from emile.backtests.backtest_phase2_ut2 import attach_multi_context, attach_context_level, CLOSURE_DELAY
+from emile.core.regime_classifier import compute_squeeze, compute_use_neuneu, compute_range_border_count
+from emile.core.proxy_v2 import compute_swing_low_confirmed, SWING_ORDER
 from emile.backtests.backtest_phase2_recommended import WARMUP
 from emile.backtests.backtest_phase2_faithful import (
     _prepare_features, _run_core, run_faithful, REVERSE_SCOPED_PROFILE,
+    range_money_management_fracs,
 )
 
 # --- Fixtures réelles (petite tranche, réutilisée par plusieurs tests) ---
@@ -75,6 +78,125 @@ def test_stop_is_d1_ctx_support_not_native_h4():
         "le stop D1 (UT+1) est identique au stop H4 natif sur toutes les bougies valides "
         "-- le test ne prouverait rien, vérifier que le mauvais tableau n'est pas branché"
     )
+
+@_skip_if_no_data
+@pytest.mark.data_dependent
+def test_prepare_features_wires_squeeze_d1_from_d1_ctx_width():
+    """`_prepare_features` doit exposer `squeeze_d1` calculé sur la largeur
+    D1 (UT+1, MÊME niveau que `ctx_support_d1`) -- comparé directement à
+    `compute_squeeze` appelé à la main sur `ctx["D1"]["ctx_width_pct"]`, pas
+    une réimplémentation qui pourrait diverger."""
+    h4 = _H4_BTC.copy(); d1 = _D1_BTC.copy(); weekly = _WEEKLY_BTC.copy()
+    feat = _prepare_features(h4.copy(), d1.copy(), weekly.copy())
+
+    h4p = prepare(h4.copy())
+    d1p = prepare(d1.copy())
+    weeklyp = prepare(weekly.copy())
+    ctx_ref = attach_multi_context(h4p, [("D1", d1p), ("W", weeklyp)], closure_delay=CLOSURE_DELAY)
+    expected = compute_squeeze(ctx_ref["D1"]["ctx_width_pct"])
+
+    np.testing.assert_array_equal(feat["squeeze_d1"], expected)
+    assert feat["squeeze_d1"].sum() > 0, (
+        "test vacueux : aucune bougie squeeze_d1 détectée sur BTC H4/D1 réel"
+    )
+
+@_skip_if_no_data
+@pytest.mark.data_dependent
+def test_prepare_features_wires_use_neuneu_from_h4_regime_and_borders():
+    """`_prepare_features` doit exposer `use_neuneu` (routage RANGE "3ème
+    borne" vs "Neuneu") calculé sur le régime/n_borders H4 NATIFS -- comparé
+    directement à `compute_use_neuneu` appelé à la main, pas une
+    réimplémentation qui pourrait diverger. `use_neuneu` n'est encore
+    consommé par aucun moteur (cf. tête de fichier) -- ce test vérifie
+    uniquement le CALCUL, pas un effet sur les trades."""
+    h4 = _H4_BTC.copy(); d1 = _D1_BTC.copy(); weekly = _WEEKLY_BTC.copy()
+    feat = _prepare_features(h4.copy(), d1.copy(), weekly.copy())
+
+    h4p = prepare(h4.copy())
+    swing = compute_swing_low_confirmed(h4p["low"].values, order=SWING_ORDER)
+    border_count = compute_range_border_count(h4p["regime"].values, swing)
+    expected = compute_use_neuneu(h4p["regime"].values, border_count)
+
+    np.testing.assert_array_equal(feat["use_neuneu"], expected)
+    assert 0 < feat["use_neuneu"].sum() < len(feat["use_neuneu"]), (
+        "test vacueux : use_neuneu doit être vrai sur AU MOINS UNE bougie et faux sur "
+        "au moins une autre, sur BTC H4 réel (sinon le routage ne discriminerait rien)"
+    )
+
+@_skip_if_no_data
+@pytest.mark.data_dependent
+def test_prepare_features_closure_delay_params_default_to_unchanged_behavior():
+    """`closure_delay_d1`/`closure_delay_weekly` (AJOUTÉS pour l'expérience
+    H1, `h1_timeframe_bench.py`) : par défaut (`None`), le comportement doit
+    rester STRICTEMENT identique à avant leur ajout -- comparé bit-à-bit à un
+    appel `_prepare_features` sans ces mots-clés (déjà exercé par tous les
+    autres tests de ce fichier, donc ce test est une garantie supplémentaire,
+    pas la seule preuve)."""
+    h4 = _H4_BTC.copy(); d1 = _D1_BTC.copy(); weekly = _WEEKLY_BTC.copy()
+    feat_default = _prepare_features(h4.copy(), d1.copy(), weekly.copy())
+    feat_explicit_none = _prepare_features(h4.copy(), d1.copy(), weekly.copy(),
+                                            closure_delay_d1=None, closure_delay_weekly=None)
+    for key in feat_default:
+        a, b = feat_default[key], feat_explicit_none[key]
+        # `pd.Series.equals` traite NaN == NaN comme vrai (contrairement à
+        # `np.testing.assert_array_equal` sur un array `object` mêlant NaN et
+        # str, ex. `gate_regime` en warmup) -- comparaison bit-à-bit voulue,
+        # pas une tolérance numérique.
+        assert pd.Series(a).equals(pd.Series(b)), f"clé '{key}' diverge"
+
+@_skip_if_no_data
+@pytest.mark.data_dependent
+def test_prepare_features_closure_delay_d1_actually_changes_the_join():
+    """Un `closure_delay_d1` non défaut doit réellement changer la jointure
+    `ctx_support_d1` -- comparé directement à `attach_context_level` appelé à
+    la main avec le même délai (pas une réimplémentation qui pourrait
+    diverger). Garde-fou contre un paramètre accepté mais silencieusement
+    ignoré."""
+    h4 = _H4_BTC.copy(); d1 = _D1_BTC.copy(); weekly = _WEEKLY_BTC.copy()
+    custom_delay = pd.Timedelta(hours=4)
+    feat = _prepare_features(h4.copy(), d1.copy(), weekly.copy(), closure_delay_d1=custom_delay)
+
+    h4p = prepare(h4.copy())
+    d1p = prepare(d1.copy())
+    ctx_ref = attach_context_level(h4p, d1p, closure_delay=custom_delay)
+    np.testing.assert_array_equal(feat["ctx_support_d1"], ctx_ref["ctx_support"])
+
+    feat_default = _prepare_features(h4.copy(), d1.copy(), weekly.copy())
+    valid = ~np.isnan(feat["ctx_support_d1"]) & ~np.isnan(feat_default["ctx_support_d1"])
+    assert valid.sum() > 100, "pas assez de bougies valides pour un test non-vacueux"
+    assert not np.allclose(feat["ctx_support_d1"][valid], feat_default["ctx_support_d1"][valid]), (
+        "un closure_delay_d1 different de CLOSURE_DELAY ne change rien au resultat "
+        "-- le parametre est probablement ignore"
+    )
+
+@_skip_if_no_data
+@pytest.mark.data_dependent
+def test_prepare_features_wires_squeezed_third_border_columns():
+    """Variante d'entrée "3ème borne squeezée" : `_prepare_features` doit
+    exposer `squeeze_armed`/`squeeze_mid`/`squeeze_sup` calculés EXACTEMENT
+    comme un appel direct à `compute_squeezed_third_border` (mêmes tableaux
+    `low`/`high`/`local_range`, même `is_swing_low_confirmed`) -- comparé
+    directement, pas une réimplémentation qui pourrait diverger."""
+    from emile.core.proxy_v2 import compute_swing_low_confirmed
+    from emile.core.position_engine import compute_squeezed_third_border
+    from emile.backtests.backtest_phase2_v7 import SWING_ORDER
+
+    feat = _prepare_features(_H4_BTC.copy(), _D1_BTC.copy(), _WEEKLY_BTC.copy())
+
+    is_swing_low = compute_swing_low_confirmed(feat["low"], order=SWING_ORDER)
+    armed_ref, mid_ref, sup_ref = compute_squeezed_third_border(
+        feat["low"], feat["high"], feat["local_range"], is_swing_low, SWING_ORDER)
+
+    np.testing.assert_array_equal(feat["squeeze_armed"], armed_ref)
+    np.testing.assert_array_equal(feat["squeeze_mid"], mid_ref)
+    np.testing.assert_array_equal(feat["squeeze_sup"], sup_ref)
+    # Pas de garde-fou "au moins une bougie armée" ici : la configuration est
+    # rarissime par construction (2-14 bougies sur ~14 000 mesurées au 18e
+    # round, sur l'historique COMPLET) -- l'exiger sur cette fenêtre de 800
+    # bougies (fixture partagée du fichier) rendrait le test flaky sans
+    # ajouter de rigueur. Le non-vacueux réel de ce mécanisme est déjà
+    # couvert par `test_position_engine.py` (détecteur) et par la mesure
+    # honnête publiée dans `PLAN.md` (18e/22e round, sur 6 ans complets).
 
 @_skip_if_no_data
 @pytest.mark.data_dependent
@@ -205,7 +327,15 @@ def _synthetic_pyramid_feat(n: int, regime_h4_value) -> dict:
         "gate_score": np.full(n, 10.0),
         "gate_regime": np.full(n, "TENDANCE", dtype=object),
         "regime_h4": np.full(n, regime_h4_value, dtype=object),
+        "regime": np.full(n, regime_h4_value, dtype=object),   # alias, cf. range_gates.py
         "regime_d1": np.full(n, "TENDANCE", dtype=object),   # jamais en range -- isole le test du gate CONFLIT MTF
+        # Invalidation 3BR par squeeze UT+1 (littérale, inconditionnelle) :
+        # neutralisée ici (jamais squeezé), même raison que
+        # `wall_street_active` ci-dessous -- ce tableau isole l'effet de
+        # `regime_h4`. Le mécanisme lui-même (`compute_squeeze`) est testé à
+        # part dans `test_regime_classifier.py` ; son câblage dans le gate,
+        # par un test dédié plus bas dans ce fichier.
+        "squeeze_d1": np.zeros(n, dtype=bool),
         "wall_street_active": np.zeros(n, dtype=bool),
         # Règle de volatilité "Stop Loss = taille du canal" (littérale,
         # inconditionnelle, cf. tête de `backtest_phase2_faithful.py`) :
@@ -215,6 +345,19 @@ def _synthetic_pyramid_feat(n: int, regime_h4_value) -> dict:
         # temps. Le mécanisme lui-même est testé à part, à vérité terrain,
         # dans `test_position_engine.py` (5 tests) et `test_regime_classifier.py`.
         "wide_channel": np.zeros(n, dtype=bool),
+        # Fourchette d'Andrews, lecture contextuelle (littérale, inconditionnelle
+        # sur le régime RANGE_TENDANCIEL, cf. tête de `backtest_phase2_faithful.py`) :
+        # neutralisée ici (`close` toujours strictement au-dessus), même
+        # raison que `wall_street_active`/`wide_channel` ci-dessus -- ce
+        # tableau isole l'effet de `regime_h4`, il ne doit pas faire varier
+        # un 2e gate en même temps.
+        "pitchfork_p1": close - 10.0,
+        # Variante d'entrée "3ème borne squeezée" : neutralisée ici
+        # (`squeeze_armed` toujours faux -- `mid`/`sup` ne sont jamais lus
+        # dans ce cas), même raison que les autres clés ci-dessus.
+        "squeeze_armed": np.zeros(n, dtype=bool),
+        "squeeze_mid": np.full(n, np.nan),
+        "squeeze_sup": np.full(n, np.nan),
     }
 
 def test_pyramid_renfort_blocked_when_h4_regime_range_neutre():
@@ -280,6 +423,40 @@ def test_entry_allowed_when_h4_regime_is_not_exces():
         "entièrement favorable) -- le gate EXCES-H4 bloque aussi le cas où il ne devrait pas"
     )
 
+def test_entry_blocked_by_andrews_contextual_gate_when_below_pitchfork_p1():
+    """Fourchette d'Andrews, lecture CONTEXTUELLE (cf. tête de fichier,
+    `andrews_gate_alternative.py`) : sur un scénario synthétique par
+    ailleurs entièrement favorable, régime H4 RANGE_TENDANCIEL partout,
+    AUCUN trade ne doit s'ouvrir si `close <= pitchfork_p1` à chaque
+    bougie -- "prend le relais" bloque l'entrée tant que le prix n'a pas
+    repassé au-dessus de la médiane P1."""
+    n = WARMUP + 40
+    feat = _synthetic_pyramid_feat(n, regime_h4_value="RANGE_TENDANCIEL")
+    feat["pitchfork_p1"] = feat["close"] + 10.0   # toujours au-dessus -- close > p1 jamais vrai
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) == 0, (
+        f"{len(res['trace'])} tranche(s) ouverte(s) alors que le régime H4 est RANGE_TENDANCIEL "
+        "et close <= pitchfork_p1 partout, attendu 0 (le gate Andrews contextuel doit bloquer)"
+    )
+
+def test_entry_allowed_by_andrews_contextual_gate_outside_range_tendanciel():
+    """Contrôle positif du test ci-dessus (sinon il pourrait passer
+    trivialement sur un moteur qui bloque tout) : le MÊME `pitchfork_p1`
+    au-dessus de `close` partout, mais régime H4 TENDANCE (pas
+    RANGE_TENDANCIEL) -- le gate Andrews contextuel ne s'applique QUE dans
+    RANGE_TENDANCIEL ("prend le relais QUAND la tendance est BRISÉE"), donc
+    plusieurs trades doivent s'ouvrir malgré le même `pitchfork_p1`
+    défavorable."""
+    n = WARMUP + 40
+    feat = _synthetic_pyramid_feat(n, regime_h4_value="TENDANCE")
+    feat["pitchfork_p1"] = feat["close"] + 10.0
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) > 1, (
+        f"{len(res['trace'])} tranche(s) ouverte(s) en régime TENDANCE malgré pitchfork_p1 "
+        "défavorable, attendu plusieurs (le gate Andrews contextuel ne doit s'appliquer qu'en "
+        "RANGE_TENDANCIEL, pas en TENDANCE)"
+    )
+
 def test_entry_blocked_when_d1_regime_is_range():
     """CORRECTION CONFLIT MTF (cf. tête de fichier) : `TRADING_LESSONS_
     MAITRISE_GRADIENT_RISQUE.md` désigne "ne jamais trader une borne de
@@ -309,6 +486,36 @@ def test_entry_allowed_when_d1_regime_is_tendance():
         "entièrement favorable) -- le gate Conflit MTF bloque aussi le cas où il ne devrait pas"
     )
 
+def test_entry_blocked_when_d1_is_squeezed():
+    """Invalidation 3BR par SQUEEZE UT+1 (littérale, `docs/GUIDE_STRATEGIE_
+    PRO_INDICATORS.md` section 3.2, `range_gates.py`) : sur un scénario par
+    ailleurs entièrement favorable (régime D1 TENDANCE -- pas bloqué par le
+    gate Conflit MTF, isolé du test ci-dessus), AUCUN trade ne doit s'ouvrir
+    si `squeeze_d1` est vrai à chaque bougie."""
+    n = WARMUP + 40
+    feat = _synthetic_pyramid_feat(n, regime_h4_value="TENDANCE")
+    feat["regime_d1"] = np.full(n, "TENDANCE", dtype=object)
+    feat["squeeze_d1"] = np.full(n, True)
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) == 0, (
+        f"{len(res['trace'])} tranche(s) ouverte(s) alors que squeeze_d1 est vrai partout, "
+        "attendu 0 (le gate d'invalidation 3BR par squeeze UT+1 doit bloquer TOUTE ouverture)"
+    )
+
+def test_entry_allowed_when_d1_is_not_squeezed():
+    """Contrôle positif du test ci-dessus (sinon il pourrait passer
+    trivialement sur un moteur qui ne trade jamais) : le MÊME scénario,
+    `squeeze_d1` faux partout, doit produire au moins un trade."""
+    n = WARMUP + 40
+    feat = _synthetic_pyramid_feat(n, regime_h4_value="TENDANCE")
+    feat["regime_d1"] = np.full(n, "TENDANCE", dtype=object)
+    feat["squeeze_d1"] = np.full(n, False)
+    res = _run_core(feat, "MODERE", start=0, end=n, record_trace=True)
+    assert len(res["trace"]) >= 1, (
+        "aucun trade ouvert alors que squeeze_d1 est faux partout (scénario par ailleurs "
+        "entièrement favorable) -- le gate squeeze UT+1 bloque aussi le cas où il ne devrait pas"
+    )
+
 @_skip_if_no_data
 @pytest.mark.data_dependent
 def test_run_faithful_end_to_end_produces_trades_all_profiles():
@@ -323,6 +530,107 @@ def test_run_faithful_end_to_end_produces_trades_all_profiles():
     for profile in PROFILES_V4:
         res = run_faithful(h4.copy(), d1.copy(), weekly.copy(), profile)
         assert res["n_trades"] > 0, f"profil {profile} : aucun trade produit sur BTC, historique complet"
+
+# ---------------------------------------------------------------------------
+# Tableau Range TENDANCIEL (§3bis, 19e/24e rounds) : `range_money_management_
+# fracs` -- vérité terrain calculée à la main, cf. tête de
+# `backtest_phase2_faithful.py` pour les valeurs exactes et leur source.
+# ---------------------------------------------------------------------------
+def test_range_money_management_fracs_faible_overridden_in_range_tendanciel():
+    regime = np.array(["RANGE_NEUTRE", "RANGE_TENDANCIEL", "TENDANCE"], dtype=object)
+    val_v, conf_v = range_money_management_fracs("FAIBLE", regime)
+    np.testing.assert_array_equal(val_v, [0.50, 0.25, 0.50])
+    np.testing.assert_array_equal(conf_v, [0.00, 0.50, 0.00])
+
+def test_range_money_management_fracs_modere_is_a_bitwise_noop():
+    """MODERE : §3bis est numériquement identique à §3 (0,25/0,25 dans les
+    deux cas, cf. tête de fichier) -- AUCUNE bascule, même en RANGE_TENDANCIEL."""
+    regime = np.array(["RANGE_NEUTRE", "RANGE_TENDANCIEL", "TENDANCE"], dtype=object)
+    val_v, conf_v = range_money_management_fracs("MODERE", regime)
+    np.testing.assert_array_equal(val_v, [0.25, 0.25, 0.25])
+    np.testing.assert_array_equal(conf_v, [0.25, 0.25, 0.25])
+
+def test_range_money_management_fracs_agressif_tres_agressif_excluded():
+    """AGRESSIF/TRES_AGRESSIF : EXCLUS de §3bis ("SL gain" indéfini, cf. 19e
+    round) -- grille §3 partout, MÊME en régime RANGE_TENDANCIEL."""
+    regime = np.array(["RANGE_NEUTRE", "RANGE_TENDANCIEL"], dtype=object)
+    for profile, expected in (("AGRESSIF", (0.00, 0.50)), ("TRES_AGRESSIF", (0.00, 0.00))):
+        val_v, conf_v = range_money_management_fracs(profile, regime)
+        np.testing.assert_array_equal(val_v, [expected[0], expected[0]])
+        np.testing.assert_array_equal(conf_v, [expected[1], expected[1]])
+
+def _range_tendanciel_scenario_feat(n, regime_h4_value):
+    """Scénario synthétique DÉDIÉ (calculé à la main, cf. `test_position_
+    engine.py::test_validation_confirmation_limite_sequence` pour le même
+    patron) : plat jusqu'au warmup, UNE tranche ouverte à `WARMUP+1`
+    (entry=100), puis clôture qui franchit précisément Validation (105) à
+    `WARMUP+2` et Confirmation (108) à `WARMUP+3`, immobile ensuite --
+    n'atteint JAMAIS la Limite (112) dans cette fenêtre, pour isoler l'effet
+    de `val_close_frac`/`conf_close_frac` sans le bruit d'une clôture totale.
+    `local_range=5`/`context_range=8` (val_px=entry+5, conf_px=entry+8)."""
+    close = np.full(n, 100.0)
+    close[WARMUP + 2:] = 106.0    # franchit val_px=105 à partir de WARMUP+2
+    close[WARMUP + 3:] = 109.0    # franchit conf_px=108 à partir de WARMUP+3
+    openp = close.copy()
+    high = close * 1.001
+    low = close * 0.999
+    return {
+        "date": pd.date_range("2020-01-01", periods=n, freq="4h").values,
+        "open": openp, "high": high, "low": low, "close": close,
+        "score": np.full(n, 3.0), "atr": np.full(n, 1.0),
+        "ctx_support_d1": np.full(n, 90.0),   # jamais touché
+        "local_range": np.full(n, 5.0), "context_range": np.full(n, 8.0),
+        "n_borders": np.full(n, 3.0), "gate_score": np.full(n, 10.0),
+        "gate_regime": np.full(n, "TENDANCE", dtype=object),
+        "regime_h4": np.full(n, regime_h4_value, dtype=object),
+        "regime": np.full(n, regime_h4_value, dtype=object),   # alias, cf. range_gates.py
+        "regime_d1": np.full(n, "TENDANCE", dtype=object),
+        "squeeze_d1": np.zeros(n, dtype=bool),
+        "wall_street_active": np.zeros(n, dtype=bool),
+        "wide_channel": np.zeros(n, dtype=bool),
+        "pitchfork_p1": close - 10.0,
+        "squeeze_armed": np.zeros(n, dtype=bool),
+        "squeeze_mid": np.full(n, np.nan), "squeeze_sup": np.full(n, np.nan),
+    }
+
+def test_faible_uses_range_tendanciel_grid_end_to_end():
+    """Câblage complet, comparaison DIRECTE de deux runs sur le MÊME scénario
+    (seul `regime_h4` change) : la fraction clôturée à la PREMIÈRE bougie où
+    la tranche est encore suivie après son ouverture doit refléter
+    `val_close_frac` -- 0,50 en RANGE_NEUTRE (grille §3), 0,25 en
+    RANGE_TENDANCIEL (grille §3bis, FAIBLE) -- lue directement sur les
+    snapshots de la trace (`remaining` après la 1ère clôture partielle),
+    pas supposée."""
+    n = WARMUP + 15
+    feat_neutre = _range_tendanciel_scenario_feat(n, "RANGE_NEUTRE")
+    feat_tendanciel = _range_tendanciel_scenario_feat(n, "RANGE_TENDANCIEL")
+
+    res_neutre = _run_core(feat_neutre, "FAIBLE", start=0, end=n, record_trace=True)
+    res_tendanciel = _run_core(feat_tendanciel, "FAIBLE", start=0, end=n, record_trace=True)
+    assert len(res_neutre["trace"]) >= 1 and len(res_tendanciel["trace"]) >= 1, (
+        "aucun trade ouvert dans l'un des deux scénarios -- invalide"
+    )
+
+    def _fraction_remaining_after_first_partial_close(trace):
+        """`tr["remaining"]` est une taille de position (risk_pct/stop_pct),
+        pas une fraction normalisée à 1.0 -- on la RAPPORTE à `entry_size`
+        pour obtenir la fraction réellement clôturée, indépendamment du
+        sizing."""
+        entry_size = trace[0]["entry_size"]
+        snaps = trace[0]["snapshots"]
+        sizes = sorted({round(r, 9) for _, r in snaps}, reverse=True)
+        assert len(sizes) >= 2, sizes
+        return sizes[1] / entry_size   # 2e plus grande valeur = après la 1ère clôture partielle
+
+    frac_neutre = _fraction_remaining_after_first_partial_close(res_neutre["trace"])
+    frac_tendanciel = _fraction_remaining_after_first_partial_close(res_tendanciel["trace"])
+    assert abs(frac_neutre - 0.50) < 1e-6, (
+        f"fraction restante après Validation (RANGE_NEUTRE)={frac_neutre}, attendu 0.50 (§3, val_close=0.50)"
+    )
+    assert abs(frac_tendanciel - 0.75) < 1e-6, (
+        f"fraction restante après Validation (RANGE_TENDANCIEL)={frac_tendanciel}, attendu 0.75 "
+        "(§3bis FAIBLE, val_close=0.25 -> il reste 1-0.25=0.75)"
+    )
 
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]

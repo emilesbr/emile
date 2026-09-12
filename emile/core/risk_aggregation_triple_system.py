@@ -132,6 +132,7 @@ from emile.core.position_engine import make_open_tranche_fn, process_tranche, pr
 from emile.core.trend_table import PROFILES_TREND, step_campaign, try_open_campaign, step_reverse, load_volume
 from emile.core.unified_protocol import (
     _prepare_unified, _accumulation_active, _campaign_ev, resample_h4_with_volume, PROFILE_NAMES,
+    _range_gate, _range_gate_extra,
 )
 from emile.core.diversification import prepare_diversified, size_fraction, RISK_PCT_PATTERN_A, RISK_PCT_PATTERN_B, \
     MAX_RISK_PER_ZONE_PCT
@@ -215,26 +216,14 @@ def _run_triple_core(feat_u: dict, h4p: pd.DataFrame, profile_name: str,
     n_total = len(o)
     end = n_total if end is None else end
 
-    def gate(i):
-        # CORRECTION EXCES H4 + CONFLIT MTF (cf. unified_protocol.py) :
-        # réplique le gate RANGE RÉEL de _run_core_unified tel qu'il existe
-        # désormais, H4-EXCES et Conflit-MTF-D1 inclus -- pas une version
-        # pré-correction figée.
-        return bool(
-            feat_u["gate_score"][i] >= 2 and feat_u["gate_regime"][i] != "EXCES"
-            and feat_u["regime"][i] != "EXCES"
-            and feat_u["regime_d1"][i] not in ("RANGE_NEUTRE", "RANGE_TENDANCIEL")
-        )
-
-    def gate_extra(j):
-        # CORRECTION PYRAMIDALISATION-RÉGIME (cf. unified_protocol.py) :
-        # réplique le gate RANGE RÉEL de _run_core_unified tel qu'il existe
-        # désormais -- le renfort exige EN PLUS que le régime H4 natif soit
-        # TENDANCE/RANGE_TENDANCIEL, pas une version pré-correction figée.
-        abstain = bool(wall_street_v[j])
-        g = gate(j) and not abstain
-        pyramiding_allowed = feat_u["regime"][j] in ("TENDANCE", "RANGE_TENDANCIEL")
-        return g, (g and pyramiding_allowed)
+    # `gate`/`gate_extra` : PLUS de copie à la main ici (chantier
+    # d'architecture, cf. PLAN.md) -- `_range_gate`/`_range_gate_extra` sont
+    # désormais des fonctions de MODULE de `unified_protocol.py`, importées
+    # directement, exactement comme `_campaign_ev` l'était déjà. Élimine à la
+    # racine le risque de dérive qui a exigé 2 resynchronisations manuelles
+    # cette session (Fourchette d'Andrews, 3ème borne squeezée).
+    gate = lambda i: _range_gate(feat_u, i)
+    gate_extra = lambda j: _range_gate_extra(feat_u, j)
 
     range_state = {"last_pyramid_high": -np.inf}
     open_tranche_fn = make_open_tranche_fn(
@@ -248,6 +237,11 @@ def _run_triple_core(feat_u: dict, h4p: pd.DataFrame, profile_name: str,
         # version pré-correction figée. `wide_channel` vient de
         # `_prepare_unified`, jamais recalculé ici.
         wide_channel_v=feat_u["wide_channel"],
+        # Variante d'entrée "3ème borne squeezée" : réplique le RANGE RÉEL de
+        # `_run_core_unified` -- `feat_u` vient de `_prepare_unified`
+        # (`_add_squeeze_columns` déjà appliquée), jamais recalculée ici.
+        squeeze_armed_v=feat_u["squeeze_armed"], squeeze_mid_v=feat_u["squeeze_mid"],
+        squeeze_sup_v=feat_u["squeeze_sup"], low_v=low,
     )
     gated_long_signal = np.array([
         (score[i] >= 2) and gate(i) and not bool(wall_street_v[i]) for i in range(n_total)

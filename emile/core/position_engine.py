@@ -1106,7 +1106,8 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
                           rule3_streak, rule3_size_mult, risk_pct, state,
                           extra_gate_fn=None, wide_channel_v=None,
                           squeeze_armed_v=None, squeeze_mid_v=None, squeeze_sup_v=None,
-                          low_v=None, squeeze_lifetime=SQUEEZE_LIFETIME):
+                          low_v=None, squeeze_lifetime=SQUEEZE_LIFETIME,
+                          val_close_frac_v=None, conf_close_frac_v=None):
     """Factory pour `open_tranche_fn`, dette de duplication réelle relevée
     dans la rétrospective (PLAN.md) : 9 moteurs `backtest_phase2_*.py`
     (v4/v5/v6/v7/ut2/patterns/capital_tiers/fib/recommended) portaient
@@ -1146,6 +1147,22 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
         ne connaît pas la source, elle applique juste la Règle de Trois
         dessus, exactement comme faisaient les 9 copies (`risk_pct = ...`
         recalculé identique à chaque appel, jamais muté entre appels).
+        CHANTIER D'ARCHITECTURE (cf. PLAN.md, section dédiée), STRICTEMENT
+        ADDITIF : `risk_pct` accepte désormais AUSSI un array indexé comme
+        les autres (`risk_pct[j]`, résolu à l'OUVERTURE de la tranche depuis
+        le contexte réel à cet instant -- ex. un score de confiance par
+        bougie) -- un scalaire (comportement historique de tous les
+        appelants existants) continue de fonctionner à l'identique.
+      - `val_close_frac_v`/`conf_close_frac_v` (optionnels, défaut `None` ->
+        AUCUN changement de comportement) : arrays indexés comme `risk_pct`
+        array ci-dessus. Si fournis, leur valeur À L'OUVERTURE (`[j]`) est
+        stockée dans le dict retourné (`tr["val_close_frac"]`/`tr["conf_
+        close_frac"]`), lue ensuite par `process_tranche` à CHAQUE bougie de
+        la vie de la tranche (cf. sa docstring) -- une tranche ouverte sous
+        un régime/contexte donné garde SA PROPRE grille de money management
+        jusqu'à sa clôture, jamais réévaluée en cours de route (aucune règle
+        du corpus ne le prescrit). Absents -> `process_tranche` retombe sur
+        les paramètres scalaires qu'on lui passe, comme avant ce chantier.
       - `state` : dict partagé avec la clé `"last_pyramid_high"`, MUTÉ par
         cette fonction exactement comme dans les 9 copies (même sémantique
         : `-np.inf` au départ, mis à jour au plus haut de renfort validé).
@@ -1298,7 +1315,9 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
             stop_pct *= WIDE_CHANNEL_STOP_FRAC
             stop_price = entry_price * (1.0 - stop_pct)
             size_mult = WIDE_CHANNEL_SIZE_FRAC
-        eff_risk = risk_pct
+        # `risk_pct` scalaire (historique) ou array (cf. tête de fichier) --
+        # résolu ICI, à l'ouverture, jamais réévalué ensuite pour cette tranche.
+        eff_risk = risk_pct[j] if hasattr(risk_pct, "__getitem__") else risk_pct
         if win_streak >= rule3_streak:
             eff_risk *= rule3_size_mult
         size_frac = min(1.0 / max_tranches, eff_risk / stop_pct * size_mult) if stop_pct > 0 else 0.0
@@ -1319,13 +1338,22 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
         # que #12:8 assigne à cette étape (R médian 0,88-1,06 -> 0,69-0,85).
         # Raisonnement complet, citations et chiffres : bloc "RÈGLE D'OR" en
         # tête de ce fichier.
-        return {
+        tr = {
             "entry": entry_price, "stop": stop_price, "remaining": size_frac,
             "val_done": False, "conf_done": False, "pnl_accum": 0.0,
             "val_px": entry_price + local_range_v[j],
             "conf_px": entry_price + context_range_v[j],
             "lim_px": entry_price + 1.5 * context_range_v[j],
         }
+        # Cf. tête de fichier (chantier d'architecture) : résolus ICI, à
+        # l'ouverture, une fois pour toute la vie de la tranche -- lus par
+        # `process_tranche` via `tr.get(...)`. Absents si les arrays ne sont
+        # pas fournis (comportement historique inchangé).
+        if val_close_frac_v is not None:
+            tr["val_close_frac"] = val_close_frac_v[j]
+        if conf_close_frac_v is not None:
+            tr["conf_close_frac"] = conf_close_frac_v[j]
+        return tr
 
     return open_tranche_fn
 
@@ -1347,7 +1375,22 @@ def process_tranche(tr, i, o, low, c, long_signal_prev, val_close_frac, conf_clo
     Limite, `tr["reverse_request"]` est rempli avec les paramètres de la
     jambe short "+Reverse" (hypothèse H-Reverse-Range, cf. tête de fichier)
     -- charge à l'appelant (`run_position_engine`) de la lire et de l'ouvrir.
-    """
+
+    CHANTIER D'ARCHITECTURE (cf. PLAN.md, section dédiée) -- `val_close_frac`/
+    `conf_close_frac` PAR TRANCHE, STRICTEMENT ADDITIF : si `tr` contient les
+    clés `"val_close_frac"`/`"conf_close_frac"` (résolues par `open_tranche_fn`
+    à l'OUVERTURE de la tranche, ex. selon le régime ou un score de confiance
+    à cet instant précis -- jamais recalculées ici), elles priment sur les
+    paramètres `val_close_frac`/`conf_close_frac` ci-dessus, qui restent le
+    REPLI. Tous les `open_tranche_fn` existants (9+ moteurs, `make_open_
+    tranche_fn`) ne posent pas ces clés dans `tr` -- comportement RIGOUREUSEMENT
+    inchangé pour eux (`tr.get(..., valeur_par_défaut)` retombe sur le
+    paramètre scalaire passé par l'appelant, exactement comme avant ce
+    chantier). Ce qui était bloqué jusqu'ici (tableau Range Tendanciel §3bis,
+    sizing par confiance) : un profil de money management figé UNE FOIS par
+    run, jamais résolu PAR TRANCHE depuis le contexte réel à l'ouverture."""
+    val_close_frac = tr.get("val_close_frac", val_close_frac)
+    conf_close_frac = tr.get("conf_close_frac", conf_close_frac)
     # 1) Limite atteinte -> clôture totale (sur CLÔTURE)
     if c[i] >= tr["lim_px"]:
         remaining_before = tr["remaining"]
