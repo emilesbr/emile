@@ -1649,6 +1649,15 @@ Validation→Confirmation se reproduirait, mais ce n'est PAS mesuré, donc pas a
 défaut de moteur n'est changé par ce round (`local_duration`/`context_duration` restent optionnels
 partout, jamais activés par défaut).
 
+**Addendum, vérification rapide (pas un nouveau round)** : maintenant que D1 trade réellement,
+`use_suivi_de_tendance` a été revérifié sur D1/Hebdomadaire (fenêtre en bougies) — BTC/D1 montre
+désormais un `stage_time_%["POST_BREAKOUT"]` non nul (~1,0-1,1%, contre ~0% partout au 34e/35e
+round), mais **toujours 0/32 combinaisons actif×UT×profil ne diffèrent** entre `use_suivi_de_
+tendance=True`/`False`. Conclusion inchangée, reconfirmée sur la donnée recalibrée : le mécanisme
+reste sans effet mesurable, pas à cause d'un gate mal calibré cette fois (déjà corrigé), mais parce
+que le pattern "Cassure de 3BR" (swing bas confirmé PUIS cassure du plus haut) ne se forme
+simplement pas dans cette fenêtre, même désormais non-nulle.
+
 ### 40e application (cycle suivant) — `conf_px` avec une vraie UT+2 (Hebdomadaire) mesuré : résultat honnête, la citation littérale rend la Confirmation quasi inatteignable
 
 **Décision directe de l'utilisateur, "directeur ingénieur senior"** : continuer la mesure laissée
