@@ -500,17 +500,20 @@ décision de conception requise pour chacun.
    `feat["squeeze_d1"][i]` est vrai — strictement additif, testé (garde-fous "squeeze ⊆ EXCES",
    causalité, cas de base) et mesuré. La 3ème clause ("retour au niveau de la 1BR") reste NON
    implémentée (aucun suivi du niveau de la 1ère borne dans ce moteur — backlog ouvert).
-3. **PARTIELLEMENT IMPLÉMENTÉ (33e round, cf. `PLAN.md`) — mécanisme "Suivi de tendance".**
+3. **PARTIELLEMENT IMPLÉMENTÉ (33e/34e rounds, cf. `PLAN.md`) — mécanisme "Suivi de tendance".**
    L'audit avait montré que c'est tout le mécanisme (§4.3 de ce document — 3 branches Repli à la
    moyenne/Cassure de 3BR/Repli sur 3BR squeezée, chacune avec sa propre grille STOPLOSS/
    VALIDATION/CONFIRMATION/OBJECTIF, précédées de 5 conditions d'activation) qui manquait à
-   `trend_table.py`, pas seulement la variante squeeze. Implémenté : les 5 conditions d'ACTIVATION
-   (`trend_table.py::compute_suivi_conditions` — moyenne haussière + pas de squeeze sur le canal
-   H4, H-Suivi-1 : conditions 3/4 traitées comme la même contrainte, "alerte" désignant déjà le
-   signal SQUEEZE ailleurs dans le corpus + `SUIVI_MAX=2`), mesurées non triviales (~93-94% des
-   bougies TENDANCE). Fonction NON appelée par `run_trend_table` — zéro changement de
-   comportement. Les 3 branches de ré-entrée elles-mêmes (chacune un détecteur de pattern de prix
-   dédié) restent différées, backlog.
+   `trend_table.py`, pas seulement la variante squeeze. **33e round** : les 5 conditions
+   d'ACTIVATION (`compute_suivi_conditions` + `SUIVI_MAX=2`), mesurées non triviales (~93-94% des
+   bougies TENDANCE). **34e round** : branche "Cassure de 3BR" implémentée (`use_suivi_de_tendance`,
+   défaut `False`) — swing bas confirmé arme un ordre virtuel au plus haut de campagne, remplissage
+   sans bouger le stop. **Mesuré : EFFET NUL sur BTC/ETH/BNB/SOL, cause identifiée** — les campagnes
+   traversent l'étape POST_BREAKOUT quasi instantanément avant Divergence (`stage_time_%` ≈ 0% sur
+   15/16 combinaisons), aucune fenêtre réelle pour qu'un pattern "Cassure de 3BR" se forme sur ces
+   données. Implémenté quand même (littéral, testé). Les 2 autres branches (Repli à la moyenne,
+   Repli sur 3BR squeezée) restent différées, backlog — la même contrainte de fenêtre temporelle
+   s'appliquerait probablement à elles aussi.
 
 **Nouvel item trouvé par l'audit, catégorie C** :
 

@@ -653,6 +653,7 @@ from emile.backtests.backtest_phase2_v7 import prepare, LOCAL_DURATION, CONTEXT_
 # quelle ici plutôt que redécidée, cf. H13/H16.
 from emile.backtests.backtest_phase2_ut2 import CLOSURE_DELAY  # lecture seule, aucune modification
 from emile.core.regime_classifier import compute_squeeze  # lecture seule, aucune modification
+from emile.core.proxy_v2 import compute_swing_low_confirmed, SWING_ORDER  # lecture seule, aucune modification
 
 # --- Constantes de détection des étapes (cf. hypothèses H5-H9 ci-dessus) ---
 ACCUM_RETRACEMENT_LOW, ACCUM_RETRACEMENT_HIGH = 0.38, 0.61        # RULES_EXTRACTION §1
@@ -709,9 +710,8 @@ SUIVI_MAX = 2   # "pas plus de 2 suivis dans une tendance" -- guide officiel PRO
 #      CONTEMPORAINE (même choix qu'H-Squeeze-UT1-1 au 31e round : le corpus
 #      ne chiffre pas "récente", pas de fenêtre de recul inventée).
 #   5. "Pas plus de 2 suivis" -- **stateful** (dépend du nombre de suivis déjà
-#      pris PAR CETTE campagne), donc PAS vectorisable ici : à appliquer par
-#      l'appelant via un compteur `campaign["n_suivis"]`, une fois qu'un
-#      mécanisme de ré-entrée existe pour l'incrémenter (backlog).
+#      pris PAR CETTE campagne) : `campaign["n_suivis"]`, plafonné à
+#      `SUIVI_MAX`, cf. implémentation de la branche ci-dessous.
 # ============================================================================
 
 def compute_suivi_conditions(ema_trend, ctx_width_pct) -> np.ndarray:
@@ -725,6 +725,67 @@ def compute_suivi_conditions(ema_trend, ctx_width_pct) -> np.ndarray:
     ema_rising = np.concatenate(([False], ema_v[1:] > ema_v[:-1]))
     squeeze_h4 = compute_squeeze(ctx_width_pct)
     return ema_rising & ~squeeze_h4
+
+# ============================================================================
+# Branche "CASSURE DE 3BR" (34e round, `PLAN.md`) -- PREMIÈRE des 3 branches
+# de ré-entrée implémentée (Repli à la moyenne / Repli sur 3BR squeezée
+# restent backlog). Citation exacte (`Suivi-de-tendance/Cassure-de-3br.png`) :
+# *"1 LA 3BR DOIT ÊTRE VALIDÉE ET CONFIRMÉE, 2 PAS DE SQUEEZE DE PRIX UT+1,
+# 3 ENTREE AU BREAKOUT DE LA 3BR, 4 MOMENTUM > 80 (OPTIONNEL), 5 BREAK
+# SINEWAVE (OPTIONNEL). Gestion du risque, risque max 2% : Stoploss = sous
+# le point bas du range ou sous le contexte UT+1. Validation = cassure du
+# point haut précédent (NE SURTOUT PAS DÉPLACER LE STOPLOSS). Confirmation
+# = report du range. Objectif : le plus simple est de placer un ordre
+# d'entrée de type stop-achat au-dessus du niveau de la 3BR une fois que
+# cette dernière est validée et confirmée... vous pouvez mettre une alerte !"*
+#
+# Choisie en PREMIER (recommandation directeur, cf. PLAN.md) car sa grille
+# de risque (stop inchangé à la Validation, breakeven optionnel à la
+# Confirmation) correspond EXACTEMENT au modèle DÉJÀ en place dans ce
+# fichier (stop de campagne unique, bascule breakeven à un point précis --
+# comme `div_to_be` à la Divergence) -- contrairement au mécanisme Neuneu
+# (32e round, RANGE), elle n'exige AUCUNE nouvelle primitive de stop
+# trailing ni d'ordre non séquentiel.
+#
+# Modélisation retenue, 2 hypothèses explicites (tout le reste est littéral
+# ou déjà disponible) :
+#   - **H-Suivi-Cassure3BR-1 (stop)** : la citation donne un stop DÉDIÉ à
+#     cette jambe ("sous le point bas du range ou sous le contexte UT+1"),
+#     ce qui exigerait de faire circuler une donnée D1 (UT+1) jusque dans
+#     cette boucle -- absent aujourd'hui de `run_trend_table` sauf activation
+#     du gate "espace libre" (`df_ut1`). Plutôt que d'ajouter cette
+#     plomberie pour une seule branche, réutilisation du stop DE CAMPAGNE
+#     déjà existant (jamais indépendant par jambe dans ce fichier, y
+#     compris pour Accumulation/Breakout/Pull-Back) -- cohérent avec le
+#     modèle déjà en place, pas une invention.
+#   - **H-Suivi-Cassure3BR-2 (taille)** : AUCUNE fraction de profil n'existe
+#     pour "Suivi de tendance" (absent de `RULES_EXTRACTION.md`/`PROFILES_
+#     TREND` -- ce mécanisme vient exclusivement du nouveau guide). Plutôt
+#     que d'inventer une fraction, réutilisation LITTÉRALE du "risque max 2%"
+#     donné par la citation elle-même : taille = `SUIVI_RISK_PCT / stop_pct`
+#     (même formule que le sizing par risque de `position_engine.py` côté
+#     RANGE), plafonnée comme toute jambe par `MAX_CAMPAIGN_RISK_PCT` (H3)
+#     via `add_leg`.
+#   - "3BR validée et confirmée" (condition 1) = un swing bas CONFIRMÉ
+#     (`compute_swing_low_confirmed`, MÊME primitive que `n_borders`/
+#     `compute_range_border_count` -- jamais une 2e définition de "borne")
+#     s'est produit depuis le dernier plus haut de la campagne. "Triangle de
+#     confirmation" (mentionné dans la version RANGE du même concept) reste
+#     NON implémenté ici, comme partout ailleurs dans ce projet (pattern
+#     géométrique jamais défini précisément dans le corpus, catégorie A).
+#   - "Pas de débordement du sommet, sinon 3BR squeezée" (distinction avec
+#     la branche "Repli sur 3BR squeezée", RESTÉE backlog) N'EST PAS testée
+#     ici -- en l'absence de cette autre branche pour "récupérer" les cas
+#     débordants, cette implémentation les traite comme des Cassures de 3BR
+#     normales. Documenté honnêtement, pas masqué : un sur-déclenchement
+#     mineur tant que l'autre branche n'existe pas.
+#
+# Paramètre `use_suivi_de_tendance` (défaut `False`, cf. `run_trend_table`)
+# -- même convention que `use_breakout_space_gate` : mécanisme chargé
+# d'hypothèses, activé explicitement pour comparaison, PAS le comportement
+# par défaut du moteur tant qu'il n'a pas été mesuré et décidé.
+# ============================================================================
+SUIVI_RISK_PCT = 0.02   # "risque max 2%" -- citation exacte, cf. bloc ci-dessus
 
 # --- Table de money management "trade de tendance" (RULES_EXTRACTION §4) ---
 # accum_frac / breakout_frac / pullback_frac : fractions de l'unité U ajoutées
@@ -900,6 +961,14 @@ def step_campaign(campaign: dict, i: int, o, high, low, c, ev: dict, profile: di
     pas-ci en Excès final. Le Pull-Back (path-dependent : dépend du plus haut
     et du creux propres à CETTE campagne) est calculé ICI, pas dans `ev`.
 
+    `ev["suivi_ok"]`/`ev["swing_low_confirmed"]` (OPTIONNELS, `.get(...,
+    False)` -- absents ou faux -> comportement RIGOUREUSEMENT inchangé pour
+    tout appelant existant) : branche "Cassure de 3BR" du mécanisme "Suivi de
+    tendance" (34e round, cf. bloc dédié en tête de fichier). `campaign`
+    porte alors en plus, une fois utilisées, les clés `n_suivis`/
+    `suivi_armed_level` (absentes tant que la branche ne s'est jamais
+    déclenchée pour cette campagne).
+
     Retourne (closed: bool, fee_frac: float, realized_pnl: float|None,
     reverse_request: dict|None). `reverse_request` n'est renseigné que si la
     campagne se clôture en Excès final ET que le profil prévoit +Reverse."""
@@ -939,6 +1008,39 @@ def step_campaign(campaign: dict, i: int, o, high, low, c, ev: dict, profile: di
         return False, 0.0, None, None
 
     if campaign["stage"] == "POST_BREAKOUT":
+        # --- Suivi de tendance, branche "Cassure de 3BR" (34e round, cf. bloc
+        # dédié en tête de fichier) -- STRICTEMENT ADDITIF : `ev.get(...,
+        # False)` retombe sur `False` pour tout appelant qui ne fournit pas
+        # ces 2 clés, comportement RIGOUREUSEMENT inchangé.
+        if ev.get("suivi_ok", False) and campaign.get("n_suivis", 0) < SUIVI_MAX:
+            if ev.get("swing_low_confirmed", False) and campaign.get("suivi_armed_level") is None:
+                # Un swing bas vient de se confirmer -- arme un ordre virtuel
+                # de type stop-achat au niveau du plus haut DÉJÀ ATTEINT par
+                # cette campagne ("cassure du point haut précédent", citation
+                # exacte). `campaign["swing_high"]` inclut déjà `high[i]`
+                # (mis à jour en tête de fonction, avant ce bloc) -- aucun
+                # remplissage possible sur CETTE même bougie (high[i] ne peut
+                # jamais être strictement supérieur à lui-même).
+                campaign["suivi_armed_level"] = campaign["swing_high"]
+            armed_level = campaign.get("suivi_armed_level")
+            if armed_level is not None and campaign["remaining"] > 0 and high[i] > armed_level:
+                # Remplissage réaliste : au niveau armé, ou pire (open) si le
+                # marché a gappé au-dessus -- même convention que la Variante
+                # 2 de #15 (`position_engine.py::compute_squeezed_third_
+                # border`) pour un ordre en attente.
+                fill_price = max(armed_level, o[i])
+                stop_pct = (fill_price - campaign["stop"]) / fill_price if fill_price > 0 else 0.0
+                campaign["suivi_armed_level"] = None
+                if stop_pct > 0:
+                    # H-Suivi-Cassure3BR-2 : sizing par risque, "risque max
+                    # 2%" littéral -- PAS une fraction de profil inventée
+                    # (cf. bloc dédié en tête de fichier). Plafonné comme
+                    # toute jambe par MAX_CAMPAGNE_RISK_PCT via `add_leg`.
+                    add_frac = SUIVI_RISK_PCT / stop_pct
+                    actual_add = add_leg(campaign, add_frac, fill_price)
+                    if actual_add > 0:
+                        campaign["n_suivis"] = campaign.get("n_suivis", 0) + 1
+                        return False, actual_add, None, None
         if ev["divergence_raw"] and campaign["remaining"] > 0:
             close_amt = campaign["remaining"] * profile["div_close_frac"]
             fee_frac = 0.0
@@ -1024,7 +1126,8 @@ def step_reverse(reverse_pos: dict, i: int, high, low, c) -> tuple:
 def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
                      use_breakout_space_gate: bool = False,
                      df_ut1: pd.DataFrame = None, df_ut2: pd.DataFrame = None,
-                     space_mult: float = BREAKOUT_SPACE_MULT) -> dict:
+                     space_mult: float = BREAKOUT_SPACE_MULT,
+                     use_suivi_de_tendance: bool = False) -> dict:
     """Rejoue la table de tendance à 5 étapes sur `df` (H4 ou toute UT unique,
     colonnes date/open/high/low/close), avec `vol` (DataFrame aligné, même
     longueur, colonne "volume" de la même UT — cf. `load_volume`/
@@ -1044,7 +1147,14 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
     sont passés par `prepare` + `add_trend_context` ici, puis joints sans
     lookahead par `attach_obstacle_level`. `space_mult` : multiplicateur du
     rendement escompté, 1.0 = Ratio 1:1 (la seule valeur citée par le corpus,
-    H15) ; paramétrable pour la mesure de sensibilité uniquement."""
+    H15) ; paramétrable pour la mesure de sensibilité uniquement.
+
+    `use_suivi_de_tendance` (défaut `False`, préserve BIT-À-BIT le
+    comportement historique -- même convention que `use_breakout_space_gate`
+    ci-dessus) : active la branche "Cassure de 3BR" du mécanisme "Suivi de
+    tendance" (34e round, cf. bloc dédié en tête de fichier, 2 hypothèses
+    documentées H-Suivi-Cassure3BR-1/2). Les 2 autres branches (Repli à la
+    moyenne / Repli sur 3BR squeezée) restent backlog, non activables ici."""
     p = PROFILES_TREND[profile_name]
     df = prepare(df)
     df = add_trend_context(df)
@@ -1076,6 +1186,14 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
     # "Rendement escompté" du breakout = amplitude du range d'accumulation
     # local, déjà calculée par `prepare` (H15) et jusqu'ici jamais lue ici.
     local_range_v = df["local_range"].values
+
+    # Suivi de tendance, branche "Cassure de 3BR" (34e round, cf. bloc dédié
+    # en tête de fichier) -- calculé INCONDITIONNELLEMENT (coût négligeable,
+    # mêmes primitives déjà utilisées ailleurs) mais consommé dans `ev`
+    # SEULEMENT si `use_suivi_de_tendance=True`, pour ne rien changer par
+    # défaut.
+    suivi_ok_v = compute_suivi_conditions(ema_trend_v, df["ctx_width_pct"].values)
+    swing_low_confirmed_v = compute_swing_low_confirmed(low, order=SWING_ORDER)
 
     vol_v = vol["volume"].values
     vol_ma = pd.Series(vol_v).rolling(VOLUME_MA_WINDOW).mean().values
@@ -1142,6 +1260,12 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
                 ev["breakout_space_ok"] = breakout_space_ok(
                     c[i - 1], local_range_v[i - 1] / c[i - 1] if c[i - 1] > 0 else float("nan"),
                     (obstacle_ut1[i - 1], obstacle_ut2[i - 1]), space_mult)
+            if use_suivi_de_tendance:
+                # Même convention causale que le reste de `ev` : évalué à
+                # `i - 1` (dernière bougie entièrement close avant l'entrée
+                # potentielle à l'open de `i`).
+                ev["suivi_ok"] = bool(suivi_ok_v[i - 1])
+                ev["swing_low_confirmed"] = bool(swing_low_confirmed_v[i - 1])
             closed, fee_frac, realized, reverse_request = step_campaign(campaign, i, o, high, low, c, ev, p)
             if fee_frac > 0:
                 equity *= (1 - fee * fee_frac)

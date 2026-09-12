@@ -550,9 +550,19 @@ du round précédent :
   H-Suivi-1 : conditions 3/4 du guide traitées comme la même contrainte, le mot "alerte" désignant
   déjà le signal SQUEEZE ailleurs dans le corpus) + `SUIVI_MAX=2`. Mesuré non trivial (~93-94% des
   bougies TENDANCE satisfont ces conditions). Fonction NON appelée par `run_trend_table` — zéro
-  changement de comportement. **Les 3 branches de ré-entrée elles-mêmes restent catégorie C,
-  différées** : chacune exige son propre détecteur de pattern de prix, un chantier à part entière,
-  pas une règle numérique simple — même raison que le mécanisme Neuneu (32e round).
+  changement de comportement.
+  **Branche "Cassure de 3BR" IMPLÉMENTÉE (34e round)** — swing bas confirmé arme un ordre virtuel
+  stop-achat au plus haut de campagne, remplissage sans bouger le stop (H-Suivi-Cassure3BR-1 :
+  réutilise le stop de campagne existant plutôt que de plomber une donnée D1 pour une seule
+  branche) ; taille = "risque max 2%" littéral (H-Suivi-Cassure3BR-2, `SUIVI_RISK_PCT`, pas une
+  fraction inventée). **Résultat honnête, mesuré : EFFET NUL sur BTC/ETH/BNB/SOL × 4 profils** —
+  cause identifiée, pas juste constatée : `stage_time_%["POST_BREAKOUT"]` vaut 0,0% sur 15/16
+  combinaisons (campagnes traversant cette étape quasi instantanément avant Divergence) — aucune
+  fenêtre réelle pour qu'un pattern de swing bas + cassure ait le temps de se former sur ces
+  données. Implémenté quand même (littéral, testé), `use_suivi_de_tendance=False` par défaut.
+  **Les 2 autres branches (Repli à la moyenne, Repli sur 3BR squeezée) restent catégorie C,
+  différées** — même contrainte de fenêtre temporelle identifiée ci-dessus s'appliquerait
+  probablement à elles aussi, quel que soit leur déclencheur propre.
 - **Nouvel item trouvé** : les sous-patterns "Trend Follow"/"Exit" en régime Excès (§2.1 du guide,
   grilles de risque complètes, niveau EXPERT) ne sont jamais implémentés — `range_gates.py:48`
   bloque INCONDITIONNELLEMENT toute entrée en régime EXCES. Cohérent avec le choix déjà documenté

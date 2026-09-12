@@ -1347,6 +1347,59 @@ grille STOPLOSS/VALIDATION/CONFIRMATION/OBJECTIF et son propre détecteur de dé
 backlog, différées pour la même raison que le mécanisme Neuneu (32e round) — un chantier à part,
 pas à bricoler en marge de celui-ci.
 
+### 34e application (cycle suivant) — branche "Cassure de 3BR" implémentée, mesurée : INERTE, cause identifiée
+
+**Décision directe de l'utilisateur, "directeur ingénieur senior"** : implémenter la branche
+"Cassure de 3BR" du mécanisme "Suivi de tendance" (33e round), choisie en premier car sa grille de
+risque (stop inchangé à la Validation, breakeven optionnel à la Confirmation) correspond au modèle
+DÉJÀ en place dans `trend_table.py` — contrairement à Neuneu (32e round), aucune nouvelle primitive
+de stop trailing n'est nécessaire.
+
+**Implémenté, strictement additif** (`use_suivi_de_tendance: bool = False`, même convention que
+`use_breakout_space_gate`) :
+- Pendant l'étape POST_BREAKOUT, un swing bas confirmé (`compute_swing_low_confirmed`, MÊME
+  primitive causale que `n_borders`/`compute_range_border_count` — jamais une 2e définition de
+  "borne") arme un ordre virtuel de type stop-achat au niveau du plus haut déjà atteint par la
+  campagne ("cassure du point haut précédent", citation exacte). Une fois le prix au-dessus de ce
+  niveau, la jambe se remplit.
+- **H-Suivi-Cassure3BR-1 (stop)** : réutilise le stop DE CAMPAGNE déjà existant (jamais indépendant
+  par jambe dans ce fichier, y compris pour Accumulation/Breakout/Pull-Back) plutôt que de faire
+  circuler une donnée D1 (UT+1) jusque dans cette boucle pour une seule branche.
+- **H-Suivi-Cassure3BR-2 (taille)** : "risque max 2%" littéral (`SUIVI_RISK_PCT=0.02`), PAS une
+  fraction de profil inventée (`RULES_EXTRACTION.md`/`PROFILES_TREND` ne couvrent pas ce
+  mécanisme, qui vient exclusivement du nouveau guide) — même formule de sizing par risque que
+  `position_engine.py` côté RANGE, plafonnée comme toute jambe par `MAX_CAMPAIGN_RISK_PCT` (H3).
+- "Triangle de confirmation" et la distinction "sinon 3BR squeezée" (qui router vers l'autre
+  branche, encore backlog) restent NON implémentés, documentés honnêtement en tête de fichier —
+  pas masqués.
+
+**4 nouveaux tests** (`test_trend_table.py`, appel direct de `step_campaign`, même patron que
+`test_step_campaign_breakout_space_gate`) : armement puis remplissage à vérité terrain (stop
+vérifié inchangé) ; contrôle négatif `suivi_ok=False` ; contrôle négatif `n_suivis` déjà au
+plafond ; non-régression explicite pour tout appelant qui ne fournit pas les nouvelles clés `ev`.
+Suite complète **247 → 251 tests, tous verts**.
+
+**Résultat honnête, mesuré sur BTC/ETH/BNB/SOL × 4 profils : EFFET NUL, cause identifiée (pas un
+bug, pas supposé)** — `use_suivi_de_tendance=True` vs `False` : **0 différence sur les 16
+combinaisons**, aucun trade, aucun retour, aucun drawdown ne change d'un chiffre. Diagnostic avant
+de conclure à un "gate inerte" au hasard : `stage_time_%["POST_BREAKOUT"]` (déjà retourné par
+`run_trend_table`) vaut **0,0% sur 15/16 combinaisons** (arrondi — quelques bougies sur des
+dizaines de milliers) — les campagnes traversent l'étape POST_BREAKOUT quasi instantanément avant
+que `ev["divergence_raw"]` (retournement de cycle) ne les fasse passer en PULLBACK_WATCH, ne
+laissant AUCUNE fenêtre réelle pour qu'un pattern "Cassure de 3BR" (swing bas confirmé PUIS
+cassure du plus haut) ait le temps de se former. Ce n'est pas spécifique à cette branche : les 2
+autres branches de Suivi de tendance (Repli à la moyenne, Repli sur 3BR squeezée) buteraient sur
+exactement la même contrainte de fenêtre temporelle, quel que soit leur déclencheur propre —
+observation utile pour la suite du backlog, pas juste pour cette branche.
+
+**Implémenté quand même, conformément au principe inviolable du projet** ("la performance du
+Proxy ne décide jamais d'utiliser ou non l'IP de Philippe") — sauf qu'ici il ne s'agit même pas de
+performance dégradée, mais d'une fenêtre d'opportunité empiriquement quasi nulle sur CES données ;
+le mécanisme reste correct et testé, prêt si la dynamique Breakout→Divergence de ce proxy venait à
+changer (ex. si le "divergence_raw" du proxy cycle était un jour rendu moins sensible). Laissé
+`False` par défaut, comme `use_breakout_space_gate` — pas un choix de performance, un choix de
+mesure honnête d'un mécanisme dont la fenêtre d'application réelle reste à date quasi nulle.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

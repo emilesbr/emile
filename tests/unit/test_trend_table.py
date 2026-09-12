@@ -661,6 +661,102 @@ def test_range_limit_is_not_independent_of_the_broken_level():
         "aucune barre où local_high (100) < ctx_high (200) : le test ne "
         "distingue pas réellement les deux fenêtres, il est vacant")
 
+def test_cassure_3br_arms_then_fills_adds_a_leg_without_moving_stop():
+    """Branche "Cassure de 3BR" (34e round) -- scénario à vérité terrain
+    construit à la main, bougie par bougie, via `step_campaign` directement
+    (même patron que `test_step_campaign_breakout_space_gate`) :
+      i=0 : swing bas confirmé (`ev["swing_low_confirmed"]=True`) -> arme un
+            niveau au `swing_high` courant (110.0). Prix ne dépasse pas ce
+            niveau -> rien ne se remplit.
+      i=1 : le prix dépasse enfin le niveau armé (high > 110.0) -> la jambe
+            se remplit à l'open (ou au niveau armé si pas de gap), stop
+            INCHANGÉ (H-Suivi-Cassure3BR-1), n_suivis passe à 1.
+
+    `breakout_frac` volontairement réduit à 0.2 (plutôt que le 1.0 du profil
+    MODERE) : sinon la 1ère jambe sature déjà, seule, le plafond de risque
+    de campagne (H3, MAX_CAMPAIGN_RISK_PCT=5%) et ne laisse aucune place à
+    la jambe "suivi" -- ce test vérifie le REMPLISSAGE, pas le plafond
+    (déjà couvert par `test_add_leg_risk_cap`)."""
+    p = PROFILES_TREND["MODERE"]
+    campaign = make_campaign(entry=100.0, stop=95.0)
+    campaign["stage"] = "POST_BREAKOUT"
+    campaign["swing_high"] = 110.0
+    add_leg(campaign, 0.2, 100.0)
+    stop_before = campaign["stop"]
+
+    # i=0 : swing bas confirmé, prix encore sous le niveau armé (110.0) -> arme, ne remplit pas
+    ev0 = {"regime_excess": False, "divergence_raw": False, "suivi_ok": True, "swing_low_confirmed": True}
+    closed0, fee0, realized0, rev0 = step_campaign(
+        campaign, 0, o=[105.0], high=[108.0], low=[104.0], c=[106.0], ev=ev0, profile=p)
+    assert closed0 is False and fee0 == 0.0 and realized0 is None
+    assert campaign.get("suivi_armed_level") == 110.0, "doit armer exactement au swing_high courant"
+    assert campaign.get("n_suivis", 0) == 0
+
+    remaining_before_fill = campaign["remaining"]
+    # bougie suivante : le prix dépasse le niveau armé -> remplissage (même
+    # convention que le reste de ce fichier : chaque appel de step_campaign
+    # utilise i=0 sur un array à un seul élément représentant CETTE bougie,
+    # l'état de la campagne persistant entre les appels).
+    ev1 = {"regime_excess": False, "divergence_raw": False, "suivi_ok": True, "swing_low_confirmed": False}
+    closed1, fee1, realized1, rev1 = step_campaign(
+        campaign, 0, o=[111.0], high=[113.0], low=[110.5], c=[112.0], ev=ev1, profile=p)
+    assert closed1 is False and realized1 is None
+    assert fee1 > 0.0, "une jambe doit avoir été ajoutée (fee_frac = fraction ajoutée)"
+    assert campaign["remaining"] > remaining_before_fill, "la jambe doit augmenter la taille de la campagne"
+    assert campaign.get("n_suivis") == 1
+    assert campaign.get("suivi_armed_level") is None, "le niveau armé doit être consommé après remplissage"
+    assert fclose(campaign["stop"], stop_before), (
+        "H-Suivi-Cassure3BR-1 : le stop de campagne ne doit PAS bouger au remplissage"
+    )
+
+def test_cassure_3br_does_not_arm_when_suivi_not_ok():
+    """Contrôle négatif : `suivi_ok=False` (moyenne baissière ou squeeze,
+    cf. `compute_suivi_conditions`) doit empêcher l'armement, même si un
+    swing bas se confirme."""
+    p = PROFILES_TREND["MODERE"]
+    campaign = make_campaign(entry=100.0, stop=95.0)
+    campaign["stage"] = "POST_BREAKOUT"
+    campaign["swing_high"] = 110.0
+    add_leg(campaign, p["breakout_frac"], 100.0)
+
+    ev = {"regime_excess": False, "divergence_raw": False, "suivi_ok": False, "swing_low_confirmed": True}
+    step_campaign(campaign, 0, o=[105.0], high=[108.0], low=[104.0], c=[106.0], ev=ev, profile=p)
+    assert campaign.get("suivi_armed_level") is None, "suivi_ok=False doit empêcher tout armement"
+
+def test_cassure_3br_respects_suivi_max():
+    """Contrôle négatif : une campagne ayant déjà atteint `SUIVI_MAX` suivis
+    ne doit plus jamais armer de nouveau niveau, même avec toutes les
+    conditions par ailleurs réunies."""
+    p = PROFILES_TREND["MODERE"]
+    campaign = make_campaign(entry=100.0, stop=95.0)
+    campaign["stage"] = "POST_BREAKOUT"
+    campaign["swing_high"] = 110.0
+    campaign["n_suivis"] = SUIVI_MAX
+    add_leg(campaign, p["breakout_frac"], 100.0)
+
+    ev = {"regime_excess": False, "divergence_raw": False, "suivi_ok": True, "swing_low_confirmed": True}
+    step_campaign(campaign, 0, o=[105.0], high=[108.0], low=[104.0], c=[106.0], ev=ev, profile=p)
+    assert campaign.get("suivi_armed_level") is None, f"n_suivis déjà à SUIVI_MAX={SUIVI_MAX} doit bloquer l'armement"
+
+def test_cassure_3br_absent_ev_keys_preserve_historical_behavior():
+    """Garde-fou de non-régression : un `ev` qui ne fournit PAS `suivi_ok`/
+    `swing_low_confirmed` (tous les appelants historiques) doit se comporter
+    EXACTEMENT comme avant ce round -- `.get(..., False)` retombe sur False,
+    donc jamais d'armement ni de remplissage, quel que soit le prix."""
+    p = PROFILES_TREND["MODERE"]
+    campaign = make_campaign(entry=100.0, stop=95.0)
+    campaign["stage"] = "POST_BREAKOUT"
+    campaign["swing_high"] = 110.0
+    add_leg(campaign, p["breakout_frac"], 100.0)
+    remaining_before = campaign["remaining"]
+
+    ev = {"regime_excess": False, "divergence_raw": False}   # ni suivi_ok ni swing_low_confirmed
+    closed, fee, realized, rev = step_campaign(
+        campaign, 0, o=[200.0], high=[300.0], low=[100.0], c=[250.0], ev=ev, profile=p)
+    assert closed is False and fee == 0.0 and realized is None
+    assert fclose(campaign["remaining"], remaining_before), "sans les clés, aucune jambe suivi ne doit s'ajouter"
+    assert "suivi_armed_level" not in campaign
+
 def test_suivi_conditions_ema_rising_ground_truth_short_series():
     """Sur une série COURTE (moins que la fenêtre `PCTL_WINDOW`=250 de
     `compute_squeeze`), le seuil de squeeze reste NaN partout -> `compute_
@@ -722,6 +818,10 @@ TESTS = [
     test_suivi_conditions_squeeze_blocks_even_when_ema_rising,
     test_suivi_conditions_false_on_first_bar,
     test_suivi_max_is_two,
+    test_cassure_3br_arms_then_fills_adds_a_leg_without_moving_stop,
+    test_cassure_3br_does_not_arm_when_suivi_not_ok,
+    test_cassure_3br_respects_suivi_max,
+    test_cassure_3br_absent_ev_keys_preserve_historical_behavior,
 ]
 
 def main():
