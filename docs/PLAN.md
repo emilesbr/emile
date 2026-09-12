@@ -1817,6 +1817,74 @@ corpus — une lecture alternative (ex. sizing par risque aussi pour la jambe d'
 gate appliqué différemment) resterait tout aussi défendable sans plus de guidage du corpus. Ce
 round documente la lecture choisie et ses raisons, ne prétend pas qu'elle est la seule possible.
 
+### 43e application (cycle suivant) — surclassement trouvé dans `STATUS.md` : M15 n'avait JAMAIS été retesté avec le moteur IP-fidèle, contrairement à ce que le texte affirmait
+
+**Trouvaille auto-initiée** (poursuite de "continue comme l'aurait fait un ingénieur senior"), en
+reformulant la documentation GO/NO-GO comme proposé après le 42e round : `docs/STATUS.md` affirmait
+depuis le 28e round *"NO-GO H1/M15 reconfirmé... avec le moteur IP-fidèle actuel, pas seulement
+l'ancien proxy générique"*, en citant `emile/core/h1_timeframe_bench.py` comme preuve. Relecture
+mot pour mot de ce script ET de la section "28e application" ci-dessus : les deux ne rejouent QUE
+H1 — aucune mention de M15 nulle part dans le code ni la mesure de ce round. Recoupé avec
+`CLAUDE.md` (section données) : le NO-GO M15 d'origine (Phase 1) était BTC SEUL, avec l'ancien
+PROXY générique — jamais revérifié depuis avec la stratégie réelle, sur aucun actif. Même classe de
+défaut que les surclassements déjà trouvés et corrigés dans ce projet (généralisation d'un résultat
+partiel en énoncé général) — corrigé ici avec une vraie mesure, pas seulement une reformulation.
+
+**Donnée disponible, vérifiée avant tout le reste** : M15 natif existe pour BTC/ETH/BNB/SOL (pas
+XRP) depuis la restauration de données du 37e round (`data/processed/{SYMBOL}_15m_processed.csv`,
+210 085-245 751 lignes chacun, ratio 4,00-4,01x le nombre de lignes H1 correspondant — cohérent avec
+4 bougies M15 par bougie H1, pas un hasard).
+
+**Implémenté, strictement additif** :
+- `backtest_phase2.py::load_m15` — analogue exact de `load_h1` (même garde-fou anti-stub), avec
+  `_MIN_M15_ROWS = 4 * _MIN_H1_ROWS = 4000` (mis à l'échelle du ratio de bougies vérifié ci-dessus,
+  pas une valeur inventée indépendamment).
+- `emile/core/m15_timeframe_bench.py` (nouveau, analogue direct de `h1_timeframe_bench.py`, un cran
+  plus bas) : remapping M15→exécution, H1→stop UT+1 (`closure_delay_d1=1h`, durée exacte d'une
+  bougie H1 — PAS `CLOSURE_DELAY`=1 jour, 24x trop tardif ici), H4→gate UT+2
+  (`closure_delay_weekly=4h`, durée exacte d'une bougie H4 — le rôle est analogue à celui de D1 dans
+  l'expérience H1, mais le délai numérique DIFFÈRE et a été redérivé explicitement, pas recopié par
+  erreur du script H1 où il valait `CLOSURE_DELAY` par coïncidence).
+
+**5 nouveaux tests** (`test_m15_timeframe_bench.py`) : garde-fou anti-stub `load_m15` (fichier
+synthétique en dessous du seuil, doit lever) ; `_MIN_M15_ROWS` prouvé = 4×`_MIN_H1_ROWS` (pas
+inventé) ; `run_m15_experiment` comparé bit-à-bit à un appel manuel `run_faithful` avec le même
+remapping (vérité terrain, pas une réimplémentation qui pourrait diverger) ; délais de rôle prouvés
+= 1h/4h exactement (pas recyclés du script H1) ; contrôle de cohérence minimal (exécution M15 doit
+produire au moins autant de trades qu'en H4 natif — sinon le remapping des rôles serait
+probablement cassé). Suite complète **265 → 270 tests, tous verts**.
+
+**Résultat honnête, mesuré (`results/m15_timeframe_bench_results.csv`), BTC/ETH/BNB/SOL × 4
+profils, M15 (exécution) vs H4 natif** :
+
+| symbole | profil | trades M15 | trades H4 | retour M15 | retour H4 | PF M15 | PF H4 | DD max M15 | DD max H4 |
+|---|---|---|---|---|---|---|---|---|---|
+| BTC | FAIBLE→TRES_AGRESSIF | 2845-2846 | 275-285 | **-42,3% à -52,4%** | +5,8% à +26,7% | 1,00-1,01 | 1,45-1,84 | -42,5% à -52,5% | -3,0% à -18,3% |
+| ETH | FAIBLE→TRES_AGRESSIF | 2756 | 271-279 | **-26,7% à -35,5%** | +3,3% à +29,6% | 1,11-1,15 | 1,41-1,56 | -27,6% à -44,0% | -3,8% à -27,8% |
+| BNB | FAIBLE→TRES_AGRESSIF | 2872 | 277-288 | **-31,6% à -36,2%** | +8,3% à +70,0% | 1,10-1,15 | 1,87-2,13 | -32,9% à -38,2% | -3,8% à -20,3% |
+| SOL | FAIBLE→TRES_AGRESSIF | 2425 | 159-166 | **-10,2% à -28,6%** | +8,3% à +63,5% | 1,11-1,17 | 2,89-2,99 | -20,9% à -41,9% | -1,5% à -14,2% |
+
+**Conclusion, honnête, non habillée : M15 est un NO-GO net et plus sévère que H1, sur les 4 actifs
+et les 4 profils, sans exception.** ~10x plus de trades qu'en H4 (2425-2872 contre 159-288 — bien
+plus marqué que le ~3,4x déjà mesuré en H1), profit factor quasi nul (1,00-1,17, jamais rentable au
+sens propre une fois les frais comptés, contre 1,41-2,99 en H4), **retour total NÉGATIF sur les 16
+combinaisons actif×profil sans une seule exception** (contrairement à H1, où ETH restait positif
+partout), et drawdown maximal 3 à 17x plus profond qu'en H4. Le repère `CLAUDE.md`/`STATUS.md`
+("H1 et M15 ne le sont pas, NO-GO") est donc VRAI pour la stratégie IP-fidèle réelle sur M15
+également — mais ce n'était, avant ce round, qu'une affirmation non étayée pour ce timeframe
+précis, pas une mesure. `STATUS.md` corrigé pour distinguer explicitement les deux retests (H1 :
+28e round ; M15 : ce round) plutôt que de les fusionner en une seule phrase qui survivait mal à une
+citation partielle. Même caveat honnête que pour H1 (calibration `PCTL_WINDOW`/`EMA_*` en nombre de
+bougies, jamais recalibrée à cette granularité) — non isolé séparément de l'effet frais, pas
+nécessaire ici non plus (l'ampleur de la dégradation, bien supérieure à H1, est cohérente avec
+"encore plus détruit par les frais de transaction" sans avoir besoin d'invoquer un artefact de
+calibration).
+
+**Documentation mise à jour** : `docs/STATUS.md` (ligne 9 scindée en 2 paragraphes distincts H1/
+M15, chacun avec sa propre preuve) ; `docs/COUVERTURE_ENSEIGNEMENTS.md` (note du 11e round sur
+"M15 n'existe que pour BTC" corrigée — obsolète depuis la restauration de données du 37e round,
+sans impact sur la conclusion de ce chantier qui n'utilisait pas M15).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

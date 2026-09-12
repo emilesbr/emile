@@ -54,8 +54,15 @@ requise) depuis le premier listing de chaque actif jusqu'à aujourd'hui.
   `docs/PLAN.md` section "41e application" pour le détail et les chiffres.
 - **M15 natif** : BTC (245 751, déjà présent avant ce cycle, origine
   antérieure à cette session — intégrité revérifiée, pas juste supposée
-  bonne), ETH (238 114), BNB (230 913), SOL (210 085) — complète la Phase 1
-  (M15 BTC seul → NO-GO) sur les 4 actifs si ce chantier est rouvert.
+  bonne), ETH (238 114), BNB (230 913), SOL (210 085). **Rouvert et retesté
+  (43e round)** : `emile/core/m15_timeframe_bench.py` rejoue le vrai moteur
+  IP-fidèle (`run_faithful`) avec M15 natif en exécution sur les 4 actifs —
+  NO-GO reconfirmé, plus sévère qu'en H1 (retour négatif sur les 16
+  combinaisons actif×profil, profit factor 1,00-1,17) — cf. `docs/PLAN.md`
+  section "43e application". Corrige au passage un surclassement de
+  `docs/STATUS.md`, qui affirmait ce retest déjà fait alors que seul H1
+  l'avait été (Phase 1 ne l'avait mesuré qu'avec l'ancien proxy générique,
+  BTC seul).
 - H4/D1/Hebdomadaire/Mensuel : dérivés par `resample()` du H1, aucune
   donnée native séparée nécessaire (vérifié contre le corpus : aucune règle
   n'exige une UT calendaire fixe non dérivable — voir section ci-dessous).
