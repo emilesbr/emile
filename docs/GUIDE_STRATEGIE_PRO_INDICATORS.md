@@ -479,13 +479,17 @@ ont désormais été **relus directement dans le code réel** (pas seulement sup
 d'audit indépendant, citations fichier:ligne à l'appui. Toujours **catégorie C — rien implémenté**,
 décision de conception requise pour chacun.
 
-1. **CONFIRMÉ — Routage RANGE "3ème borne" vs "Neuneu" absent.** `regime_classifier.py::add_regime`
-   (lignes 54-92) ne calcule la distinction RANGE_NEUTRE/RANGE_TENDANCIEL qu'à partir de la pente
-   du canal (`slope_pct`) et de la position récente du prix (`recent_above_frac`) — aucune notion
-   de "précédé d'une tendance" ni de compte de bornes. Le seul compteur de bornes du projet
-   (`n_borders`/`MIN_BORDERS=3`) sert de seuil de maturité binaire, jamais de bascule vers une
-   seconde grille de money management. Il n'existe qu'UNE paire de grilles RANGE dans tout le code,
-   jamais deux grilles nommées "3BR"/"Neuneu".
+1. **PARTIELLEMENT IMPLÉMENTÉ (32e round, cf. `PLAN.md`) — routage RANGE "3ème borne" vs
+   "Neuneu".** La grille "3ème borne" s'est révélée être DÉJÀ le mécanisme §3/§3bis existant (mêmes
+   seuils 76%/61%, même renvoi au PDF pour les fractions de clôture) — le vrai travail neuf était
+   la DÉCISION DE ROUTAGE elle-même. `regime_classifier.py::compute_range_precedes_by_trend` +
+   `compute_range_border_count` (compte remis à zéro PAR ÉPISODE de range — PAS une réutilisation
+   de `n_borders`, dont la médiane glissante perpétuelle vaut 9 sur BTC H4 réel, la réutiliser
+   aurait rendu ce routage trivialement vrai partout) + `compute_use_neuneu` — signal exposé
+   (`feat["use_neuneu"]`), mesuré non trivial (~82% des bougies RANGE routeraient vers Neuneu),
+   PAS ENCORE CONSOMMÉ par aucun moteur (comportement inchangé). Le mécanisme NEUNEU lui-même
+   (grille de risque distincte) reste différé : il exige un stop TRAILING et un ordre Validation/
+   Confirmation non séquentiel, deux capacités absentes de `position_engine.py` aujourd'hui.
 2. **IMPLÉMENTÉ (31e round, cf. `PLAN.md`) — moitié manquante de l'invalidation 3BR par squeeze
    UT+1.** Nouvelle fonction `regime_classifier.py::compute_squeeze` (miroir exact de
    `compute_wide_channel`, même patron, seule la direction de comparaison change) expose

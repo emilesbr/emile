@@ -358,7 +358,9 @@ from emile.core.position_engine import (
 )
 from emile.core.wall_street_pattern import add_wall_street_column
 from emile.core.capital_tiers import effective_sizing
-from emile.core.regime_classifier import compute_wide_channel, compute_squeeze
+from emile.core.regime_classifier import (
+    compute_wide_channel, compute_squeeze, compute_use_neuneu, compute_range_border_count,
+)
 from emile.core.andrews_pitchfork import add_andrews_pitchfork_columns
 from emile.core.range_gates import range_gate, range_gate_extra
 
@@ -500,6 +502,25 @@ def _prepare_features(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         # d'architecture, cf. PLAN.md) fonctionnent sans connaître les 2 noms
         # historiques ("regime_h4" ici, "regime" dans `unified_protocol.py`).
         "regime": h4["regime"].values,
+        # Routage RANGE "3ème borne" vs "Neuneu" (littéral, guide officiel PRO
+        # Indicators, `docs/GUIDE_STRATEGIE_PRO_INDICATORS.md` section 3.1,
+        # `PLAN.md` "32e application"). Calculé sur le régime/n_borders H4
+        # NATIFS (l'échelle propre du range, pas D1/Hebdomadaire) -- même
+        # niveau que "regime_h4"/"n_borders" ci-dessus, jamais recalculé.
+        # EXPOSÉ mais PAS ENCORE CONSOMMÉ par aucun moteur : la structure
+        # "3ème borne" (déjà codée, §3/§3bis) reste appliquée SANS CONDITION
+        # à ce stade -- seul le mécanisme "Neuneu" lui-même (grille de
+        # risque distincte, stop trailing non-séquentiel, cf. PLAN.md pour
+        # le diagnostic complet) reste à construire, dans un round séparé.
+        # Strictement additif : cette clé de plus ne change AUCUN calcul
+        # existant, vérifié par la suite complète + régénération bit-à-bit
+        # des CSV.
+        "use_neuneu": compute_use_neuneu(
+            h4["regime"].values,
+            compute_range_border_count(
+                h4["regime"].values, compute_swing_low_confirmed(h4["low"].values, order=SWING_ORDER)
+            ),
+        ),
         "regime_d1": ctx["D1"]["regime"],   # cf. CORRECTION CONFLIT MTF en tête de fichier
         # Invalidation 3BR par SQUEEZE sur l'UT+1 (littérale, inconditionnelle
         # -- guide officiel PRO Indicators, `docs/GUIDE_STRATEGIE_PRO_

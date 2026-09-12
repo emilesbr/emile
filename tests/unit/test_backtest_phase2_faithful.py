@@ -26,7 +26,8 @@ import pytest
 from emile.backtests.backtest_phase2 import load_h1, resample
 from emile.backtests.backtest_phase2_v7 import prepare, PROFILES_V4
 from emile.backtests.backtest_phase2_ut2 import attach_multi_context, attach_context_level, CLOSURE_DELAY
-from emile.core.regime_classifier import compute_squeeze
+from emile.core.regime_classifier import compute_squeeze, compute_use_neuneu, compute_range_border_count
+from emile.core.proxy_v2 import compute_swing_low_confirmed, SWING_ORDER
 from emile.backtests.backtest_phase2_recommended import WARMUP
 from emile.backtests.backtest_phase2_faithful import (
     _prepare_features, _run_core, run_faithful, REVERSE_SCOPED_PROFILE,
@@ -97,6 +98,29 @@ def test_prepare_features_wires_squeeze_d1_from_d1_ctx_width():
     np.testing.assert_array_equal(feat["squeeze_d1"], expected)
     assert feat["squeeze_d1"].sum() > 0, (
         "test vacueux : aucune bougie squeeze_d1 détectée sur BTC H4/D1 réel"
+    )
+
+@_skip_if_no_data
+@pytest.mark.data_dependent
+def test_prepare_features_wires_use_neuneu_from_h4_regime_and_borders():
+    """`_prepare_features` doit exposer `use_neuneu` (routage RANGE "3ème
+    borne" vs "Neuneu") calculé sur le régime/n_borders H4 NATIFS -- comparé
+    directement à `compute_use_neuneu` appelé à la main, pas une
+    réimplémentation qui pourrait diverger. `use_neuneu` n'est encore
+    consommé par aucun moteur (cf. tête de fichier) -- ce test vérifie
+    uniquement le CALCUL, pas un effet sur les trades."""
+    h4 = _H4_BTC.copy(); d1 = _D1_BTC.copy(); weekly = _WEEKLY_BTC.copy()
+    feat = _prepare_features(h4.copy(), d1.copy(), weekly.copy())
+
+    h4p = prepare(h4.copy())
+    swing = compute_swing_low_confirmed(h4p["low"].values, order=SWING_ORDER)
+    border_count = compute_range_border_count(h4p["regime"].values, swing)
+    expected = compute_use_neuneu(h4p["regime"].values, border_count)
+
+    np.testing.assert_array_equal(feat["use_neuneu"], expected)
+    assert 0 < feat["use_neuneu"].sum() < len(feat["use_neuneu"]), (
+        "test vacueux : use_neuneu doit être vrai sur AU MOINS UNE bougie et faux sur "
+        "au moins une autre, sur BTC H4 réel (sinon le routage ne discriminerait rien)"
     )
 
 @_skip_if_no_data

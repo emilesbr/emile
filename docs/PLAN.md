@@ -1232,6 +1232,74 @@ en backlog, pas tentée par manque de définition opérationnelle prête. Les é
 3BR/Neuneu) et n°3/nouveau (Suivi de tendance absent de `trend_table.py`) restent également ouverts,
 plus gros chantiers chacun nécessitant leur propre décision de conception.
 
+### 32e application (cycle suivant) — routage RANGE "3ème borne" vs "Neuneu" : signal construit, mesuré, mécanisme Neuneu lui-même différé
+
+**Décision directe de l'utilisateur, "directeur ingénieur senior"** : traiter le plus gros écart
+restant du backlog (routage RANGE #1). Après relecture précise du guide et du code existant, ce
+chantier s'est révélé se décomposer en deux parties de nature très différente — traitées comme
+telles, pas mélangées.
+
+**Diagnostic avant code** : la grille "3ème borne" (Neutre/Tendancielle) décrite par le guide N'EST
+PAS un nouveau mécanisme — comparaison ligne à ligne avec §3/§3bis de `RULES_EXTRACTION.md` (déjà
+codé sans condition) : mêmes seuils de retracement (76%/61%), même renvoi explicite au PDF pour les
+fractions de clôture (*"SL et/ou TP partiel, cf. PDF"*), même forme Validation/Confirmation/Objectif.
+Le VRAI travail neuf de ce chantier est donc : (a) la DÉCISION DE ROUTAGE elle-même (quand appliquer
+3BR vs Neuneu), et (b) le mécanisme NEUNEU lui-même (grille de risque structurellement différente).
+
+**Partie (a), routage — implémentée, testée, mesurée** :
+- `regime_classifier.py::compute_range_precedes_by_trend(regime)` : lit littéralement "range
+  précédé d'une tendance ? (moyenne hors des contextes = tendance)" en réutilisant le régime H4 déjà
+  classé (`TENDANCE` = exactement cette définition) — dernier régime NON-range avant le début du run
+  de RANGE courant, `ffill` causal, aucune bougie future consultée. Distingue explicitement
+  "précédé d'un EXCES" (False) de "aucun régime antérieur encore observé" (`no_prior_regime`,
+  correspond à "pas assez d'historique").
+- **Trouvaille avant d'écrire le code final** (mesurée, pas supposée) : réutiliser `n_borders`
+  (compte glissant perpétuel, `backtest_phase2_v7.py::prepare`, déjà utilisé pour `MIN_BORDERS`) pour
+  la condition ">4 bornes" du guide aurait rendu le routage Neuneu VRAI sur 99,7% des bougies BTC
+  H4 réel (médiane de `n_borders`=9) — pas une lecture fidèle de "plus de 4 bornes **de ce range**".
+  Corrigé : `regime_classifier.py::compute_range_border_count(regime, is_swing_low_confirmed)`,
+  nouveau compte REMIS À ZÉRO à chaque nouveau run de RANGE (même primitive causale
+  `compute_swing_low_confirmed` que `n_borders`/la variante squeeze, agrégée différemment — pas une
+  nouvelle définition de "borne").
+- `regime_classifier.py::compute_use_neuneu(regime, range_border_count)` : combine les 2 conditions
+  dans le périmètre crypto de ce projet (la 3e, "forex UT hebdo", hors-scope) avec le repli
+  "pas assez d'historique".
+- `backtest_phase2_faithful.py::_prepare_features` expose `feat["use_neuneu"]` — **EXPOSÉ MAIS PAS
+  ENCORE CONSOMMÉ** par aucun moteur (la structure 3ème borne reste appliquée sans condition à ce
+  stade, comportement RIGOUREUSEMENT inchangé, vérifié bit-à-bit).
+
+**10 nouveaux tests** (`test_regime_classifier.py`, `test_backtest_phase2_faithful.py`) : vérité
+terrain calculée à la main pour `compute_range_precedes_by_trend`/`compute_range_border_count`,
+garde-fou "warmup = pas assez d'historique", garde-fou "le compte par épisode ne grimpe pas sans
+fin contrairement à `n_borders`", contrôles positifs/négatifs de `compute_use_neuneu`, câblage
+comparé à un appel direct. Suite complète **234 → 243 tests, tous verts**.
+
+**Mesuré sur données réelles (BTC/ETH/BNB/SOL H4)** : signal NON trivial, ~82% des bougies en RANGE
+routeraient vers Neuneu (7226/8812 BTC, proportions similaires sur les 3 autres actifs) — cohérent
+avec la présentation du guide lui-même ("Neuneu, la stratégie à privilégier au moindre doute").
+Aucun changement de comportement de code (le signal n'est pas encore consommé) — vérifié : aucun
+CSV de résultats n'a changé.
+
+**Partie (b), mécanisme NEUNEU lui-même — DÉLIBÉRÉMENT DIFFÉRÉ, pas oublié.** Diagnostic fait avant
+de commencer à coder (pas après un blocage en cours de route) : la grille Neuneu (Borne Neuneu +
+Repli Neuneu/dumb zone) exige 2 capacités qui n'existent nulle part dans `position_engine.py`
+aujourd'hui :
+1. **Un stop TRAILING** (Validation Neuneu : *"SL déplacé au sommet récent"*) — tous les mécanismes
+   existants ne connaissent qu'un stop FIXE à l'ouverture + un déplacement UNIQUE à breakeven
+   (Confirmation). Aucune primitive de stop réévalué en continu n'existe.
+2. **Un ordre Validation/Confirmation NON séquentiel** (*"parfois la confirmation arrivera avant"*
+   la validation) — `process_tranche` exige explicitement `tr["val_done"]` avant de tester la
+   Confirmation (séquentiel par construction, cf. son propre commentaire "séquentiel"). Neuneu
+   viole cette hypothèse structurelle.
+
+Forcer une implémentation rapide sur cette base aurait signifié soit inventer une approximation
+(risque de mésreprésenter la citation — exactement le piège que ce projet a already évité plusieurs
+fois, Fibonacci RANGE et Agressif/Très Agressif Range Tendanciel notamment), soit dupliquer
+`process_tranche` en une 2e version divergente (le risque d'architecture que les 24e-27e rounds ont
+justement éliminé). **Décision : construire la capacité manquante proprement dans un round séparé**,
+pas la bricoler en marge de celui-ci. Le signal de routage (partie a) reste utile et vérifiable
+indépendamment en attendant.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

@@ -46,6 +46,8 @@ import pytest
 from emile.core.regime_classifier import (
     add_regime, PCTL_WINDOW, SQUEEZE_PCTL, EXCESS_PCTL, TREND_SLOPE_THRESHOLD,
     RECENT_WINDOW, compute_wide_channel, WIDE_PCTL, compute_squeeze,
+    compute_range_precedes_by_trend, compute_use_neuneu, NEUNEU_MAX_BORDERS,
+    compute_range_border_count,
 )
 
 N_WARMUP_MARGIN = 400  # >> PCTL_WINDOW (250) pour que les seuils adaptatifs soient toujours définis
@@ -546,6 +548,153 @@ def test_squeeze_is_subset_of_exces_regime():
     )
     assert squeezed.sum() > 0, "test vacueux : aucune bougie squeeze détectée sur ce scénario"
 
+# ---------------------------------------------------------------------------
+# compute_range_precedes_by_trend / compute_use_neuneu — routage RANGE
+# "3ème borne" vs "Neuneu" (guide officiel PRO Indicators, cf. `PLAN.md`
+# "32e application"). Tests À VÉRITÉ TERRAIN sur une séquence de régimes
+# choisie à la main, pas une propriété statistique.
+# ---------------------------------------------------------------------------
+def test_precedes_by_trend_ground_truth_hand_computed():
+    """Séquence :
+      idx  0    1    2         3         4         5         6
+      reg TEND EXCES RANGE_NEU RANGE_TEN TEND      RANGE_NEU RANGE_TEN
+    Dernier régime non-RANGE avant chaque bougie (une bougie non-range EST
+    son propre "dernier régime non-range" -- la fonction est calculée pour
+    toutes les bougies, seule sa valeur sur les bougies RANGE sert au
+    routage, mais son comportement sur les bougies non-range est vérifié
+    explicitement ici plutôt que laissé non spécifié) :
+      idx 0 (TENDANCE, non-range) -> dernier non-range = lui-même = TENDANCE -> True
+      idx 1 (EXCES, non-range) -> dernier non-range = lui-même = EXCES -> False
+      idx 2,3 (RANGE) -> dernier non-range = idx 1 = EXCES -> precedes_by_trend=False
+      idx 4 (TENDANCE, non-range) -> dernier non-range = idx 4 lui-même = TENDANCE
+      idx 5,6 (RANGE) -> dernier non-range = idx 4 = TENDANCE -> precedes_by_trend=True
+    """
+    regime = np.array([
+        "TENDANCE", "EXCES", "RANGE_NEUTRE", "RANGE_TENDANCIEL",
+        "TENDANCE", "RANGE_NEUTRE", "RANGE_TENDANCIEL",
+    ], dtype=object)
+    precedes, no_prior = compute_range_precedes_by_trend(regime)
+    expected_precedes = np.array([True, False, False, False, True, True, True])
+    expected_no_prior = np.array([False] * 7)
+    assert np.array_equal(precedes, expected_precedes), (
+        f"attendu {expected_precedes.tolist()}, obtenu {precedes.tolist()}"
+    )
+    assert np.array_equal(no_prior, expected_no_prior), (
+        f"attendu {expected_no_prior.tolist()}, obtenu {no_prior.tolist()} "
+        "(un régime non-range a déjà été vu dès idx 0, no_prior_regime doit rester faux partout)"
+    )
+
+def test_precedes_by_trend_no_prior_regime_at_series_start():
+    """Une série qui commence DÉJÀ en RANGE (aucun régime non-range observé
+    avant) doit être `no_prior_regime=True` sur toute cette première
+    séquence, quel que soit le régime qui suit -- "pas assez d'historique",
+    une des 3 conditions littérales du guide pour router vers Neuneu."""
+    regime = np.array([
+        "RANGE_NEUTRE", "RANGE_TENDANCIEL", "RANGE_NEUTRE",  # aucun non-range encore vu
+        "TENDANCE",                                            # 1er non-range
+        "RANGE_NEUTRE",                                        # précédé par TENDANCE désormais
+    ], dtype=object)
+    precedes, no_prior = compute_range_precedes_by_trend(regime)
+    assert np.array_equal(no_prior, [True, True, True, False, False]), (
+        f"obtenu {no_prior.tolist()}"
+    )
+    # Les 3 premières bougies : precedes_by_trend doit être FAUX (pas juste
+    # "on ne sait pas") -- le routage vers Neuneu passe par `no_prior_regime`
+    # explicitement, pas par une valeur ambiguë de `precedes_by_trend`.
+    assert not precedes[:3].any(), "precedes_by_trend doit être faux quand aucun régime antérieur n'existe"
+    assert precedes[4], "la 5e bougie, précédée d'une TENDANCE réelle, doit être precedes_by_trend=True"
+
+def test_range_border_count_ground_truth_hand_computed():
+    """Séquence choisie à la main :
+      idx    0    1    2    3    4    5    6    7    8    9
+      reg  TEND RANGE RANGE RANGE RANGE TEND RANGE RANGE RANGE RANGE
+      swng    F    F    T    F    T    F    F    T    T    F
+    Run 1 (idx 1-4, entrée en range à idx 1) : bornes confirmées à idx 2 et
+    4 -> compte 0,0,1,1 sur idx 1,2,3,4 (la borne d'une bougie compte à
+    PARTIR de cette bougie, pas avant).
+    Run 2 (idx 6-9, nouveau run après idx 5=TENDANCE) : remis à 0. Bornes à
+    idx 7,8 -> compte 0,1,2,2 sur idx 6,7,8,9.
+    Hors range (idx 0, 5) : valeur neutre 0."""
+    regime = np.array(["TENDANCE", "RANGE_NEUTRE", "RANGE_NEUTRE", "RANGE_NEUTRE", "RANGE_NEUTRE",
+                        "TENDANCE", "RANGE_NEUTRE", "RANGE_NEUTRE", "RANGE_NEUTRE", "RANGE_NEUTRE"], dtype=object)
+    swing = np.array([False, False, True, False, True, False, False, True, True, False])
+    got = compute_range_border_count(regime, swing)
+    expected = np.array([0.0, 0.0, 1.0, 1.0, 2.0, 0.0, 0.0, 1.0, 2.0, 2.0])
+    assert np.array_equal(got, expected), f"attendu {expected.tolist()}, obtenu {got.tolist()}"
+
+def test_range_border_count_is_not_perpetually_high_on_real_btc_data():
+    """Garde-fou motivant CETTE fonction plutôt que la réutilisation de
+    `n_borders` (cf. sa docstring) : sur des données réelles, le compte par
+    ÉPISODE doit redescendre à 0 régulièrement (à chaque nouveau range),
+    contrairement à `n_borders` (glissant, médian=9, >4 sur 99,7% des
+    bougies BTC H4 réel -- mesuré, cf. PLAN.md). Vérifié ici sur un
+    scénario synthétique avec des runs de range COURTS (moins de 4 bornes
+    chacun) : le compte ne doit JAMAIS dépasser le nombre de swings dans le
+    run le plus long, pas continuer à grimper sans fin."""
+    rng = np.random.default_rng(20260912)
+    n = 500
+    # Alterne runs courts de RANGE (5-8 bougies) et bougies isolées de TENDANCE
+    regimes = []
+    while len(regimes) < n:
+        regimes += ["TENDANCE"]
+        regimes += ["RANGE_NEUTRE"] * int(rng.integers(5, 9))
+    regime = np.array(regimes[:n], dtype=object)
+    swing = rng.random(n) < 0.3   # ~30% des bougies sont un swing confirmé
+    got = compute_range_border_count(regime, swing)
+    max_run_len = 8
+    assert got.max() <= max_run_len, (
+        f"compte de bornes par épisode = {got.max()}, ne devrait jamais dépasser la longueur "
+        f"du plus long run ({max_run_len}) si le compte est bien remis à 0 à chaque nouveau range"
+    )
+    assert (got[np.array(regime) == "TENDANCE"] == 0).all(), (
+        "hors RANGE, le compte doit rester à la valeur neutre 0"
+    )
+
+def test_use_neuneu_routes_on_not_preceded_by_trend():
+    """Contrôle direct de la 1ère condition de routage : un range précédé
+    d'un EXCES (pas d'une TENDANCE), avec peu de bornes et un historique
+    suffisant, doit quand même router vers Neuneu."""
+    regime = np.array(["TENDANCE"] * 10 + ["EXCES"] + ["RANGE_NEUTRE"] * 5, dtype=object)
+    border_count = np.full(len(regime), 1.0)   # loin sous le seuil
+    use_neuneu = compute_use_neuneu(regime, border_count)
+    assert use_neuneu[-5:].all(), "range précédé d'un EXCES (pas d'une TENDANCE) doit router vers Neuneu"
+
+def test_use_neuneu_routes_on_too_many_borders():
+    """Contrôle direct de la 2e condition : un range précédé d'une
+    TENDANCE réelle, mais avec `border_count > NEUNEU_MAX_BORDERS`, doit
+    quand même router vers Neuneu."""
+    regime = np.array(["TENDANCE"] * 10 + ["RANGE_NEUTRE"] * 5, dtype=object)
+    border_count = np.full(len(regime), float(NEUNEU_MAX_BORDERS) + 1.0)
+    use_neuneu = compute_use_neuneu(regime, border_count)
+    assert use_neuneu[-5:].all(), (
+        f"border_count={NEUNEU_MAX_BORDERS + 1} > NEUNEU_MAX_BORDERS={NEUNEU_MAX_BORDERS} "
+        "doit router vers Neuneu même si précédé d'une tendance"
+    )
+
+def test_use_neuneu_false_when_preceded_by_trend_and_few_borders():
+    """Contrôle POSITIF des deux tests ci-dessus (sinon ils pourraient
+    passer trivialement sur une fonction qui route toujours vers Neuneu) :
+    précédé d'une TENDANCE réelle, peu de bornes, historique suffisant ->
+    NE PAS router vers Neuneu (structure 3ème borne standard)."""
+    regime = np.array(["TENDANCE"] * 10 + ["RANGE_NEUTRE"] * 5, dtype=object)
+    border_count = np.full(len(regime), 1.0)
+    use_neuneu = compute_use_neuneu(regime, border_count)
+    assert not use_neuneu[-5:].any(), (
+        "précédé d'une tendance réelle + peu de bornes ne doit PAS router vers Neuneu"
+    )
+
+def test_use_neuneu_nan_border_count_does_not_trigger_too_many_borders():
+    """`border_count` NaN (warmup, ex. tout début de série) ne doit JAMAIS
+    être lu comme "trop de bornes" -- comparaison
+    numpy `NaN > seuil` vaut déjà `False`, vérifié explicitement plutôt que
+    supposé (le routage retombe alors sur les 2 autres conditions)."""
+    regime = np.array(["TENDANCE"] * 10 + ["RANGE_NEUTRE"] * 5, dtype=object)
+    border_count = np.full(len(regime), np.nan)
+    use_neuneu = compute_use_neuneu(regime, border_count)
+    assert not use_neuneu[-5:].any(), (
+        "border_count=NaN ne doit pas, à lui seul, router vers Neuneu (précédé d'une tendance réelle par ailleurs)"
+    )
+
 if __name__ == "__main__":
     tests = [
         test_regime_range_neutre_synthetic,
@@ -567,6 +716,14 @@ if __name__ == "__main__":
         test_squeeze_nan_width_is_not_squeeze,
         test_squeeze_is_causal_truncating_future_changes_nothing,
         test_squeeze_is_subset_of_exces_regime,
+        test_precedes_by_trend_ground_truth_hand_computed,
+        test_precedes_by_trend_no_prior_regime_at_series_start,
+        test_range_border_count_ground_truth_hand_computed,
+        test_range_border_count_is_not_perpetually_high_on_real_btc_data,
+        test_use_neuneu_routes_on_not_preceded_by_trend,
+        test_use_neuneu_routes_on_too_many_borders,
+        test_use_neuneu_false_when_preceded_by_trend_and_few_borders,
+        test_use_neuneu_nan_border_count_does_not_trigger_too_many_borders,
     ]
     for t in tests:
         t()

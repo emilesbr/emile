@@ -486,15 +486,25 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
 - **Routage RANGE "3ème borne" vs "Neuneu" (`Range/Range.png`)** — le guide décrit DEUX
   structures RANGE distinctes, choisies par une question explicite (*"range précédé d'une
   tendance ? (moyenne hors des contextes = tendance)"* → 3ème borne ; sinon, ou si range ≥4
-  bornes, ou Forex UT hebdo → Neuneu), chacune avec sa PROPRE grille de money management (seuils
-  de retracement différents : 3BR neutre ≥76% vs 3BR tendancielle ≥61% vs Neuneu/Borne Neuneu
-  fibo 76% seul). **Vérifié dans `regime_classifier.py::add_regime`** : le code actuel ne produit
-  qu'UNE seule paire de régimes RANGE (`RANGE_NEUTRE`/`RANGE_TENDANCIEL`, basés sur la pente du
-  canal, pas sur "précédé d'une tendance" ni sur un compte de bornes) — aucune notion de "range
-  ≥4 bornes → structure différente" ni de routage vers 2 grilles RANGE distinctes. Catégorie C
-  (exige une décision de conception : comment détecter causalement "range précédé d'une
-  tendance" et "≥4 bornes", et si ça justifie une refonte du régime RANGE actuel ou une couche
-  additionnelle) — PAS implémenté, backlog ouvert.
+  bornes, ou Forex UT hebdo → Neuneu), chacune avec sa PROPRE grille de money management.
+  **PARTIELLEMENT IMPLÉMENTÉ (32e round)** — la grille "3ème borne" elle-même s'est révélée être
+  DÉJÀ le mécanisme §3/§3bis existant (mêmes seuils 76%/61%, même renvoi au PDF pour les fractions
+  de clôture) : le vrai travail neuf était la DÉCISION DE ROUTAGE. Construite et mesurée :
+  `regime_classifier.py::compute_range_precedes_by_trend` (réutilise le régime H4 déjà classé,
+  aucune invention) + `compute_range_border_count` (compte de bornes REMIS À ZÉRO par épisode de
+  range — PAS une réutilisation de `n_borders`, dont la médiane glissante perpétuelle vaut 9 sur
+  BTC H4 réel, >4 sur 99,7% des bougies : le réutiliser aurait rendu ce routage trivialement vrai
+  partout, trouvaille faite AVANT d'écrire le code final) + `compute_use_neuneu`. Exposé dans
+  `feat["use_neuneu"]`, mesuré non trivial (~82% des bougies RANGE routeraient vers Neuneu sur les
+  4 actifs — cohérent avec le guide lui-même : "la stratégie à privilégier au moindre doute").
+  **PAS ENCORE CONSOMMÉ par aucun moteur** : la grille "3BR" reste appliquée sans condition,
+  comportement inchangé, vérifié bit-à-bit. Le mécanisme NEUNEU lui-même (grille de risque
+  distincte) reste catégorie C, différé — diagnostic fait AVANT de coder : il exige un stop
+  TRAILING (aucune primitive de ce type n'existe dans `position_engine.py`) et un ordre
+  Validation/Confirmation NON séquentiel (*"parfois la confirmation arrivera avant"* —
+  `process_tranche` est séquentiel par construction). Backlog ouvert, décision de conception à
+  prendre dans un round séparé plutôt que de bricoler une approximation ou dupliquer
+  `process_tranche`.
 - ~~**Invalidation 3BR par SQUEEZE (`Range/3eme-borne/3ème-borne.png`), citation exacte** : *"On ne
   doit plus la trader si jamais le range produit un SQUEEZE... Si le range se forme juste après
   un SQUEEZE sur l'unité de temps supérieure, il faudra alors éviter de trader cette 3BR..."*~~ —
