@@ -542,11 +542,17 @@ du round précédent :
 - **Le mécanisme "Suivi de tendance" (§4.3, PAS seulement sa variante squeeze) est ABSENT de
   `trend_table.py` en entier.** L'item ci-dessus (Repli sur 3BR squeezée) ne couvrait qu'une des 3
   branches (Repli à la moyenne / Cassure de 3BR / Repli sur 3BR squeezée), chacune avec sa propre
-  grille STOPLOSS/VALIDATION/CONFIRMATION/OBJECTIF et ses 5 conditions d'activation. `grep -n
-  "suivi\|volatil\|alerte\|repli.*moyenne"` sur `emile/core/trend_table.py` ne retourne AUCUN
-  résultat — le code actuel modélise le Breakout comme un simple "Renfort +X%" figé par profil
-  puis saute directement à Divergence, sans aucune des 3 branches de ré-entrée par ordre en
-  attente. Catégorie C, portée plus large que ce que le 29e round avait cerné — PAS implémenté.
+  grille STOPLOSS/VALIDATION/CONFIRMATION/OBJECTIF et ses 5 conditions d'activation. Le code actuel
+  modélise le Breakout comme un simple "Renfort +X%" figé par profil puis saute directement à
+  Divergence, sans aucune des 3 branches de ré-entrée par ordre en attente.
+  **PARTIELLEMENT IMPLÉMENTÉ (33e round)** : les 5 conditions d'ACTIVATION construites et mesurées
+  — `trend_table.py::compute_suivi_conditions` (moyenne haussière + pas de squeeze sur le canal H4,
+  H-Suivi-1 : conditions 3/4 du guide traitées comme la même contrainte, le mot "alerte" désignant
+  déjà le signal SQUEEZE ailleurs dans le corpus) + `SUIVI_MAX=2`. Mesuré non trivial (~93-94% des
+  bougies TENDANCE satisfont ces conditions). Fonction NON appelée par `run_trend_table` — zéro
+  changement de comportement. **Les 3 branches de ré-entrée elles-mêmes restent catégorie C,
+  différées** : chacune exige son propre détecteur de pattern de prix, un chantier à part entière,
+  pas une règle numérique simple — même raison que le mécanisme Neuneu (32e round).
 - **Nouvel item trouvé** : les sous-patterns "Trend Follow"/"Exit" en régime Excès (§2.1 du guide,
   grilles de risque complètes, niveau EXPERT) ne sont jamais implémentés — `range_gates.py:48`
   bloque INCONDITIONNELLEMENT toute entrée en régime EXCES. Cohérent avec le choix déjà documenté

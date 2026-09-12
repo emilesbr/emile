@@ -500,17 +500,17 @@ décision de conception requise pour chacun.
    `feat["squeeze_d1"][i]` est vrai — strictement additif, testé (garde-fous "squeeze ⊆ EXCES",
    causalité, cas de base) et mesuré. La 3ème clause ("retour au niveau de la 1BR") reste NON
    implémentée (aucun suivi du niveau de la 1ère borne dans ce moteur — backlog ouvert).
-3. **CONFIRMÉ, et PLUS LARGE que prévu — pas seulement la variante squeeze.** L'audit a montré que
-   c'est tout le mécanisme "Suivi de tendance" (§4.3 de ce document — 3 branches Repli à la
+3. **PARTIELLEMENT IMPLÉMENTÉ (33e round, cf. `PLAN.md`) — mécanisme "Suivi de tendance".**
+   L'audit avait montré que c'est tout le mécanisme (§4.3 de ce document — 3 branches Repli à la
    moyenne/Cassure de 3BR/Repli sur 3BR squeezée, chacune avec sa propre grille STOPLOSS/
-   VALIDATION/CONFIRMATION/OBJECTIF, précédées de 5 conditions d'activation) qui est ABSENT de
-   `trend_table.py` (le moteur TENDANCE) — `grep -n "suivi\|volatil\|alerte\|repli.*moyenne"` n'y
-   retourne aucun résultat. Le code actuel modélise le Breakout comme un simple "Renfort +X%" figé
-   par profil puis saute directement à Divergence : aucune des 3 branches de ré-entrée par ordre en
-   attente n'existe. `compute_squeezed_third_border`/`_add_squeeze_columns`
-   (`backtest_phase2_faithful.py`) ne sont câblés QUE côté RANGE (moteur séparé, sans import croisé
-   avec `trend_table.py`) — la variante squeeze de §4.3 n'est donc, en l'état, qu'un TIERS du trou
-   réel.
+   VALIDATION/CONFIRMATION/OBJECTIF, précédées de 5 conditions d'activation) qui manquait à
+   `trend_table.py`, pas seulement la variante squeeze. Implémenté : les 5 conditions d'ACTIVATION
+   (`trend_table.py::compute_suivi_conditions` — moyenne haussière + pas de squeeze sur le canal
+   H4, H-Suivi-1 : conditions 3/4 traitées comme la même contrainte, "alerte" désignant déjà le
+   signal SQUEEZE ailleurs dans le corpus + `SUIVI_MAX=2`), mesurées non triviales (~93-94% des
+   bougies TENDANCE). Fonction NON appelée par `run_trend_table` — zéro changement de
+   comportement. Les 3 branches de ré-entrée elles-mêmes (chacune un détecteur de pattern de prix
+   dédié) restent différées, backlog.
 
 **Nouvel item trouvé par l'audit, catégorie C** :
 

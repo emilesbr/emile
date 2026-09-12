@@ -652,6 +652,7 @@ from emile.backtests.backtest_phase2_v7 import prepare, LOCAL_DURATION, CONTEXT_
 # bit-à-bit dans `backtest_phase2_ut2.py`/`test_ut2.py`) : réutilisée telle
 # quelle ici plutôt que redécidée, cf. H13/H16.
 from emile.backtests.backtest_phase2_ut2 import CLOSURE_DELAY  # lecture seule, aucune modification
+from emile.core.regime_classifier import compute_squeeze  # lecture seule, aucune modification
 
 # --- Constantes de détection des étapes (cf. hypothèses H5-H9 ci-dessus) ---
 ACCUM_RETRACEMENT_LOW, ACCUM_RETRACEMENT_HIGH = 0.38, 0.61        # RULES_EXTRACTION §1
@@ -661,6 +662,69 @@ VOLUME_MA_WINDOW = 20
 VOLUME_EXPANSION_MULT = 1.5                                       # H9
 MAX_CAMPAIGN_RISK_PCT = 0.05                                      # H3, RULES_EXTRACTION §5
 BREAKOUT_SPACE_MULT = 1.0                                         # H15, "Ratio 1:1"
+SUIVI_MAX = 2   # "pas plus de 2 suivis dans une tendance" -- guide officiel PRO Indicators, cf. ci-dessous
+
+# ============================================================================
+# "SUIVI DE TENDANCE" (guide officiel PRO Indicators, `docs/GUIDE_STRATEGIE_
+# PRO_INDICATORS.md` section 4.3, `PLAN.md` "33e application") -- sous-étape
+# ABSENTE de la table à 5 étapes ci-dessus (Accumulation -> Breakout -> ce
+# qui manque ICI -> Divergence -> Pull-Back -> Excès final). Citation exacte
+# des 5 conditions d'activation :
+# *"Rappel des conditions réunies pour activer le suivi de tendance : 1
+# BREAKOUT VALIDÉ ET CONFIRMÉ, 2 MOYENNE HAUSSIÈRE, 3 ÉVITER SI ALERTE DE
+# VOLATILITÉ RÉCENTE, 4 ÉVITER SI SQUEEZE SUR LES PRIX, 5 PAS PLUS DE 2
+# SUIVIS DANS UNE TENDANCE."*
+#
+# Chantier scindé en deux, comme le routage RANGE 3ème borne/Neuneu (32e
+# round) -- même raison : la partie GATING (ce bloc) est vectorisable et
+# testable indépendamment de tout état de campagne ; les 3 branches de
+# RÉ-ENTRÉE elles-mêmes (Repli à la moyenne / Cassure de 3BR / Repli sur 3BR
+# squeezée), chacune avec sa propre grille STOPLOSS/VALIDATION/CONFIRMATION/
+# OBJECTIF, restent un chantier séparé (backlog, cf. PLAN.md) -- elles
+# exigeraient chacune leur propre détecteur de déclenchement (pattern de prix
+# spécifique), pas juste ce gate générique.
+#
+# Correspondance des 5 conditions avec ce qui est DÉJÀ disponible, sans rien
+# inventer au-delà d'UNE seule hypothèse (H-Suivi-1 ci-dessous) :
+#   1. "Breakout validé et confirmé" -- DÉJÀ garanti par construction : cette
+#      condition n'a de sens QUE pendant l'étape POST_BREAKOUT de
+#      `step_campaign`, qui n'est atteinte qu'après `ev["breakout_raw"]`
+#      (cassure + volume + score Framework, RULES_EXTRACTION §1). Aucun calcul
+#      supplémentaire nécessaire -- le simple fait d'appeler cette fonction
+#      DANS ce contexte suffit.
+#   2. "Moyenne haussière" -- pente de l'EMA de fond (`ema_trend_v`, MÊME
+#      filtre que `run_trend_table`/`proxy_v2`, jamais recalculé séparément) :
+#      `ema_trend_v[i] > ema_trend_v[i-1]`, comparaison directe, aucun seuil
+#      à inventer.
+#   3+4. "Alerte de volatilité récente" / "squeeze sur les prix" -- **H-Suivi-1
+#      (hypothèse documentée, la seule nécessaire ici)** : traitées comme LA
+#      MÊME contrainte plutôt que deux mécanismes distincts, faute de
+#      définition séparée pour "récente" dans le corpus (le seul autre usage
+#      du mot "alerte" dans tout le corpus est justement le signal SQUEEZE,
+#      RULES_EXTRACTION.md §2 : *"SQUEEZE | Jaune/Orange (ALERTE)"* -- ce
+#      n'est PAS une coïncidence de vocabulaire, c'est la même notion nommée
+#      deux fois). Lue via `regime_classifier.compute_squeeze` appliqué au
+#      canal H4 natif (`ctx_width_pct` de CE DataFrame, pas D1 -- "sur les
+#      prix" désigne l'UT d'exécution de la tendance, pas l'UT+1), lecture
+#      CONTEMPORAINE (même choix qu'H-Squeeze-UT1-1 au 31e round : le corpus
+#      ne chiffre pas "récente", pas de fenêtre de recul inventée).
+#   5. "Pas plus de 2 suivis" -- **stateful** (dépend du nombre de suivis déjà
+#      pris PAR CETTE campagne), donc PAS vectorisable ici : à appliquer par
+#      l'appelant via un compteur `campaign["n_suivis"]`, une fois qu'un
+#      mécanisme de ré-entrée existe pour l'incrémenter (backlog).
+# ============================================================================
+
+def compute_suivi_conditions(ema_trend, ctx_width_pct) -> np.ndarray:
+    """Combine les conditions 2/3/4 ci-dessus (celles vectorisables sans état
+    de campagne) : moyenne haussière ET pas de squeeze sur le canal H4.
+    Retourne un array booléen aligné sur `ema_trend`/`ctx_width_pct`.
+
+    Ne couvre PAS les conditions 1 (implicite au contexte d'appel) ni 5
+    (stateful, cf. bloc ci-dessus) -- l'appelant doit les combiner lui-même."""
+    ema_v = np.asarray(ema_trend, dtype=float)
+    ema_rising = np.concatenate(([False], ema_v[1:] > ema_v[:-1]))
+    squeeze_h4 = compute_squeeze(ctx_width_pct)
+    return ema_rising & ~squeeze_h4
 
 # --- Table de money management "trade de tendance" (RULES_EXTRACTION §4) ---
 # accum_frac / breakout_frac / pullback_frac : fractions de l'unité U ajoutées

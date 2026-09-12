@@ -13,12 +13,14 @@ de leur fournir des scénarios entièrement maîtrisés ici.
 """
 from fractions import Fraction as F
 
+import numpy as np
 import pytest
 
 from emile.core.trend_table import (
     add_leg, make_campaign, step_campaign, try_open_campaign, step_reverse,
     PROFILES_TREND, MAX_CAMPAIGN_RISK_PCT,
     free_room_frac, breakout_space_ok, attach_obstacle_level, CLOSURE_DELAY,
+    compute_suivi_conditions, SUIVI_MAX,
 )
 
 def fclose(a, b, tol=1e-9):
@@ -659,6 +661,48 @@ def test_range_limit_is_not_independent_of_the_broken_level():
         "aucune barre où local_high (100) < ctx_high (200) : le test ne "
         "distingue pas réellement les deux fenêtres, il est vacant")
 
+def test_suivi_conditions_ema_rising_ground_truth_short_series():
+    """Sur une série COURTE (moins que la fenêtre `PCTL_WINDOW`=250 de
+    `compute_squeeze`), le seuil de squeeze reste NaN partout -> `compute_
+    squeeze` retombe sur son défaut prudent (jamais squeeze, cf. sa propre
+    docstring) -- `compute_suivi_conditions` se réduit alors exactement à
+    la pente de l'EMA, vérifiée à la main :
+      ema_trend = [1, 2, 3, 2, 3] -> rising = [F, T, T, F, T] (idx0 -> False
+      par convention, aucune bougie antérieure)."""
+    ema_trend = np.array([1.0, 2.0, 3.0, 2.0, 3.0])
+    width = np.array([1.0, 4.0, 3.0, 2.0, 1.0])   # trop court pour que le squeeze morde -- warmup
+    got = compute_suivi_conditions(ema_trend, width)
+    expected = np.array([False, True, True, False, True])
+    assert np.array_equal(got, expected), f"attendu {expected.tolist()}, obtenu {got.tolist()}"
+
+def test_suivi_conditions_squeeze_blocks_even_when_ema_rising():
+    """Contrôle que le squeeze BLOQUE réellement la condition, même quand
+    l'EMA monte -- sur une série assez longue pour que `compute_squeeze`
+    sorte de son warmup (>250 bougies), avec une chute nette et récente de
+    la largeur du canal (squeeze réel, pas juste warmup) pendant que l'EMA
+    continue de monter partout."""
+    n = 300
+    ema_trend = np.linspace(1.0, 2.0, n)   # monte strictement partout
+    width = np.full(n, 10.0)
+    width[-10:] = 0.1   # chute nette et récente -> squeeze sur les 10 dernières bougies
+    got = compute_suivi_conditions(ema_trend, width)
+    assert got[200:-10].all(), "avant la chute de largeur, EMA montante + pas de squeeze -> True partout"
+    assert not got[-10:].any(), "pendant le squeeze, même avec l'EMA montante, la condition doit être False"
+
+def test_suivi_conditions_false_on_first_bar():
+    """Pas de bougie précédente pour juger la pente à l'indice 0 -> False
+    par convention, jamais une comparaison hors limites."""
+    ema_trend = np.array([1.0, 2.0, 3.0])
+    width = np.array([10.0, 10.0, 10.0])
+    got = compute_suivi_conditions(ema_trend, width)
+    assert not got[0], "idx 0 doit être False (aucune bougie antérieure pour juger la pente)"
+
+def test_suivi_max_is_two():
+    """Garde-fou documentaire : la citation exacte du guide est "pas plus de
+    2 suivis dans une tendance" -- verrouille la constante contre une
+    modification accidentelle."""
+    assert SUIVI_MAX == 2
+
 TESTS = [
     test_add_leg_risk_cap,
     test_add_leg_blended_entry_price,
@@ -674,6 +718,10 @@ TESTS = [
     test_breakout_space_gate_requires_both_levels,
     test_overlap_convention_already_in_breakout_raw,
     test_range_limit_is_not_independent_of_the_broken_level,
+    test_suivi_conditions_ema_rising_ground_truth_short_series,
+    test_suivi_conditions_squeeze_blocks_even_when_ema_rising,
+    test_suivi_conditions_false_on_first_bar,
+    test_suivi_max_is_two,
 ]
 
 def main():

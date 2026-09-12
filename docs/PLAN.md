@@ -1300,6 +1300,53 @@ justement éliminé). **Décision : construire la capacité manquante proprement
 pas la bricoler en marge de celui-ci. Le signal de routage (partie a) reste utile et vérifiable
 indépendamment en attendant.
 
+### 33e application (cycle suivant) — "Suivi de tendance" : conditions d'activation construites et mesurées, branches de ré-entrée différées
+
+**Décision directe de l'utilisateur, "directeur ingénieur senior"** : traiter le second grand
+chantier restant du backlog — le sous-mécanisme "Suivi de tendance" (guide officiel PRO Indicators,
+absent de `trend_table.py`). Même méthode de pacing que le 32e round (scinder ce qui est
+vectorisable/testable de ce qui exige un état de campagne ou un détecteur de pattern dédié).
+
+**Diagnostic avant code** : la table à 5 étapes actuelle (`step_campaign`, ACCUMULATION →
+POST_BREAKOUT → PULLBACK_WATCH → EXCESS_WATCH) traite l'étape POST_BREAKOUT comme une simple
+attente passive de la Divergence — aucune des 3 branches de ré-entrée du guide (Repli à la moyenne
+/ Cassure de 3BR / Repli sur 3BR squeezée) n'existe. Chacune exige son propre détecteur de pattern
+de prix (retour à la moyenne sans 3BR formée, cassure d'une 3BR validée, entrée par ordre limite sur
+une 3BR squeezée) — un chantier à part entière par branche, pas une simple règle numérique.
+
+**Implémenté ce round : les conditions D'ACTIVATION (5 au total, littérales)**, la partie
+vectorisable indépendamment de tout état de campagne :
+- `trend_table.py::compute_suivi_conditions(ema_trend, ctx_width_pct)` combine 2 des 5 conditions
+  (moyenne haussière + pas de squeeze) — la 1ère condition (breakout validé/confirmé) est garantie
+  par construction (n'a de sens que dans le contexte POST_BREAKOUT) ; la 5e (max 2 suivis) est
+  stateful, différée avec les branches elles-mêmes (aucun sens tant qu'aucune branche n'existe pour
+  l'incrémenter).
+- **H-Suivi-1 (seule hypothèse nécessaire)** : les conditions 3 ("alerte de volatilité récente") et
+  4 ("squeeze sur les prix") sont traitées comme LA MÊME contrainte plutôt que deux mécanismes
+  distincts — pas une simplification arbitraire : le seul autre usage du mot "alerte" dans tout le
+  corpus est précisément le signal SQUEEZE (`RULES_EXTRACTION.md` §2, *"SQUEEZE | Jaune/Orange
+  (ALERTE)"*), le vocabulaire converge déjà. Lue via `regime_classifier.compute_squeeze` (31e
+  round) appliqué au canal H4 (l'UT de la tendance elle-même, pas D1), lecture contemporaine (même
+  choix qu'H-Squeeze-UT1-1, pas de fenêtre de recul inventée pour "récente").
+- `SUIVI_MAX = 2` (constante, citation exacte "pas plus de 2 suivis dans une tendance").
+
+**5 nouveaux tests** (`test_trend_table.py`) : vérité terrain sur série courte (warmup du squeeze,
+se réduit à la seule pente EMA) + contrôle que le squeeze bloque réellement même EMA montante (série
+longue, chute de largeur engineerée) + garde-fou idx0 + verrouillage de `SUIVI_MAX`. Suite complète
+**243 → 247 tests, tous verts**.
+
+**Mesuré sur données réelles (BTC/ETH/BNB/SOL H4)** : au sein des bougies déjà classées TENDANCE,
+~93-94% satisfont ces 2 conditions (3685/3953 BTC) — non trivial (6-7% exclues), cohérent avec un
+mécanisme qui filtre les moments réellement défavorables (EMA qui stagne/redescend, ou squeeze du
+canal H4) sans être un gate quasi-toujours-fermé. Fonction non encore appelée par `run_trend_table`
+— **zéro changement de comportement, par construction** (vérifié : la fonction n'est référencée
+nulle part ailleurs dans le fichier), aucun CSV à régénérer.
+
+**Ce que ce round NE fait PAS** : les 3 branches de ré-entrée elles-mêmes (chacune avec sa propre
+grille STOPLOSS/VALIDATION/CONFIRMATION/OBJECTIF et son propre détecteur de déclenchement) restent
+backlog, différées pour la même raison que le mécanisme Neuneu (32e round) — un chantier à part,
+pas à bricoler en marge de celui-ci.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.
