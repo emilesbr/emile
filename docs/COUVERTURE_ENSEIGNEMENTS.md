@@ -563,6 +563,23 @@ du round précédent :
   **Les 2 autres branches (Repli à la moyenne, Repli sur 3BR squeezée) restent catégorie C,
   différées** — même contrainte de fenêtre temporelle identifiée ci-dessus s'appliquerait
   probablement à elles aussi, quel que soit leur déclencheur propre.
+  **Investigation plus poussée (35e round)** — la 16e combinaison (seule à ne PAS être à 0,0% :
+  BTC/FAIBLE, 48,9% de temps POST_BREAKOUT) cachait en réalité un **vrai bug** (indépendant de
+  "Suivi de tendance"), pas une fenêtre d'opportunité réelle : une campagne à `accum_frac=0.00`
+  (profil FAIBLE) peut voir son stop devenir obsolète pendant l'Accumulation (rien ne le surveille
+  tant qu'aucun capital n'est engagé) puis, au Breakout, se voir refuser tout remplissage par
+  `add_leg` (prix déjà sous ce stop périmé) tout en basculant quand même vers POST_BREAKOUT —
+  une campagne "zombie" (`remaining=0`) plus jamais clôturable, bloquant 48,2% de l'historique BTC
+  (~7400 bougies H4, la quasi-totalité de la 2e moitié des données) jusqu'à la fin du dataset, 0
+  trade. **Corrigé** (`trend_table.py::step_campaign`, transition conditionnée à `remaining>0`
+  après l'appel — pas `actual_add>0`, qui casserait le cas légitime d'un plafond H3 déjà saturé par
+  l'Accumulation d'un profil AGRESSIF/TRES_AGRESSIF), 2 nouveaux tests de non-régression, mesuré
+  avant/après : impact confiné à BTC/FAIBLE/`space_gate=off` (0→2 trades, 0,0%→-1,8%), les 15
+  autres combinaisons inchangées, `unified_protocol.py`/`risk_aggregation_triple_system.py` (mêmes
+  fonctions réelles réutilisées) bit-à-bit identiques. **Effet sur `use_suivi_de_tendance` lui-même
+  inchangé après correctif : toujours 0/16 différence** — le diagnostic "fenêtre quasi nulle" du
+  34e round reste la conclusion opérationnelle valable pour ce mécanisme précis, une fois ce bug
+  par ailleurs corrigé. Détail complet : `PLAN.md`, section "35e application".
 - **Nouvel item trouvé** : les sous-patterns "Trend Follow"/"Exit" en régime Excès (§2.1 du guide,
   grilles de risque complètes, niveau EXPERT) ne sont jamais implémentés — `range_gates.py:48`
   bloque INCONDITIONNELLEMENT toute entrée en régime EXCES. Cohérent avec le choix déjà documenté

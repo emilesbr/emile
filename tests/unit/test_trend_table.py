@@ -799,6 +799,72 @@ def test_suivi_max_is_two():
     modification accidentelle."""
     assert SUIVI_MAX == 2
 
+# ---------------------------------------------------------------------------
+# Test 20 : BUG TROUVÉ ET CORRIGÉ (35e round) -- campagne "zombie" si le
+# remplissage du Breakout est refusé faute de capital réellement engageable
+# ---------------------------------------------------------------------------
+def test_breakout_zero_fill_does_not_transition_to_post_breakout():
+    """Diagnostic du 35e round (investigation de l'effet nul de "Suivi de
+    tendance", cf. PLAN.md) : pour un profil à `accum_frac=0.00` (FAIBLE, seul
+    concerné -- aucun autre profil n'entre en Accumulation avec 0 capital
+    engagé), `campaign["stop"]` est fixé une fois pour toutes à l'ouverture de
+    l'Accumulation et ne peut plus être invalidé tant que `remaining==0` (le
+    stop de protection en tête de `step_campaign` exige `remaining>0`). Si le
+    Breakout finit par se déclencher (cassure LOCALE, indépendante du niveau
+    global) à un prix qui a entre-temps glissé SOUS ce stop devenu obsolète,
+    `add_leg` refuse le remplissage (`stop_dist_pct<=0` -> `actual_add=0.0`).
+
+    AVANT ce correctif, `step_campaign` basculait quand même vers
+    "POST_BREAKOUT" -- créant une campagne "zombie" (remaining=0, stage !=
+    ACCUMULATION) qui ne peut plus jamais se clôturer (Divergence/Cassure de
+    3BR/Excès exigent tous `remaining>0` dans leurs conditions de sortie) ni
+    laisser s'ouvrir une nouvelle Accumulation (`campaign is not None` bloque
+    à vie `run_trend_table`). Observé sur données réelles avant correctif :
+    BTC/FAIBLE, entrée 29300/stop 28949.8, remplissage refusé à 28940.7 --
+    48,2% de l'historique H4 bloqué jusqu'à la fin des données, 0 trade
+    (cf. PLAN.md, 35e round, pour la mesure complète avant/après)."""
+    p = PROFILES_TREND["FAIBLE"]  # accum_frac=0.00, breakout_frac=1.00
+    campaign = make_campaign(entry=100.0, stop=95.0)
+    add_leg(campaign, p["accum_frac"], 100.0)  # 0.00 -> remaining reste 0.0
+    assert fclose(campaign["remaining"], 0.0)
+    ev = {"regime_excess": False, "breakout_raw": True}
+    # Prix de remplissage du Breakout (o[i]) SOUS le stop fixé à l'ouverture
+    # (94.0 < 95.0) -- même situation que le cas réel ci-dessus.
+    closed, fee, realized, rev = step_campaign(
+        campaign, 0, o=[94.0], high=[96.0], low=[93.0], c=[95.5], ev=ev, profile=p)
+    assert closed is False and realized is None and rev is None
+    assert fee == 0.0, "aucun capital n'a pu être engagé -- aucun frais"
+    assert campaign["stage"] == "ACCUMULATION", (
+        "AVANT le correctif : basculait à tort vers POST_BREAKOUT sans capital "
+        "engagé -- campagne zombie, plus jamais clôturable")
+    assert fclose(campaign["remaining"], 0.0)
+    assert "swing_high" not in campaign, "swing_high ne doit être initialisé qu'au vrai passage du breakout"
+
+def test_breakout_saturated_cap_still_transitions_when_capital_already_at_risk():
+    """Garde-fou contre une régression DU correctif ci-dessus : celui-ci teste
+    `campaign["remaining"] > 0` (capital RÉELLEMENT engagé après l'appel), PAS
+    `actual_add > 0` (la seule jambe tentée À CET INSTANT) -- une distinction
+    nécessaire. Si le plafond de risque de campagne (H3, `MAX_CAMPAIGN_RISK_
+    PCT`) est DÉJÀ saturé par la jambe d'Accumulation (profil avec `accum_
+    frac` élevé, ex. AGRESSIF/TRES_AGRESSIF), la jambe de Breakout peut se
+    voir plafonnée à 0 par `add_leg` alors que du capital RÉEL est déjà
+    engagé depuis l'Accumulation -- la transition vers POST_BREAKOUT reste
+    alors légitime et ne doit PAS être bloquée par ce correctif."""
+    p = PROFILES_TREND["MODERE"]
+    campaign = make_campaign(entry=100.0, stop=95.0)  # stop_dist_pct = 5%
+    # Déjà au plafond H3 (0.05 / 0.05 = 1.0) -- construit directement (arrange
+    # du test), pas via add_leg, pour isoler la seule jambe de Breakout.
+    campaign["remaining"] = 1.0
+    ev = {"regime_excess": False, "breakout_raw": True}
+    closed, fee, realized, rev = step_campaign(
+        campaign, 0, o=[102.0], high=[103.0], low=[101.0], c=[102.5], ev=ev, profile=p)
+    assert closed is False and realized is None and rev is None
+    assert fee == 0.0, "le plafond de risque bloque bien CETTE jambe de Breakout"
+    assert campaign["stage"] == "POST_BREAKOUT", (
+        "capital déjà engagé (remaining>0) -- la transition doit avoir lieu "
+        "même si cette jambe précise est plafonnée à 0 (pas le bug du 35e round)")
+    assert fclose(campaign["remaining"], 1.0)
+
 TESTS = [
     test_add_leg_risk_cap,
     test_add_leg_blended_entry_price,
@@ -822,6 +888,8 @@ TESTS = [
     test_cassure_3br_does_not_arm_when_suivi_not_ok,
     test_cassure_3br_respects_suivi_max,
     test_cassure_3br_absent_ev_keys_preserve_historical_behavior,
+    test_breakout_zero_fill_does_not_transition_to_post_breakout,
+    test_breakout_saturated_cap_still_transitions_when_capital_already_at_risk,
 ]
 
 def main():

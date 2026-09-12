@@ -1002,8 +1002,38 @@ def step_campaign(campaign: dict, i: int, o, high, low, c, ev: dict, profile: di
         # ce dict) garde un comportement BIT-À-BIT identique.
         if ev["breakout_raw"] and ev.get("breakout_space_ok", True):
             actual_add = add_leg(campaign, profile["breakout_frac"], o[i])
-            campaign["stage"] = "POST_BREAKOUT"
-            campaign["swing_high"] = high[i]
+            # BUG TROUVÉ ET CORRIGÉ CE ROUND (cf. bloc "Suivi de tendance" en
+            # tête de fichier, diagnostic du 35e round) : la transition
+            # n'était PAS conditionnée à un remplissage réel. Pour un profil
+            # à `accum_frac=0.00` (FAIBLE, seul concerné : aucun autre profil
+            # n'entre avec 0 capital engagé), `campaign["stop"]` est fixé une
+            # fois pour toutes à l'ouverture de l'Accumulation et ne bouge
+            # plus tant que `remaining==0` (le stop de protection en tête de
+            # fonction exige `remaining>0`, donc rien ne l'invalide). Si le
+            # Breakout finit par se déclencher (cassure LOCALE, indépendante
+            # du niveau global) longtemps après, à un prix `o[i]` qui a entre
+            # temps glissé SOUS ce stop devenu obsolète, `add_leg` refuse le
+            # remplissage (`stop_dist_pct <= 0` -> `actual_add=0.0`) --
+            # observé une fois sur BTC/FAIBLE (entrée 29300, stop 28949.8,
+            # remplissage refusé à 28940.7). Basculer quand même vers
+            # POST_BREAKOUT créait une campagne "zombie" (remaining=0,
+            # stage != ACCUMULATION) : plus AUCUNE sortie de `step_campaign`
+            # n'est atteignable sans `remaining>0` (Divergence, Cassure de
+            # 3BR, Excès), et `campaign is not None` bloque à vie toute
+            # nouvelle Accumulation -- mesuré : bloque 48,2% de l'historique
+            # BTC/FAIBLE (~7400 bougies H4 sur 15360) jusqu'à la fin des
+            # données, 0 trade. `campaign["remaining"] > 0` (pas
+            # `actual_add > 0`, qui casserait le cas légitime où le plafond
+            # de risque H3 est déjà saturé par la jambe d'Accumulation d'un
+            # profil AGRESSIF/TRES_AGRESSIF -- capital réellement engagé,
+            # transition légitime même si CETTE jambe précise est plafonnée à
+            # 0) : ne bascule que si du capital est RÉELLEMENT engagé après
+            # cet appel : sinon la campagne reste en ACCUMULATION (aucun
+            # capital perdu, attend un futur Breakout ou l'abandon-EXCES,
+            # comportement inchangé pour ce cas).
+            if campaign["remaining"] > 0:
+                campaign["stage"] = "POST_BREAKOUT"
+                campaign["swing_high"] = high[i]
             return False, actual_add, None, None
         return False, 0.0, None, None
 
