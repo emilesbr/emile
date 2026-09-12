@@ -1518,6 +1518,72 @@ changement de CODE (remplacer le chargeur XRP D1 externe), pas une simple régé
 à part, différé, pas fait ce round. Les ~49 CSV d'engins historiques/supersédés (cf. périmètre
 ci-dessus) restent volontairement non régénérés — décision explicite, pas un oubli.
 
+### 38e application (cycle suivant) — "Tendance Multi-timeframe" : détection construite et mesurée, angle mort majeur de l'architecture révélé (LOCAL/CONTEXT_DURATION jamais recalibrés par UT)
+
+**Décision directe de l'utilisateur, "directeur ingénieur senior"** : rouvrir la question à sa
+racine plutôt que de continuer à traiter des écarts ponctuels — *"Philippe utilise sa stratégie
+pour trader un actif sur les différentes timeframes, nous devons agréger toute cette stratégie en
+une seule."* Vérifié avant tout le reste : c'est un constat JUSTE et jusqu'ici jamais formulé
+explicitement dans ce projet. Tous les moteurs existants (`unified_protocol.py` compris, malgré son
+nom) exécutent sur H4 SEUL, D1/Hebdomadaire n'étant jamais que des CONTEXTES/GATES (stop UT+1,
+validation croisée, espace libre) — aucune UT supérieure n'est elle-même TRADÉE. C'est l'angle mort
+exact que l'utilisateur pointe.
+
+**Mécanisme littéral trouvé pour y répondre** (`docs/GUIDE_STRATEGIE_PRO_INDICATORS.md` section
+4.1, `Tendance/Tendance.png`) : *"Si votre marché est en train de breaker sur 3 timeframes
+consécutifs, vous avez alors à faire à une TENDANCE MULTI-TIMEFRAME. Dans ce cas si vous avez le
+NIVEAU EXPERT vous pouvez trader chaque TF en parallèle avec 2% de risque chacun."* — jamais
+implémenté ni même suivi comme item de backlog avant ce round (vérifié : absent de toutes les
+sections 5 précédentes du document d'extraction).
+
+**H-MTF-Cascade-1 (mesurée avant de coder, cf. bloc dédié en tête de `trend_table.py`)** : une
+lecture littérale au pied de la lettre ("breaker" = `breakout_raw`, l'événement ponctuel,
+synchronisé au jour près sur les 3 UT) rendrait la règle vide de sens — mesuré : 0-1 jour sur 4
+actifs, ~6 ans de données. Lue à la place comme un ÉTAT SOUTENU : régime TENDANCE
+(`regime_classifier.add_regime`, réutilisé tel quel) actif SIMULTANÉMENT sur H4+D1+Hebdomadaire
+(H-MTF-Cascade-2 : même triplet que le gate "espace libre" existant, pas une nouvelle convention).
+
+**Implémenté, testé** : `trend_table.py::attach_regime_is_tendance` (jointure causale du régime
+d'une UT sur une autre, même patron `merge_asof` que `attach_obstacle_level`/
+`_attach_channel_support_d1`, sans fuseau forcé — H2 déjà corrigé au 37e round appliqué ici dès
+l'écriture) + `compute_multi_timeframe_trend` (ET logique des 3 régimes) + `MTF_CASCADE_RISK_PCT
+= 0.02` ("2% chacun", citation exacte). **3 nouveaux tests** (`test_trend_table.py`, vérité terrain
+sur les 2³ combinaisons + garde-fou de non-lookahead + verrouillage de la constante). Suite
+complète **255 → 258 tests, tous verts**.
+
+**Mesuré sur données réelles (`emile/core/mtf_cascade_diagnostic.py`, nouveau script, même
+discipline "conditions d'activation mesurées avant le mécanisme de consommation" que le 33e
+round)** : incidence RÉELLE, ni nulle ni omniprésente — BTC 2,96% des bougies H4 (455, 27 épisodes,
+médiane 2,0 jours, max 10,3 jours), ETH 0,29% (43, 4 épisodes), BNB 2,34% (338, 13 épisodes), SOL
+0,80% (105, 8 épisodes). Un signal discriminant, pas un gate inerte.
+
+**Trouvaille la plus importante de ce round, un angle mort GÉNÉRAL de l'architecture, pas
+spécifique à ce mécanisme** : en tentant de mesurer l'exposition qui résulterait de trader chaque
+UT en parallèle (illustration avec le profil MODERE existant, risk_pct=0,02 coïncidant avec la
+citation), les moteurs `run_trend_table` rejoués sur D1 et Hebdomadaire n'ouvrent **0 trade sur les
+4 actifs**. Diagnostiqué avant de conclure à un "mécanisme qui ne transfère pas" (même discipline
+que MIN_BORDERS/Cassure de 3BR) : **`n_borders` (gate de maturité `MIN_BORDERS=3`) a une médiane de
+9 sur H4 mais chute à ~1-2 sur D1 et ~0 sur Hebdomadaire, avec un MAXIMUM DE 1 SUR HEBDOMADAIRE —
+ne peut JAMAIS atteindre 3.** Cause exacte : `LOCAL_DURATION="5D"`/`CONTEXT_DURATION="15D"`
+(`backtest_phase2_v7.py`) sont des durées CALENDAIRES ABSOLUES, jamais recalibrées par UT depuis
+leur création — 15 jours contiennent ~90 bougies H4, ~15 bougies D1, mais une FRACTION D'UNE SEULE
+bougie Hebdomadaire, empêchant structurellement toute structure de bornes de s'y former. **Ce
+n'est pas un défaut du mécanisme "Tendance" ni de "Tendance Multi-timeframe" — c'est un défaut
+latent de `prepare()` lui-même** (utilisé par TOUS les moteurs de ce projet), resté invisible
+jusqu'ici parce que ce projet n'avait JAMAIS exécuté sur une UT autre que H4 (D1/Hebdomadaire
+n'étaient que des contextes, jamais soumis eux-mêmes aux mêmes gates de maturité).
+
+**Conséquence directe et honnête** : le "money management 2% par UT en parallèle" reste catégorie C,
+NON câblé ce round — pas seulement parce que le corpus ne précise pas comment sizer les 3 jambes
+(déjà noté), mais parce que mesurer honnêtement si le mécanisme "Tendance" transfère à D1/
+Hebdomadaire exige D'ABORD de trancher comment recalibrer `LOCAL_DURATION`/`CONTEXT_DURATION` par
+UT — un chantier À PART, plus large que ce round, dont AUCUNE valeur n'est donnée par le corpus
+(inventer un facteur d'échelle serait la même erreur que d'inventer un seuil). Documenté comme
+nouvel item de backlog (catégorie C), cf. `COUVERTURE_ENSEIGNEMENTS.md`. **Ce qui EST acquis et
+directement utilisable** : la détection de "Tendance Multi-timeframe" elle-même (littérale,
+testée, mesurée non triviale) — le blocage porte sur la CONSOMMATION (sizing + recalibration
+LOCAL/CONTEXT_DURATION), pas sur la détection.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

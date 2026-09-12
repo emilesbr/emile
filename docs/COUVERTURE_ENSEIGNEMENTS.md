@@ -642,6 +642,28 @@ Aucun changement de comportement de code apporté par ce round ou le précédent
 correction documentaire uniquement) — les écarts ci-dessus attendent une décision de conception
 dédiée, pas une implémentation improvisée.
 
+- **NOUVEAU (38e round) — "Tendance Multi-timeframe" (trader chaque UT en parallèle avec 2% de
+  risque chacun) : DÉTECTION implémentée et mesurée, CONSOMMATION bloquée par un angle mort GÉNÉRAL
+  de l'architecture, pas spécifique à ce mécanisme.** Constat direct de l'utilisateur ("Philippe
+  utilise sa stratégie pour trader un actif sur les différentes timeframes, nous devons agréger
+  toute cette stratégie en une seule") vérifié juste : TOUS les moteurs existants (`unified_
+  protocol.py` compris, malgré son nom) exécutent sur H4 SEUL, D1/Hebdomadaire n'étant jamais que
+  des contextes/gates — aucune UT supérieure n'est elle-même tradée. Détection construite et
+  testée (`trend_table.py::attach_regime_is_tendance`/`compute_multi_timeframe_trend`,
+  `MTF_CASCADE_RISK_PCT=0.02`) : incidence réelle mesurée, ni nulle ni omniprésente (BTC 2,96% des
+  bougies H4/27 épisodes, ETH 0,29%, BNB 2,34%, SOL 0,80%). **Trouvaille la plus importante** : en
+  tentant de mesurer l'exposition résultante (illustration, profil MODERE), `run_trend_table` sur
+  D1/Hebdomadaire ouvre 0 trade sur les 4 actifs — diagnostiqué (pas conclu au hasard) :
+  `LOCAL_DURATION="5D"`/`CONTEXT_DURATION="15D"` (`backtest_phase2_v7.py`) sont des durées
+  CALENDAIRES ABSOLUES, jamais recalibrées par UT depuis leur création — 15 jours = une fraction
+  d'une seule bougie Hebdomadaire, `n_borders` ne peut structurellement jamais atteindre
+  `MIN_BORDERS=3` à cette échelle (maximum observé : 1). **Ce n'est pas un défaut de "Tendance"
+  mais de `prepare()` lui-même**, utilisé par TOUS les moteurs de ce projet — resté invisible
+  jusqu'ici car ce projet n'avait jamais exécuté sur une UT autre que H4. **Catégorie C** :
+  recalibrer `LOCAL_DURATION`/`CONTEXT_DURATION` par UT est un chantier À PART, plus large que ce
+  round, sans valeur donnée par le corpus (inventer un facteur d'échelle serait la même erreur
+  que d'inventer un seuil). Détail complet, chiffres exacts : `PLAN.md` section "38e application".
+
 ### Ce qui reste correctement classé, confirmé par les 3 agents (rien à changer)
 Tout le reste des 17 sources + le manuel — UT+2 (mécanisme général), stop UT+1 réel, breakeven différé à la Confirmation, abstention Wall Street, canal manuel, Andrews, diversification 1%+1%, +Reverse scopé TRES_AGRESSIF, EXCES-H4, pyramidalisation-régime, TSI(14,7,9), garde-fous Phase 4 (hors périmètre code, correctement noté comme tel) — vérifié directement dans le code par les 3 agents, pas simplement relu dans ce document.
 

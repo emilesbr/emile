@@ -664,6 +664,86 @@ VOLUME_EXPANSION_MULT = 1.5                                       # H9
 MAX_CAMPAIGN_RISK_PCT = 0.05                                      # H3, RULES_EXTRACTION §5
 BREAKOUT_SPACE_MULT = 1.0                                         # H15, "Ratio 1:1"
 SUIVI_MAX = 2   # "pas plus de 2 suivis dans une tendance" -- guide officiel PRO Indicators, cf. ci-dessous
+MTF_CASCADE_RISK_PCT = 0.02   # "2% chacun" -- citation exacte, cf. bloc "TENDANCE MULTI-TIMEFRAME" ci-dessous
+
+# ============================================================================
+# "TENDANCE MULTI-TIMEFRAME" (36e-37e rounds, décision directe de l'utilisateur
+# "directeur ingénieur senior" -- "Philippe utilise sa stratégie pour trader un
+# actif sur les différentes timeframes, nous devons agréger toute cette
+# stratégie en une seule"). Citation exacte, `docs/GUIDE_STRATEGIE_PRO_
+# INDICATORS.md` section 4.1 (`Tendance/Tendance.png`) :
+# *"Si votre marché est en train de breaker sur 3 timeframes consécutifs,
+# vous avez alors à faire à une TENDANCE MULTI-TIMEFRAME. Dans ce cas si vous
+# avez le NIVEAU EXPERT vous pouvez trader chaque TF en parallèle avec 2% de
+# risque chacun."*
+#
+# CE QUE CE MÉCANISME EST / N'EST PAS
+# -----------------------------------------------------------------------------
+# Jusqu'ici (`unified_protocol.py`, tous les moteurs `backtest_phase2_*.py`),
+# "multi-timeframe" signifie exclusivement "H4 EXÉCUTÉ, D1/Hebdomadaire comme
+# CONTEXTE/GATE" (validation croisée, stop UT+1, espace libre) -- l'UT
+# supérieure n'est JAMAIS elle-même tradée, seulement consultée. Ce mécanisme
+# est le premier de ce projet où PLUSIEURS UT SONT TRADÉES CONCURREMMENT SUR
+# LE MÊME ACTIF -- exactement l'angle mort identifié par l'utilisateur.
+# Portée : la DÉTECTION de la "Tendance Multi-timeframe" (ci-dessous) et la
+# MESURE de son incidence + du risque agrégé qui en résulterait. La
+# consommation réelle (ouvrir 3 campagnes concurrentes avec risk_pct=0.02
+# chacune) est un chantier séparé, cf. section dédiée de `PLAN.md`.
+#
+# HYPOTHÈSES D'IMPLÉMENTATION (aucune ne recalibre un seuil déjà établi
+# ailleurs -- H1-H12 de ce fichier, H13-H17 du gate "espace libre", restent
+# la référence pour tout ce qui n'est pas propre à CE mécanisme) :
+#
+# H-MTF-Cascade-1 (lecture de "breaker sur 3 timeframes consécutifs") :
+# mesuré AVANT de coder (cf. `PLAN.md` "38e application") que `breakout_raw`
+# (l'événement PONCTUEL de cassure) synchronisé au jour près sur H4 ET D1 ET
+# Hebdomadaire est quasi inexistant (0-1 jour sur 4 actifs, ~6 ans de
+# donnée) -- une lecture littérale au pied de la lettre rendrait la règle
+# vide de sens, exactement le piège "gate inerte" déjà rencontré plusieurs
+# fois dans ce projet (MIN_BORDERS, Cassure de 3BR). Lu à la place comme un
+# ÉTAT SOUTENU : le régime TENDANCE (déjà classé par `regime_classifier.
+# add_regime`, réutilisé tel quel) actif SIMULTANÉMENT sur les 3 UT à un
+# instant donné -- cohérent avec "chaque tendance primaire suit un schéma
+# récurrent" (guide, section 4.2) et avec le fait que le régime TENDANCE
+# lui-même EST la conséquence directe d'un breakout structurel qui a déjà eu
+# lieu sur cette UT (H1 de ce fichier). Mesuré non trivial (ni 0%, ni
+# omniprésent) : cf. `PLAN.md`.
+# H-MTF-Cascade-2 (UT retenues) : H4 (exécution, convention de tout ce
+# fichier) + D1 (UT+1) + Hebdomadaire (UT+2) -- MÊME triplet que le gate
+# "espace libre" (H13-H17 ci-dessous), pas une nouvelle convention inventée.
+# H-MTF-Cascade-3 (délai de disponibilité) : même `CLOSURE_DELAY` (1 jour)
+# que `attach_obstacle_level`/`_attach_channel_support_d1` -- une bougie D1
+# ou Hebdomadaire n'est disponible qu'après sa clôture + ce délai, aucun
+# lookahead, décision déjà prise ailleurs dans ce fichier, pas retranchée ici.
+# ============================================================================
+def attach_regime_is_tendance(low_dates: np.ndarray, df_high_with_regime: pd.DataFrame,
+                               closure_delay: pd.Timedelta = CLOSURE_DELAY) -> np.ndarray:
+    """Pour chaque date de `low_dates` (l'UT dont on veut connaître le
+    contexte), indique si le régime de la DERNIÈRE bougie de `df_high_with_
+    regime` (une UT quelconque, `df_high` par convention car pensé pour une UT
+    SUPÉRIEURE -- H-MTF-Cascade-2 -- mais la fonction ne suppose rien sur la
+    fréquence relative des deux UT) ENTIÈREMENT CLÔTURÉE à cet instant valait
+    "TENDANCE". Aucun lookahead -- même jointure `merge_asof` causale que
+    `attach_obstacle_level` (H-MTF-Cascade-3), jamais de fuseau horaire forcé
+    (H2 corrigé au 37e round -- `_attach_channel_support_d1` -- même
+    convention naive de bout en bout que le reste de ce projet)."""
+    high = df_high_with_regime[["date", "regime"]].copy()
+    high["available_at"] = high["date"] + closure_delay
+    high = high.sort_values("available_at")
+    low = pd.DataFrame({"date": pd.to_datetime(low_dates)}).sort_values("date")
+    merged = pd.merge_asof(
+        low, high, left_on="date", right_on="available_at", direction="backward",
+    )
+    return (merged["regime"].values == "TENDANCE")
+
+def compute_multi_timeframe_trend(regime_exec: np.ndarray, is_tendance_ut1: np.ndarray,
+                                   is_tendance_ut2: np.ndarray) -> np.ndarray:
+    """"Tendance Multi-timeframe" (H-MTF-Cascade-1) : régime TENDANCE
+    simultanément sur l'UT d'exécution (`regime_exec`, ex. H4) ET les 2 UT
+    supérieures déjà jointes sans lookahead (`is_tendance_ut1`/`_ut2`, ex.
+    D1/Hebdomadaire via `attach_regime_is_tendance`). Les 3 arrays doivent
+    déjà être alignés sur la MÊME grille temporelle (celle de `regime_exec`)."""
+    return (regime_exec == "TENDANCE") & is_tendance_ut1 & is_tendance_ut2
 
 # ============================================================================
 # "SUIVI DE TENDANCE" (guide officiel PRO Indicators, `docs/GUIDE_STRATEGIE_

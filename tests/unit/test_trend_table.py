@@ -14,6 +14,7 @@ de leur fournir des scénarios entièrement maîtrisés ici.
 from fractions import Fraction as F
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from emile.core.trend_table import (
@@ -21,6 +22,7 @@ from emile.core.trend_table import (
     PROFILES_TREND, MAX_CAMPAIGN_RISK_PCT,
     free_room_frac, breakout_space_ok, attach_obstacle_level, CLOSURE_DELAY,
     compute_suivi_conditions, SUIVI_MAX,
+    attach_regime_is_tendance, compute_multi_timeframe_trend, MTF_CASCADE_RISK_PCT,
 )
 
 def fclose(a, b, tol=1e-9):
@@ -865,6 +867,45 @@ def test_breakout_saturated_cap_still_transitions_when_capital_already_at_risk()
         "même si cette jambe précise est plafonnée à 0 (pas le bug du 35e round)")
     assert fclose(campaign["remaining"], 1.0)
 
+# ---------------------------------------------------------------------------
+# Test 21 : "Tendance Multi-timeframe" (36e-37e rounds) -- jointure causale du
+# régime d'une UT supérieure + condition d'agrégation des 3 UT
+# ---------------------------------------------------------------------------
+def test_attach_regime_is_tendance_no_lookahead_ground_truth():
+    """Vérité terrain calculée à la main, même patron que `attach_obstacle_
+    level`/`_attach_channel_support_d1` : une bougie D1 n'est disponible qu'
+    APRÈS sa clôture + `closure_delay`, jamais avant."""
+    d1 = pd.DataFrame({
+        "date": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
+        "regime": ["RANGE_NEUTRE", "TENDANCE", "TENDANCE"],
+    })
+    closure_delay = pd.Timedelta(hours=1)
+    # available_at : 01/01 01:00, 02/01 01:00, 03/01 01:00
+    h4_dates = pd.to_datetime([
+        "2024-01-01 00:30",  # aucune bougie D1 encore dispo -> False (pas TENDANCE, pas de donnée)
+        "2024-01-02 00:30",  # bougie du 01/01 dispo (RANGE_NEUTRE) -> False
+        "2024-01-03 00:30",  # bougie du 02/01 dispo (TENDANCE) -> True
+    ]).values
+    result = attach_regime_is_tendance(h4_dates, d1, closure_delay=closure_delay)
+    assert list(result) == [False, False, True]
+
+def test_compute_multi_timeframe_trend_requires_all_three():
+    """H-MTF-Cascade-1 : "Tendance Multi-timeframe" exige le régime TENDANCE
+    SIMULTANÉMENT sur les 3 UT -- toute combinaison où une seule UT n'est pas
+    en TENDANCE doit rendre False (ground truth, les 2**3 combinaisons)."""
+    regime_exec = np.array(["TENDANCE", "TENDANCE", "TENDANCE", "RANGE_NEUTRE",
+                             "TENDANCE", "RANGE_NEUTRE", "RANGE_NEUTRE", "RANGE_NEUTRE"])
+    ut1 = np.array([True, True, False, True, False, True, False, False])
+    ut2 = np.array([True, False, True, True, False, False, True, False])
+    expected = np.array([True, False, False, False, False, False, False, False])
+    result = compute_multi_timeframe_trend(regime_exec, ut1, ut2)
+    assert list(result) == list(expected)
+
+def test_mtf_cascade_risk_pct_is_two_percent():
+    """Garde-fou documentaire : citation exacte "2% chacun" -- verrouille la
+    constante contre une modification accidentelle."""
+    assert MTF_CASCADE_RISK_PCT == 0.02
+
 TESTS = [
     test_add_leg_risk_cap,
     test_add_leg_blended_entry_price,
@@ -890,6 +931,9 @@ TESTS = [
     test_cassure_3br_absent_ev_keys_preserve_historical_behavior,
     test_breakout_zero_fill_does_not_transition_to_post_breakout,
     test_breakout_saturated_cap_still_transitions_when_capital_already_at_risk,
+    test_attach_regime_is_tendance_no_lookahead_ground_truth,
+    test_compute_multi_timeframe_trend_requires_all_three,
+    test_mtf_cascade_risk_pct_is_two_percent,
 ]
 
 def main():
