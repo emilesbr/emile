@@ -318,6 +318,24 @@ La règle UT+2 littérale (Hebdo seul, D1 sauté) confirme la direction déjà c
 - **"Gradient de confiance" 0-100 à bandes** (`TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` : "&lt;50 abstention totale... 80-90+ zone de confort maximale", "carton plein") — suppose une sortie continue 0-100 du PRO Framework, jamais divulguée ; notre proxy ne produit qu'un score discret 0-3.
 - **Compensation Fibonacci par qualité de signal** (couleur→61% Fibo vs gris→76% Fibo, même source) — suppose la classification en 9 catégories de signal (`RULES_EXTRACTION.md` §2 : TP/Overload/DIV standard/DIV cachée/EXIT/SurAchat/SurVente/BULL/BEAR/SQUEEZE/CONTEXT, Gris/Rouge/Bleu/Noir/Jaune/Orange) — sortie directe de l'algorithme propriétaire, pas de notre proxy.
 - **"Cas d'urgence : renversement de contexte"** (bascule de couleur bleu→rouge, `TRADING_LESSONS_PULLBACK_MATURITE.md`) — même dépendance à la classification couleur.
+- **NOUVEAU (36e round) — le régime "Chaos" du guide officiel PRO Indicators** (`Chaos/Chaos.png`,
+  1ère des 4 branches du menu d'accueil "QUEL EST MON CONTEXTE ?") **n'avait JAMAIS été croisé
+  contre le code, dans aucun round précédent** (l'audit du 29e/30e round n'avait couvert que
+  Excès/Range/Tendance — un oubli, pas un choix) — trouvé en revérifiant la structure de décision
+  du guide à la demande directe de l'utilisateur : à CHAQUE niveau (l'actif/UT lui-même, puis
+  chaque sous-dossier), le guide pose la MÊME question à 4 issues, jamais 3. `regime_classifier.py::
+  add_regime` ne connaît QUE 4 régimes (`RANGE_NEUTRE`/`RANGE_TENDANCIEL`/`TENDANCE`/`EXCES`) —
+  **aucune notion de "Chaos"** (grep confirmé, 0 occurrence dans tout `emile/`). Absent aussi du
+  manuel PDF (`RULES_EXTRACTION.md`, l'autorité la plus haute) ; `TRADING_LESSONS_CHAOS_DOPAMINE.md`
+  (source #7) évoque un "chaos" théorique (Feigenbaum) sans rapport avec les 3 critères
+  opérationnels de cet écran (**Contextes irréguliers**, **Moyenne plate**, **Momentum bruyant** →
+  action **PARTEZ**). Comme Neuneu, cette notion est propre à ce seul guide. **Catégorie A** : les 3
+  critères ne sont assortis d'AUCUN seuil chiffré nulle part (contrairement au 76%/61% ailleurs) —
+  rien à implémenter sans inventer. **Conséquence pratique à connaître, réelle malgré tout** :
+  `add_regime` classe aujourd'hui tout bar ambigu en `RANGE_NEUTRE` ("en cas de doute, range",
+  commentaire du fichier lui-même) — un choix différent de celui du guide, qui traiterait la même
+  ambiguïté comme potentiellement Chaos ("PARTEZ") plutôt que comme un Range tradable. Détail
+  complet : `docs/GUIDE_STRATEGIE_PRO_INDICATORS.md` section 5, item 8 ; `PLAN.md` "36e application".
 
 ### Catégorie B — littéral, computable, PAS reproductibilité-limité : candidats d'implémentation directe
 

@@ -548,6 +548,32 @@ l'audit, pas glissée sous le tapis)** :
 7. **Taux de réussite chiffré "~85%, ratio 1:1" pour Range Neuneu (Borne Neuneu)** — chiffre du
    guide officiel, jamais mesuré indépendamment sur les moteurs de ce projet ; à comparer si
    l'occasion se présente (mesure honnête, pas une contrainte de conception).
+8. **NOUVEAU (36e round) — le régime "Chaos", 1ère des 4 branches du menu d'accueil (section 0),
+   n'a JAMAIS été croisé contre le code dans aucun round précédent (items 1-7 ci-dessus ne couvrent
+   que Excès/Range/Tendance — un oubli de l'audit du 29e/30e round, pas un choix).** Trouvé en
+   revérifiant la structure de décision du guide (question directe de l'utilisateur) : à CHAQUE
+   niveau (l'actif/UT lui-même, puis chaque sous-dossier), le guide pose la même question à 4
+   issues — Chaos / Excès / Range / Tendance — jamais 3. Le code (`regime_classifier.py::
+   add_regime`) ne connaît QUE 4 régimes (`RANGE_NEUTRE`/`RANGE_TENDANCIEL`/`TENDANCE`/`EXCES`) et
+   n'a **aucune notion de "Chaos"** — grep confirmé, 0 occurrence dans tout `emile/`. Le manuel PDF
+   (`RULES_EXTRACTION.md`, l'autorité la plus haute) n'en parle pas non plus ; seule
+   `TRADING_LESSONS_CHAOS_DOPAMINE.md` (source #7) évoque un "chaos" théorique (Feigenbaum), un
+   concept DIFFÉRENT (philosophie de marché, pas une règle opérationnelle à 3 critères chiffrables)
+   — donc "Chaos" au sens de cet écran (`Chaos/Chaos.png`, 3 critères : **Contextes irréguliers**,
+   **Moyenne plate**, **Momentum bruyant** ; action : **PARTEZ**, changer d'actif) reste, comme
+   Neuneu, une notion propre à ce seul guide, non corroborée ailleurs.
+   **Catégorie A, non implémentable en l'état** : les 3 critères ne sont assortis d'AUCUN seuil
+   chiffré nulle part dans le guide (contrairement à "76%"/"61%" ailleurs) — "irrégulier"/"plate"/
+   "bruyant" sont des qualificatifs, pas des règles. **Conséquence pratique, réelle, à noter même
+   sans implémentation possible** : `add_regime` classe aujourd'hui TOUT bar ambigu en
+   `RANGE_NEUTRE` par choix explicite ("en cas de doute, range" — commentaire du fichier lui-même,
+   ligne 80) — un choix DIFFÉRENT de celui du guide, qui traiterait la même ambiguïté comme
+   potentiellement Chaos ("PARTEZ", pas de règle de trading) plutôt que comme un Range tradable.
+   Les deux lectures ne sont pas nécessairement en conflit (un vrai Range neutre et un Chaos
+   peuvent tous deux ressembler à "pas de biais net" sans qu'aucun seuil ne les distingue dans le
+   corpus disponible), mais la divergence de traitement par défaut mérite d'être connue plutôt que
+   de rester implicite — même remarque que l'item 4 ci-dessus (Excès) sur "reconfirmer un choix
+   existant à la lumière de ce contenu".
 
 ## Prochaine étape (round séparé)
 
