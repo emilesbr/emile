@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 
 from emile.backtests.backtest_phase2 import load_h1, resample
-from emile.backtests.backtest_phase2_v7 import prepare
+from emile.backtests.backtest_phase2_v7 import prepare, LOCAL_DURATION_H4_BARS, CONTEXT_DURATION_H4_BARS
 from emile.core.trend_table import (
     add_trend_context, run_trend_table, load_volume, resample_volume,
     attach_regime_is_tendance, compute_multi_timeframe_trend, MTF_CASCADE_RISK_PCT,
@@ -39,16 +39,24 @@ from emile.core.trend_table import (
 
 SYMBOLS = ("BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT")
 TF_RULES = (("4h", "H4"), ("1D", "D1"), ("W", "Weekly"))
+# 39e round : fenêtre de maturité UT-AGNOSTIQUE (nombre de bougies, pas une
+# durée calendaire) -- cf. tête de `backtest_phase2_v7.py::prepare`. Un
+# no-op pour H4 (30/90 bougies H4 = EXACTEMENT "5D"/"15D"), la correction
+# réelle porte sur D1/Hebdomadaire (trouvaille du 38e round : ces UT ne
+# pouvaient structurellement jamais atteindre MIN_BORDERS=3 avec une fenêtre
+# calendaire fixe).
+PREPARE_KWARGS = {"local_duration": LOCAL_DURATION_H4_BARS, "context_duration": CONTEXT_DURATION_H4_BARS}
 
 def compute_regime_per_tf(h1: pd.DataFrame) -> dict:
     """Régime (`regime_classifier.add_regime`, réutilisé via `prepare`) sur
     les 3 UT du triplet H-MTF-Cascade-2, chacune préparée exactement comme
-    `run_trend_table` la prépare elle-même (`prepare` + `add_trend_context`)
-    -- même chemin de calcul, pas une réplique."""
+    `run_trend_table` la prépare elle-même (`prepare` + `add_trend_context`,
+    fenêtre UT-agnostique, cf. `PREPARE_KWARGS`) -- même chemin de calcul,
+    pas une réplique."""
     out = {}
     for rule, label in TF_RULES:
         df = resample(h1, rule)
-        df = add_trend_context(prepare(df))
+        df = add_trend_context(prepare(df, **PREPARE_KWARGS), **PREPARE_KWARGS)
         out[label] = df
     return out
 
@@ -89,7 +97,7 @@ def exposure_illustration(symbol: str, h1: pd.DataFrame, vol_h1: pd.DataFrame, m
     for rule, label in TF_RULES:
         df = resample(h1, rule)
         vol = resample_volume(vol_h1, rule)
-        res = run_trend_table(df.copy(), vol.copy(), "MODERE")
+        res = run_trend_table(df.copy(), vol.copy(), "MODERE", **PREPARE_KWARGS)
         results[label] = res
     return results
 
@@ -144,16 +152,17 @@ def main():
     print("\nLecture honnête n°1 : 'pct_bars'/'n_episodes' mesurent l'incidence RÉELLE de la "
           "'Tendance Multi-timeframe' (ni 0%, ni omniprésente -- un signe de condition discriminante, "
           "pas un gate inerte).")
-    print("Lecture honnête n°2, TROUVAILLE DE CE ROUND -- la colonne D1_n_trades/Weekly_n_trades vaut "
-          "0 pour LES 4 ACTIFS, mais ce n'est PAS une preuve que le mécanisme 'Tendance' ne transfère "
-          "pas à ces UT : n_borders (gate de maturité MIN_BORDERS=3) a une médiane de 9 sur H4 mais "
-          "chute à ~1 sur D1 et ~0 sur Hebdomadaire, avec un MAXIMUM de 1 sur Hebdomadaire -- ne peut "
-          "JAMAIS atteindre 3. Cause identifiée : CONTEXT_DURATION='15D' (backtest_phase2_v7.py) est "
-          "une durée CALENDAIRE ABSOLUE, jamais recalibrée par UT -- 15 jours contiennent ~90 bougies "
-          "H4 mais une fraction de SEULE bougie Hebdomadaire, empêchant structurellement toute "
-          "structure de bornes de s'y former. Un chantier DISTINCT (catégorie C, aucune valeur "
-          "recalibrée par UT n'est donnée par le corpus) devrait être tranché avant de pouvoir mesurer "
-          "honnêtement si la table de tendance elle-même transfère à D1/Hebdomadaire.")
+    print("Lecture honnête n°2 (39e round -- CORRIGÉ depuis le 38e) : les fenêtres de maturité "
+          "(local_duration/context_duration, cf. PREPARE_KWARGS) sont ici passées en NOMBRE DE "
+          "BOUGIES (LOCAL_DURATION_H4_BARS/CONTEXT_DURATION_H4_BARS), pas en durée calendaire -- "
+          "n_borders_median est désormais ~9 sur les 3 UT (H4/D1/Hebdomadaire), comparable, au lieu "
+          "de chuter à ~1 sur D1 et ~0 sur Hebdomadaire avec l'ancienne fenêtre calendaire (38e "
+          "round). Effet mesuré : D1_n_trades N'EST PLUS 0 (BTC 3, ETH 1, BNB 1, SOL 3) -- le "
+          "mécanisme 'Tendance' transfère bien à D1 une fois la fenêtre recalibrée. Weekly_n_trades "
+          "reste à 0 sur les 4 actifs -- mais ce n'est PLUS un artefact de calibration (n_borders y "
+          "est désormais comparable aux 2 autres UT) : l'historique Hebdomadaire disponible est "
+          "simplement TRÈS COURT en nombre de bougies (303-367 selon l'actif, contre 13000+ en H4) -- "
+          "une contrainte d'échantillon réelle, pas un gate mal calibré.")
 
 if __name__ == "__main__":
     main()

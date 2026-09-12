@@ -1584,6 +1584,71 @@ directement utilisable** : la détection de "Tendance Multi-timeframe" elle-mêm
 testée, mesurée non triviale) — le blocage porte sur la CONSOMMATION (sizing + recalibration
 LOCAL/CONTEXT_DURATION), pas sur la détection.
 
+### 39e application (cycle suivant) — LOCAL_DURATION/CONTEXT_DURATION recalibrées en nombre de bougies : le blocage du 38e round levé, D1 trade réellement
+
+**Décision directe de l'utilisateur, "directeur ingénieur senior"**, en deux temps. D'abord une
+clarification directe : *"il [le contexte de l'UT supérieure] le prendra en compte à la fois dans
+sa capacité à prendre position ou non mais aussi pour positionner ses take profit et son stop et
+aussi pour calculer la taille de ses positions"* — vérifié contre le code existant avant d'agir :
+le stop (UT+1) et la taille (mécaniquement, via `risk_pct/stop_pct`, cf. `MTF_CROSS_VALIDATION_H4_
+D1.md`) le font déjà ; le TP ("Confirmation", `conf_px`) est l'endroit où l'écart est réel — sa
+propre citation (`TRADING_LESSONS_BREAKOUT_RATIO11.md:9`, *"Phase de Confirmation (Ratio 1:1
+Contexte) : utiliser l'UT+2 pour projeter l'amplitude du range de contexte principal"*) demande
+explicitement l'UT+2, mais `context_range` (qui alimente `conf_px = entry + context_range`,
+`position_engine.py`) est calculé par `backtest_phase2_v7.prepare` sur H4 (l'UT d'EXÉCUTION), jamais
+sur une vraie UT+2. **Ce point précis avait déjà été exhaustivement investigué au 16e round**
+(4 lectures alternatives du "canal de contexte" testées, dont une sur D1/UT+1 — variante D du
+tableau H-Conf-Struct-5 — toutes dégénérées à 98-100% de collapse Validation→Confirmation, pour une
+raison structurelle indépendante de l'UT du canal : `val_px` overshoot déjà la médiane 15D dans
+89,6-94,3% des cas) — mais AUCUNE des 4 lectures testées n'utilisait la fenêtre EN NOMBRE DE
+BOUGIES d'une vraie UT+2, seulement des durées calendaires (H4 ou D1) : la même limite
+architecturale que le 38e round, retrouvée indépendamment dans un second mécanisme.
+
+**Décision de rouvrir le 38e round pour lever ce blocage COMMUN** (pas seulement pour la Tendance
+Multi-timeframe, mais pour tout mécanisme cross-UT de ce projet) : `LOCAL_DURATION="5D"`/
+`CONTEXT_DURATION="15D"` (`backtest_phase2_v7.py`) sont des durées CALENDAIRES ABSOLUES —
+pertinentes pour H4 (leur seul usage historique) mais dégénérées sur toute UT plus lente.
+
+**Implémenté, strictement additif** : `prepare(df, local_duration=LOCAL_DURATION, context_
+duration=CONTEXT_DURATION)` — nouveaux paramètres optionnels, défauts = valeurs historiques,
+comportement BIT-À-BIT inchangé pour les 24 appelants existants du projet (aucun ne passe ces
+arguments). `pandas.rolling()` accepte nativement soit une durée calendaire (str/Timedelta) soit un
+ENTIER (nombre de bougies) — **aucune nouvelle valeur inventée** : `LOCAL_DURATION_H4_BARS=30`/
+`CONTEXT_DURATION_H4_BARS=90` sont les MÊMES 5D/15D, exprimées en bougies H4 (5*24/4, 15*24/4,
+exact — 0 trou dans la donnée H4 de ce projet). Même paramétrage threadé à `trend_table.py::
+add_trend_context`/`run_trend_table` (`ctx_high`/`ctx_low`/`local_high`, sinon `breakout_raw`
+resterait calibré sur l'ancienne échelle pendant que `n_borders` serait corrigé — un mélange
+d'échelles pire que l'absence de correction).
+
+**4 nouveaux tests** (`tests/unit/test_backtest_phase2_v7_prepare.py`, nouveau fichier — `prepare`
+n'avait AUCUNE couverture dédiée avant ce round) : non-régression directe (défaut == calendaire
+explicite), équivalence H4 bougies==calendaire (à partir de la bougie 90, cf. commentaire du test
+sur la différence de convention `min_periods` pandas entre fenêtre entière et fenêtre offset — sans
+effet en production, `warmup` ampute déjà bien plus), vérité terrain UT-agnostique sur série
+synthétique. Suite complète **258 → 262 tests, tous verts**. Non-régression bit-à-bit vérifiée par
+rejeu réel (`phase2_v7_mtf_results.csv`, `phase2_trend_table_results.csv`,
+`backtest_phase2_unified_results.csv` — tous identiques au chiffre près).
+
+**Mesuré (`mtf_cascade_diagnostic.py` mis à jour, rejoué)** : `n_borders_median` désormais **~9 sur
+les 3 UT** (H4/D1/Hebdomadaire), comparable, contre 9/1/0 avant ce round (38e). **Effet réel,
+mesuré** : `D1_n_trades` n'est PLUS 0 sur aucun actif — BTC 3, ETH 1, BNB 1, SOL 3 — le mécanisme
+"Tendance" transfère bien à D1 une fois la fenêtre recalibrée en bougies. `Weekly_n_trades` reste à
+0 sur les 4 actifs, mais **ce n'est PLUS un artefact de calibration** (n_borders y est désormais
+comparable) : l'historique Hebdomadaire disponible est simplement TRÈS COURT en nombre de bougies
+(303-367 selon l'actif, contre 13000+ en H4) — une contrainte d'échantillon réelle et honnête, pas
+un gate mal calibré.
+
+**Ce qui reste, honnêtement, hors de ce round** : (1) le money-management "2% par UT en parallèle"
+de la Tendance Multi-timeframe reste catégorie C (comment sizer réellement 3 jambes concurrentes
+n'est toujours pas chiffré par le corpus) ; (2) `conf_px`/Confirmation de `position_engine.py`
+n'a PAS été re-testée avec un `context_range` sourcé sur une vraie UT+2 en bougies (le blocage
+architectural est levé, mais refaire la mesure H-Conf-Struct-5 avec cette 5e variante est un
+travail distinct, non fait ici — l'hypothèse la plus probable, vu que `val_px` overshoot DÉJÀ la
+médiane 15D dans 89,6-94,3% des cas indépendamment de l'UT du canal, est que le même collapse
+Validation→Confirmation se reproduirait, mais ce n'est PAS mesuré, donc pas affirmé) ; (3) aucun
+défaut de moteur n'est changé par ce round (`local_duration`/`context_duration` restent optionnels
+partout, jamais activés par défaut).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

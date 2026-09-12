@@ -1,5 +1,5 @@
 symbol,pct_bars,n_bars,n_episodes,median_episode_days,max_episode_days,H4_n_trades,H4_total_return_%,D1_n_trades,D1_total_return_%,Weekly_n_trades,Weekly_total_return_%,H4_n_borders_median,D1_n_borders_median,Weekly_n_borders_median,H4_n_borders_max,D1_n_borders_max,Weekly_n_borders_max
-BTCUSDT,2.96,455,27,2.0,10.3,7,0.1,0,0.0,0,0.0,9.0,1.0,0.0,15.0,4.0,1.0
-ETHUSDT,0.29,43,4,1.9,2.8,8,-2.8,0,0.0,0,0.0,9.0,2.0,0.0,15.0,4.0,1.0
-BNBUSDT,2.34,338,13,2.2,18.3,16,-8.1,0,0.0,0,0.0,9.0,2.0,0.0,13.0,4.0,1.0
-SOLUSDT,0.8,105,8,0.8,10.8,8,-5.1,0,0.0,0,0.0,9.0,2.0,0.0,15.0,4.0,1.0
+BTCUSDT,2.96,455,27,2.0,10.3,7,0.1,3,0.9,0,0.0,9.0,9.0,9.0,15.0,13.0,11.0
+ETHUSDT,0.29,43,4,1.9,2.8,8,-2.8,1,-0.4,0,0.0,9.0,9.0,10.0,15.0,14.0,12.0
+BNBUSDT,2.34,338,13,2.2,18.3,16,-8.1,1,-3.7,0,0.0,9.0,9.0,10.0,13.0,13.0,11.0
+SOLUSDT,0.8,105,8,0.8,10.8,8,-5.1,3,-6.4,0,0.0,9.0,9.0,9.0,15.0,15.0,11.0

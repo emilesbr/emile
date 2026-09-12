@@ -897,12 +897,22 @@ PROFILES_TREND = {
 # Préparation des données (indicateurs, réutilisant proxy_v2/regime_classifier
 # via backtest_phase2_v7.prepare, + colonnes propres à la table de tendance)
 # ---------------------------------------------------------------------------
-def add_trend_context(df: pd.DataFrame) -> pd.DataFrame:
+def add_trend_context(df: pd.DataFrame, local_duration=LOCAL_DURATION, context_duration=CONTEXT_DURATION) -> pd.DataFrame:
     """Ajoute les colonnes propres à la détection des 5 étapes, en plus de
     celles déjà posées par `backtest_phase2_v7.prepare` (score, atr, regime,
     ctx_support, local_range, context_range, n_borders). Toutes les colonnes
     ajoutées ici sont calculées de façon causale (rolling, jamais de
-    lookahead)."""
+    lookahead).
+
+    `local_duration`/`context_duration` (39e round, mêmes défauts, mêmes
+    paramètres, même justification que `backtest_phase2_v7.prepare` -- cf.
+    sa docstring) : transmis tels quels au rolling de `ctx_high`/`ctx_low`/
+    `local_high` ci-dessous, pour qu'un appelant qui recalibre `prepare` en
+    nombre de bougies (UT autre que H4) obtienne des niveaux `local_high`/
+    `ctx_high` COHÉRENTS avec ses propres `local_range`/`context_range` --
+    sinon `breakout_raw` (`c[i-1] > local_high_v[i-1]`) resterait calibré sur
+    l'ancienne échelle calendaire alors même que `n_borders` serait corrigé,
+    un mélange d'échelles pire que de ne rien corriger du tout."""
     df = df.copy()
     ema_slow = df["ctx_support"] + 2 * df["atr"]        # inverse de v7::prepare (ctx_support = ema_slow - 2*atr)
     df["ctx_resistance"] = ema_slow + 2 * df["atr"]      # bande haute du canal (jamais calculée par v7, qui ne stoppe que long)
@@ -913,9 +923,9 @@ def add_trend_context(df: pd.DataFrame) -> pd.DataFrame:
     # glissant inclurait toujours la bougie qu'on teste, qui majore forcément
     # sa propre clôture).
     ts = df.set_index("date")
-    df["ctx_high"] = ts["high"].rolling(CONTEXT_DURATION).max().shift(1).values
-    df["ctx_low"] = ts["low"].rolling(CONTEXT_DURATION).min().shift(1).values
-    df["local_high"] = ts["high"].rolling(LOCAL_DURATION).max().shift(1).values  # base immédiate ("accumulation"), plus proche que ctx_high
+    df["ctx_high"] = ts["high"].rolling(context_duration).max().shift(1).values
+    df["ctx_low"] = ts["low"].rolling(context_duration).min().shift(1).values
+    df["local_high"] = ts["high"].rolling(local_duration).max().shift(1).values  # base immédiate ("accumulation"), plus proche que ctx_high
 
     ctx_span = (df["ctx_high"] - df["ctx_low"]).replace(0, np.nan)
     df["accum_retracement_frac"] = ((df["ctx_high"] - df["close"]) / ctx_span).values
@@ -1237,7 +1247,8 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
                      use_breakout_space_gate: bool = False,
                      df_ut1: pd.DataFrame = None, df_ut2: pd.DataFrame = None,
                      space_mult: float = BREAKOUT_SPACE_MULT,
-                     use_suivi_de_tendance: bool = False) -> dict:
+                     use_suivi_de_tendance: bool = False,
+                     local_duration=LOCAL_DURATION, context_duration=CONTEXT_DURATION) -> dict:
     """Rejoue la table de tendance à 5 étapes sur `df` (H4 ou toute UT unique,
     colonnes date/open/high/low/close), avec `vol` (DataFrame aligné, même
     longueur, colonne "volume" de la même UT — cf. `load_volume`/
@@ -1264,10 +1275,19 @@ def run_trend_table(df: pd.DataFrame, vol: pd.DataFrame, profile_name: str,
     ci-dessus) : active la branche "Cassure de 3BR" du mécanisme "Suivi de
     tendance" (34e round, cf. bloc dédié en tête de fichier, 2 hypothèses
     documentées H-Suivi-Cassure3BR-1/2). Les 2 autres branches (Repli à la
-    moyenne / Repli sur 3BR squeezée) restent backlog, non activables ici."""
+    moyenne / Repli sur 3BR squeezée) restent backlog, non activables ici.
+
+    `local_duration`/`context_duration` (39e round, défauts `LOCAL_DURATION`/
+    `CONTEXT_DURATION` -- comportement BIT-À-BIT inchangé pour tout appelant
+    existant) : transmis tels quels à `prepare` (cf. sa docstring, 39e round)
+    -- permet de rejouer ce moteur sur une UT autre que H4 (D1/Hebdomadaire)
+    avec une fenêtre de maturité UT-AGNOSTIQUE (`LOCAL_DURATION_H4_BARS`/
+    `CONTEXT_DURATION_H4_BARS` de `backtest_phase2_v7.py`) plutôt qu'une
+    durée calendaire qui dégénère à cette échelle (38e round,
+    `mtf_cascade_diagnostic.py`)."""
     p = PROFILES_TREND[profile_name]
-    df = prepare(df)
-    df = add_trend_context(df)
+    df = prepare(df, local_duration=local_duration, context_duration=context_duration)
+    df = add_trend_context(df, local_duration=local_duration, context_duration=context_duration)
     n = len(df)
     assert len(vol) == n, "volume désaligné avec df (même resample requis)"
 

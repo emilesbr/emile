@@ -663,6 +663,19 @@ dédiée, pas une implémentation improvisée.
   recalibrer `LOCAL_DURATION`/`CONTEXT_DURATION` par UT est un chantier À PART, plus large que ce
   round, sans valeur donnée par le corpus (inventer un facteur d'échelle serait la même erreur
   que d'inventer un seuil). Détail complet, chiffres exacts : `PLAN.md` section "38e application".
+  **LEVÉ (39e round)** : `LOCAL_DURATION`/`CONTEXT_DURATION` acceptent désormais une fenêtre en
+  NOMBRE DE BOUGIES (`local_duration=LOCAL_DURATION_H4_BARS=30`/`context_duration=CONTEXT_
+  DURATION_H4_BARS=90`, mêmes valeurs que 5D/15D exprimées en bougies H4 — aucune invention),
+  strictement additif, comportement inchangé par défaut. Mesuré après correction : `n_borders_
+  median` ~9 sur les 3 UT (comparable), `D1_n_trades` n'est PLUS 0 (BTC 3, ETH 1, BNB 1, SOL 3) —
+  le mécanisme "Tendance" transfère bien à D1. `Weekly_n_trades` reste à 0 mais pour une raison
+  honnête différente (historique trop court en nombre de bougies, 303-367 selon l'actif — pas un
+  artefact de calibration). Trouvaille venue d'un second angle : la clarification directe de
+  l'utilisateur sur le contexte UT+2 utilisé pour le TP ("Confirmation") a révélé que `conf_px`
+  (`position_engine.py`) souffre du MÊME défaut (`context_range` calculé sur H4, jamais sur une
+  vraie UT+2) — jamais testé avec la fenêtre en bougies (catégorie C, non fait ce round, cf.
+  `PLAN.md` "39e application" pour le détail). Le money-management "2% par UT en parallèle" de la
+  Tendance Multi-timeframe reste, lui, catégorie C (sizing non chiffré par le corpus).
 
 ### Ce qui reste correctement classé, confirmé par les 3 agents (rien à changer)
 Tout le reste des 17 sources + le manuel — UT+2 (mécanisme général), stop UT+1 réel, breakeven différé à la Confirmation, abstention Wall Street, canal manuel, Andrews, diversification 1%+1%, +Reverse scopé TRES_AGRESSIF, EXCES-H4, pyramidalisation-régime, TSI(14,7,9), garde-fous Phase 4 (hors périmètre code, correctement noté comme tel) — vérifié directement dans le code par les 3 agents, pas simplement relu dans ce document.
