@@ -1885,6 +1885,112 @@ M15, chacun avec sa propre preuve) ; `docs/COUVERTURE_ENSEIGNEMENTS.md` (note du
 "M15 n'existe que pour BTC" corrigée — obsolète depuis la restauration de données du 37e round,
 sans impact sur la conclusion de ce chantier qui n'utilisait pas M15).
 
+### 44e application (cycle suivant) — Chaos retenté malgré la tension avec le corpus : décision directe de l'utilisateur, toujours PAS implémenté
+
+**Décision directe de l'utilisateur** : après avoir demandé "pourquoi on ne peut pas implémenter
+Neuneu, Chaos, SL gain", puis "trouve une solution" — questionnaire posé item par item, l'utilisateur
+a choisi explicitement de tenter Chaos malgré la mise en garde du corpus lui-même ("chercher à lui
+donner le moindre sens est une pure perte de temps").
+
+**Piste envisagée** : au lieu d'inventer des seuils bruts, ne réutiliser QUE des seuils déjà établis
+ailleurs dans `regime_classifier.py`/`proxy_v2.py` pour opérationnaliser les 3 critères de l'écran
+(`Chaos/Chaos.png`, "Contextes irréguliers"/"Moyenne plate"/"Momentum bruyant" → "PARTEZ").
+
+**Résultat de l'investigation, honnête** :
+- **"Moyenne plate"** : opérationnalisable SANS invention — réutilise tel quel le seuil `TREND_SLOPE_
+  THRESHOLD * 0.5` déjà utilisé par `add_regime` pour distinguer RANGE_TENDANCIEL de RANGE_NEUTRE
+  (`|slope_pct|` en dessous de ce seuil = "moyenne plate" au sens déjà retenu par ce fichier).
+- **"Momentum bruyant"** : AUCUNE primitive de bruit/oscillation/whipsaw n'existe nulle part dans le
+  projet (grep exhaustif `whipsaw`/`noise`/`bruit`/`sign_change`/`zigzag`/`oscillat` sur tout
+  `emile/` — seules occurrences : du texte de commentaire sans rapport, ou le bruit GAUSSIEN ajouté
+  aux séries SYNTHÉTIQUES de `cycle_ascending_robustness.py`, un fichier de test de robustesse, pas
+  une mesure de marché réel). Un seuil serait donc inventé de A à Z.
+- **"Contextes irréguliers"** : seul candidat de réutilisation identifié, `NEUNEU_MAX_BORDERS`
+  (`regime_classifier.py`), a été calibré pour une question totalement différente (router RANGE
+  "3ème borne" vs "Neuneu", pas mesurer l'irrégularité d'un contexte) — le réutiliser ici serait le
+  même type d'erreur déjà explicitement évité au 42e round ("réutiliser ces derniers aurait rebasé
+  le triplet de référence sur l'UT exécutée, une erreur").
+
+**Conclusion, non modifiée par la tentative** : 1 des 3 critères sur 3 est réutilisable sans
+invention, les 2 autres exigeraient un seuil inventé de toutes pièces — Chaos reste donc catégorie
+A, PAS implémenté. Aucun code modifié, aucun test touché. Cette conclusion est cohérente avec le
+texte source lui-même, qui décourage explicitement toute tentative de quantification précise.
+
+### 45e application (cycle suivant) — "SL gain" câblé (Range Tendanciel §3bis, AGRESSIF/TRES_AGRESSIF) : décision directe de l'utilisateur d'accepter la lecture extrapolée, mécanisme correct mais INERTE sur la donnée réelle
+
+**Décision directe de l'utilisateur, suite de "trouve une solution"** : accepter la lecture
+extrapolée H-SLGain-1 ("SL gain" = stop remonté au plus haut observé depuis l'ouverture, MÊME
+primitif que "Validation = ... SL déplacé au sommet récent" du mécanisme Neuneu) pour câbler
+l'étape "Target 1" (TP25%+SL gain) du tableau §3bis, jusqu'ici EXCLUE pour AGRESSIF/TRES_AGRESSIF
+faute de définition codable (19e round).
+
+**Ce qui était déjà littéral, câblé sans extrapolation** : Validation/Confirmation de §3bis pour ces
+2 profils sont soit numériquement identiques à §3 (AGRESSIF : val_close=0,00/conf_close=0,50, déjà
+dans `PROFILES_V4`, aucun override nécessaire — même constat que MODERE au 19e round) soit un
+override réel mais LITTÉRAL (TRES_AGRESSIF : conf_close 0,00→0,25, "TP25%+SL BE", `conf_to_be=True`
+déjà global) — ajouté à `RANGE_TENDANCIEL_CLOSE_FRACS` (`backtest_phase2_faithful.py`) SANS
+condition, comme FAIBLE avant lui.
+
+**Ce qui restait extrapolé, câblé en OPT-IN** : "Target 1" (TP25%+SL gain) remplace, pour ces 2
+profils SOUS RANGE_TENDANCIEL UNIQUEMENT, la clôture à 100% de la Limite par une clôture PARTIELLE
+(25%, littéral — `TARGET1_CLOSE_FRAC`) suivie d'un stop remonté au plus haut observé depuis
+l'ouverture. Contrairement à l'override Validation/Confirmation ci-dessus (littéral, toujours actif),
+ce mécanisme dépend d'une lecture non chiffrée par le corpus — même statut que `use_mtf_cascade`
+(42e round) : nouveau paramètre `use_sl_gain: bool = False` sur `run_faithful`/`run_unified`
+(défaut `False` = AUCUN changement de comportement, CSV de référence déjà publiés bit-à-bit
+inchangés).
+
+**Implémenté, strictement additif** :
+- `position_engine.py::process_tranche` — l'étape Limite (`c[i] >= tr["lim_px"]`) généralisée pour
+  supporter une clôture PARTIELLE (`tr["lim_close_frac"]`, défaut 1.0 = comportement historique) et
+  l'action "SL gain" (`tr["lim_stop_action"] == "SL_GAIN"` → `stop = max(stop, _max_high_since_
+  entry)`), avec un flag `lim_done` pour ne jamais reclôturer 2 fois au même niveau. `_max_high_
+  since_entry` tracé bar par bar dans `run_position_engine` (et dans la boucle RANGE dédiée
+  d'`unified_protocol.py`, qui ne passe pas par `run_position_engine`) — bookkeeping additif pur,
+  aucun effet pour un appelant qui ne le consomme jamais.
+- `make_open_tranche_fn` — 2 nouveaux paramètres optionnels `lim_close_frac_v`/`sl_gain_v` (même
+  convention que `val_close_frac_v`/`conf_close_frac_v` du 24e round), résolus à l'ouverture.
+- `backtest_phase2_faithful.py::range_tendanciel_target1_fracs` (nouvelle fonction pure, réutilisée
+  telle quelle par `unified_protocol.py`) : produit les 2 arrays ci-dessus, no-op (1.0/False) hors
+  du scope AGRESSIF/TRES_AGRESSIF × RANGE_TENDANCIEL.
+- `run_faithful`/`run_unified` : nouveau paramètre `use_sl_gain` (défaut `False`), gate le SEUL
+  appel à `range_tendanciel_target1_fracs` (les overrides Validation/Confirmation littéraux restent
+  inconditionnels, cf. ci-dessus).
+
+**11 nouveaux tests** (`test_position_engine.py` : clôture partielle + stop remonté au plus haut
+réel, `lim_done` empêche une reclôture, non-régression bit-à-bit sans les nouvelles clés, aucune
+jambe +Reverse sur une clôture partielle, bookkeeping `_max_high_since_entry` vérifié directement
+sur `run_position_engine` ; `test_backtest_phase2_faithful.py` : la fonction pure
+`range_tendanciel_target1_fracs` scopée exactement AGRESSIF/TRES_AGRESSIF×RANGE_TENDANCIEL, et 2
+tests de bout en bout sur un scénario synthétique dédié atteignant réellement Target 1 --
+`use_sl_gain=False` clôture totalement `trace[0]` comme avant ce round, `use_sl_gain=True` ne
+clôture que 25% et laisse la tranche ouverte à 0,5625× la taille d'entrée, calculé à la main).
+Suite complète **270 → 281 tests, tous verts**.
+
+**Mesuré sur données réelles, résultat honnête : le mécanisme est CORRECT mais INERTE sur cette
+donnée** (`emile/core/sl_gain_wired_measure.py`, nouveau script, BTC/ETH/BNB/SOL × AGRESSIF/
+TRES_AGRESSIF, `results/sl_gain_wired_results.csv`) : **0/8 lignes actif×profil montrent le moindre
+écart** `use_sl_gain=False` vs `True` — vérifié pourquoi, pas seulement constaté : sur les 41
+tranches TRES_AGRESSIF ouvertes pendant un régime RANGE_TENDANCIEL (BTC 19, ETH 8, BNB 10, SOL 4,
+compté directement dans `feat["regime_h4"]`), **AUCUNE n'atteint ne serait-ce que la Confirmation**
+avant de se fermer autrement (stop ou flip) — donc ni l'override Confirmation littéral ni le
+mécanisme Target 1/SL gain extrapolé n'ont eu l'occasion de s'exercer sur cet historique. **Même
+classe de trouvaille que "gate inerte" déjà rencontrée plusieurs fois dans ce projet** (n_borders,
+stop UT+1 T/T-1, MTF cascade sur BTC/D1...) : le câblage est vérifié correct par les tests
+synthétiques dédiés (qui EXERCENT réellement le mécanisme et mesurent un effet non nul), mais la
+population réelle qui le déclencherait est vide sur cette fenêtre précise. `backtest_phase2_
+faithful_results.csv`/`backtest_phase2_unified_results.csv` régénérés et comparés : **identiques
+bit-à-bit** à la version publiée (confirmé par diff direct, pas supposé) — cohérent avec `use_
+sl_gain=False` par défaut, mais confirme aussi que même une régénération complète avec le nouveau
+code ne bouge rien tant que le flag n'est pas explicitement demandé.
+
+**Ce que ce round ne tranche PAS, honnêtement** : la lecture retenue (H-SLGain-1) reste une
+EXTRAPOLATION acceptée explicitement par l'utilisateur, pas une lecture littérale — une lecture
+alternative de "gain" (ex. un pourcentage fixe de la distance parcourue plutôt que le plus haut
+exact) resterait tout aussi défendable. Et même une fois acceptée, la mesure honnête est que ce
+mécanisme précis ne change RIEN sur BTC/ETH/BNB/SOL avec l'historique actuel — pas un rejet de la
+lecture, une population trop rare pour la tester utilement sur cette fenêtre.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

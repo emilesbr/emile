@@ -393,7 +393,43 @@ REVERSE_SCOPED_PROFILE = "TRES_AGRESSIF"
 # Agressif qui en auraient exigé un).
 RANGE_TENDANCIEL_CLOSE_FRACS = {
     "FAIBLE": {"val_close": 0.25, "conf_close": 0.50},
+    # TRES_AGRESSIF (45e round) : §3bis Confirmation="TP25%+SL BE" (conf_close
+    # 0.25) DIFFÈRE de §3 (conf_close=0.00, "-" -- PROFILES_V4) -- override
+    # réel, comme FAIBLE ci-dessus. AGRESSIF n'a PAS d'entrée ici : §3bis
+    # Validation="—"/Confirmation="TP50%+SL BE" sont NUMÉRIQUEMENT IDENTIQUES
+    # à §3 (val_close=0.00/conf_close=0.50 déjà dans PROFILES_V4, `conf_to_
+    # be=True` déjà global) -- même constat que MODERE au 19e round, aucune
+    # entrée nécessaire.
+    "TRES_AGRESSIF": {"val_close": 0.00, "conf_close": 0.25},
 }
+
+# Étape "Target 1" du tableau §3bis (TP25%+SL gain, AGRESSIF/TRES_AGRESSIF
+# UNIQUEMENT -- FAIBLE/MODERE n'ont pas cette ligne) -- 45e round, décision
+# directe de l'utilisateur d'accepter la lecture extrapolée "SL gain" (cf.
+# bloc dédié en tête de `position_engine.py` pour la citation complète,
+# l'hypothèse H-SLGain-1 et le mécanisme). Remplace, pour ces 2 profils SOUS
+# CE SEUL RÉGIME, la clôture à 100% de la Limite/Target 1 par une clôture
+# PARTIELLE (25%, littéral) suivie d'un stop remonté au plus haut atteint
+# depuis l'ouverture -- ailleurs (régime différent, ou profil FAIBLE/MODERE),
+# comportement historique inchangé (clôture totale, aucune action sur le stop).
+RANGE_TENDANCIEL_TARGET1_PROFILES = ("AGRESSIF", "TRES_AGRESSIF")
+TARGET1_CLOSE_FRAC = 0.25   # "TP25%+SL gain" -- littéral, RULES_EXTRACTION.md §3bis
+
+def range_tendanciel_target1_fracs(profile_name: str, regime_h4_v) -> tuple:
+    """Retourne `(lim_close_frac_v, sl_gain_v)`, arrays PAR BOUGIE (même
+    longueur que `regime_h4_v`) -- consommés par `make_open_tranche_fn`
+    (`lim_close_frac_v`/`sl_gain_v`, cf. `position_engine.py`). Fonction PURE,
+    ne recalcule aucun indicateur, réutilisée à l'identique par
+    `unified_protocol.py` (même convention que `range_money_management_fracs`
+    ci-dessus -- pas de copie)."""
+    n = len(regime_h4_v)
+    if profile_name not in RANGE_TENDANCIEL_TARGET1_PROFILES:
+        return np.full(n, 1.0), np.zeros(n, dtype=bool)
+    regime_h4_v = np.asarray(regime_h4_v)
+    is_tendanciel = regime_h4_v == "RANGE_TENDANCIEL"
+    lim_close_v = np.where(is_tendanciel, TARGET1_CLOSE_FRAC, 1.0)
+    sl_gain_v = is_tendanciel
+    return lim_close_v, sl_gain_v
 
 
 def range_money_management_fracs(profile_name: str, regime_h4_v) -> tuple:
@@ -563,13 +599,25 @@ def _add_squeeze_columns(feat: dict) -> dict:
 
 def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
               start: int = 0, end: int = None, record_trace: bool = False,
-              use_structural_confirmation: bool = False) -> dict:
+              use_structural_confirmation: bool = False,
+              use_sl_gain: bool = False) -> dict:
     """Même structure que `backtest_phase2_recommended.py::_run_core`, avec
     3 différences NON CONDITIONNELLES (cf. tête de fichier) : stop = D1
     (UT+1, jamais le canal H4 natif), abstention Wall Street (bloque entrée
     fraîche ET renfort, cf. `backtest_phase2_patterns.py` -- même
     comportement, pas réinventé), et `reverse_at_limit=True` SEULEMENT si
-    `profile_name == "TRES_AGRESSIF"` (scope littéral du corpus)."""
+    `profile_name == "TRES_AGRESSIF"` (scope littéral du corpus).
+
+    `use_sl_gain` (AJOUTÉ au 45e round, additif, défaut `False` = AUCUN
+    changement de comportement) : contrairement à `RANGE_TENDANCIEL_CLOSE_
+    FRACS` ci-dessus (lecture LITTÉRALE, non conditionnelle, comme FAIBLE
+    avant lui), la ligne "Target 1" (TP25%+SL gain) repose sur une lecture
+    EXTRAPOLÉE de "SL gain" (H-SLGain-1, cf. tête de `position_engine.py`)
+    -- même statut que `use_mtf_cascade`/`use_breakout_space_gate` avant elle
+    (extrapolation ACCEPTÉE par l'utilisateur mais gardée OPT-IN, pas une
+    règle littérale à activer sans condition) : les CSV de référence déjà
+    publiés pour AGRESSIF/TRES_AGRESSIF restent bit-à-bit inchangés tant que
+    ce paramètre n'est pas explicitement demandé."""
     p = PROFILES_V4[profile_name]
     if risk_pct is None:
         risk_pct = p["risk_pct"]
@@ -637,6 +685,15 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
     # `range_money_management_fracs` (no-op bit-à-bit pour MODERE/AGRESSIF/
     # TRES_AGRESSIF, override réel seulement pour FAIBLE en RANGE_TENDANCIEL).
     val_close_frac_v, conf_close_frac_v = range_money_management_fracs(profile_name, regime_h4_v)
+    # Étape "Target 1" du tableau §3bis (45e round) : cf. `range_tendanciel_
+    # target1_fracs` -- OPT-IN (`use_sl_gain`, cf. docstring de `_run_core`),
+    # défaut `False` -> arrays no-op (1.0/False partout), bit-à-bit identique
+    # au comportement d'avant ce round pour TOUT appelant existant.
+    if use_sl_gain:
+        lim_close_frac_v, sl_gain_v = range_tendanciel_target1_fracs(profile_name, regime_h4_v)
+    else:
+        lim_close_frac_v = np.full(n, 1.0)
+        sl_gain_v = np.zeros(n, dtype=bool)
 
     state = {"last_pyramid_high": -np.inf}
     open_tranche_fn = make_open_tranche_fn(
@@ -646,6 +703,7 @@ def _run_core(feat: dict, profile_name: str, risk_pct: float = None,
         squeeze_armed_v=squeeze_armed_v, squeeze_mid_v=squeeze_mid_v,
         squeeze_sup_v=squeeze_sup_v, low_v=low,
         val_close_frac_v=val_close_frac_v, conf_close_frac_v=conf_close_frac_v,
+        lim_close_frac_v=lim_close_frac_v, sl_gain_v=sl_gain_v,
     )
 
     gated_long_signal = np.array([
@@ -679,6 +737,7 @@ def run_faithful(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profi
                   capital_eur: float = None, record_trace: bool = False,
                   use_mtf_gate: bool = True,
                   use_structural_confirmation: bool = False,
+                  use_sl_gain: bool = False,
                   closure_delay_d1: pd.Timedelta = None,
                   closure_delay_weekly: pd.Timedelta = None) -> dict:
     """Point d'entrée principal -- moteur RANGE avec les 3 règles littérales
@@ -687,6 +746,9 @@ def run_faithful(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profi
     inchangée. `use_mtf_gate` (AJOUTÉ ce cycle, additif, défaut `True` =
     comportement inchangé) : cf. docstring de `_prepare_features` --
     neutralise SEULEMENT le gate Hebdomadaire, jamais le stop D1 littéral.
+    `use_sl_gain` (45e round, additif, défaut `False`) : cf. docstring de
+    `_run_core` -- lecture extrapolée "Target 1" (TP25%+SL gain, AGRESSIF/
+    TRES_AGRESSIF, régime RANGE_TENDANCIEL), OPT-IN comme `use_mtf_cascade`.
     `closure_delay_d1`/`closure_delay_weekly` : transmis tels quels, cf.
     docstring de `_prepare_features`."""
     feat = _prepare_features(h4, d1, weekly, use_mtf_gate=use_mtf_gate,
@@ -697,7 +759,8 @@ def run_faithful(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profi
         sizing = effective_sizing(capital_eur, profile_name, PROFILES_V4, MAX_TRANCHES)
         risk_pct = sizing.risk_pct
     return _run_core(feat, profile_name, risk_pct=risk_pct, record_trace=record_trace,
-                     use_structural_confirmation=use_structural_confirmation)
+                     use_structural_confirmation=use_structural_confirmation,
+                     use_sl_gain=use_sl_gain)
 
 def main():
     """Mesure honnête, comparée côte à côte à `recommended.py` (MÊME

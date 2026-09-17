@@ -336,6 +336,12 @@ La règle UT+2 littérale (Hebdo seul, D1 sauté) confirme la direction déjà c
   commentaire du fichier lui-même) — un choix différent de celui du guide, qui traiterait la même
   ambiguïté comme potentiellement Chaos ("PARTEZ") plutôt que comme un Range tradable. Détail
   complet : `docs/GUIDE_STRATEGIE_PRO_INDICATORS.md` section 5, item 8 ; `PLAN.md` "36e application".
+  **Retenté au 44e round** (décision directe de l'utilisateur, malgré la mise en garde du corpus
+  contre toute tentative de quantification) : seul 1 des 3 critères ("moyenne plate") se
+  réutilise sans invention (seuil `TREND_SLOPE_THRESHOLD*0.5` déjà établi) ; "momentum bruyant"
+  n'a aucune primitive de bruit/oscillation nulle part dans le projet, et le seul candidat de
+  réutilisation pour "contextes irréguliers" (`NEUNEU_MAX_BORDERS`) est calibré pour une question
+  sans rapport — conclusion inchangée, cf. `PLAN.md` "44e application".
 
 ### Catégorie B — littéral, computable, PAS reproductibilité-limité : candidats d'implémentation directe
 

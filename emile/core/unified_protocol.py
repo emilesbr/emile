@@ -272,7 +272,8 @@ from emile.backtests.backtest_phase2_v7 import (
 from emile.backtests.backtest_phase2_recommended import WARMUP
 from emile.backtests.backtest_phase2_faithful import (
     REVERSE_SCOPED_PROFILE, run_faithful, _add_squeeze_columns,
-    range_money_management_fracs, _prepare_features as _prepare_range_features,
+    range_money_management_fracs, range_tendanciel_target1_fracs,
+    _prepare_features as _prepare_range_features,
 )
 from emile.backtests.backtest_phase2_ut2 import CLOSURE_DELAY
 from emile.core.position_engine import make_open_tranche_fn, process_tranche, process_reverse
@@ -437,7 +438,8 @@ def _campaign_ev(feat: dict, i: int) -> dict:
 
 def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profile_name: str,
                  capital_eur: float = None,
-                 use_mtf_gate: bool = True, record_state: bool = False) -> dict:
+                 use_mtf_gate: bool = True, record_state: bool = False,
+                 use_sl_gain: bool = False) -> dict:
     """Boucle d'orchestration bar-par-bar -- LE seul code nouveau de ce
     fichier (cf. tête de fichier, décision #3). `h4` DOIT inclure une
     colonne `volume` (cf. `resample_h4_with_volume`, U1). `d1` : niveau
@@ -477,7 +479,8 @@ def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profil
         # U3 : capital par palier appliqué SEULEMENT au moteur RANGE.
         sizing = effective_sizing(capital_eur, profile_name, PROFILES_V4, MAX_TRANCHES)
         risk_pct = sizing.risk_pct
-    return _run_core_unified(feat, profile_name, risk_pct=risk_pct, record_state=record_state)
+    return _run_core_unified(feat, profile_name, risk_pct=risk_pct, record_state=record_state,
+                              use_sl_gain=use_sl_gain)
 
 # NOTE (chantier d'architecture, SUITE du 24e round, cf. PLAN.md) :
 # `_range_gate`/`_range_gate_extra` (extraits comme fonctions de module au
@@ -490,7 +493,8 @@ def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profil
 # system.py`.
 
 def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
-                       record_state: bool = False, start: int = 0, end: int = None) -> dict:
+                       record_state: bool = False, start: int = 0, end: int = None,
+                       use_sl_gain: bool = False) -> dict:
     """La boucle d'orchestration elle-même, séparée de `run_unified` sur le
     modèle `_prepare_features`/`_run_core` de `backtest_phase2_recommended.py`
     -- pour pouvoir être testée unitairement (`test_unified_protocol.py`) sur
@@ -514,6 +518,12 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
     stop D1 (`ctx_support_d1`, pas le canal H4 natif), abstention Wall
     Street (bloque entrée fraîche ET renfort), +Reverse (`reverse_at_limit`)
     UNIQUEMENT pour le profil TRES_AGRESSIF.
+
+    `use_sl_gain` (45e round, additif, défaut `False`) : même statut OPT-IN
+    que `backtest_phase2_faithful.py::run_faithful` -- lecture extrapolée
+    "Target 1" (TP25%+SL gain, AGRESSIF/TRES_AGRESSIF, RANGE_TENDANCIEL),
+    cf. `range_tendanciel_target1_fracs` et le bloc "SL GAIN" en tête de
+    `position_engine.py`.
 
     `start`/`end` (défaut : historique complet) : même principe que
     `backtest_phase2_faithful.py::_run_core` -- permet à `walkforward_unified.py`
@@ -550,6 +560,15 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
     # telle quelle, pas dupliquée) -- no-op bit-à-bit pour MODERE/AGRESSIF/
     # TRES_AGRESSIF, override réel seulement pour FAIBLE en RANGE_TENDANCIEL.
     val_close_frac_v, conf_close_frac_v = range_money_management_fracs(profile_name, feat["regime"])
+    # Étape "Target 1" du tableau §3bis (45e round, cf. `backtest_phase2_
+    # faithful.py::range_tendanciel_target1_fracs`, réutilisée telle quelle) :
+    # OPT-IN (`use_sl_gain`), défaut `False` -> arrays no-op, bit-à-bit
+    # identique au comportement d'avant ce round pour tout appelant existant.
+    if use_sl_gain:
+        lim_close_frac_v, sl_gain_v = range_tendanciel_target1_fracs(profile_name, feat["regime"])
+    else:
+        lim_close_frac_v = np.full(n_total, 1.0)
+        sl_gain_v = np.zeros(n_total, dtype=bool)
 
     range_state = {"last_pyramid_high": -np.inf}
     open_tranche_fn = make_open_tranche_fn(
@@ -560,6 +579,7 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
         squeeze_armed_v=feat["squeeze_armed"], squeeze_mid_v=feat["squeeze_mid"],
         squeeze_sup_v=feat["squeeze_sup"], low_v=low,
         val_close_frac_v=val_close_frac_v, conf_close_frac_v=conf_close_frac_v,
+        lim_close_frac_v=lim_close_frac_v, sl_gain_v=sl_gain_v,
     )
     gated_long_signal = np.array([
         (score[i] >= 2) and gate(i) and not bool(wall_street_v[i]) for i in range(n_total)
@@ -626,6 +646,12 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
             remaining_tranches = []
             new_range_reverses = []
             for tr in tranches:
+                # Bookkeeping additif (45e round, cf. bloc "SL GAIN" en tête
+                # de `position_engine.py`) : identique à la ligne équivalente
+                # de `run_position_engine`, nécessaire ICI aussi puisque ce
+                # fichier gère sa propre boucle de tranches RANGE (n'appelle
+                # pas `run_position_engine`).
+                tr["_max_high_since_entry"] = max(tr.get("_max_high_since_entry", tr["entry"]), high[i])
                 closed, fee_frac, realized = process_tranche(
                     tr, i, o, low, c, long_signal_prev,
                     val_close_frac=p_range["val_close"], conf_close_frac=p_range["conf_close"],

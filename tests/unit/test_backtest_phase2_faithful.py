@@ -31,7 +31,7 @@ from emile.core.proxy_v2 import compute_swing_low_confirmed, SWING_ORDER
 from emile.backtests.backtest_phase2_recommended import WARMUP
 from emile.backtests.backtest_phase2_faithful import (
     _prepare_features, _run_core, run_faithful, REVERSE_SCOPED_PROFILE,
-    range_money_management_fracs,
+    range_money_management_fracs, range_tendanciel_target1_fracs,
 )
 
 # --- Fixtures réelles (petite tranche, réutilisée par plusieurs tests) ---
@@ -550,14 +550,44 @@ def test_range_money_management_fracs_modere_is_a_bitwise_noop():
     np.testing.assert_array_equal(val_v, [0.25, 0.25, 0.25])
     np.testing.assert_array_equal(conf_v, [0.25, 0.25, 0.25])
 
-def test_range_money_management_fracs_agressif_tres_agressif_excluded():
-    """AGRESSIF/TRES_AGRESSIF : EXCLUS de §3bis ("SL gain" indéfini, cf. 19e
-    round) -- grille §3 partout, MÊME en régime RANGE_TENDANCIEL."""
+def test_range_money_management_fracs_agressif_no_override_tres_agressif_real_override():
+    """AGRESSIF : §3bis Validation/Confirmation NUMÉRIQUEMENT IDENTIQUES à §3
+    (val_close=0.00/conf_close=0.50 déjà dans PROFILES_V4) -- aucune entrée
+    dans `RANGE_TENDANCIEL_CLOSE_FRACS`, grille §3 partout, y compris en
+    RANGE_TENDANCIEL (même constat que MODERE au 19e round).
+    TRES_AGRESSIF : override RÉEL depuis le 45e round -- §3bis Confirmation=
+    "TP25%+SL BE" (conf_close=0.25) DIFFÈRE de §3 (conf_close=0.00) en régime
+    RANGE_TENDANCIEL uniquement, cf. `range_tendanciel_target1_fracs` pour la
+    ligne "Target 1" (TP25%+SL gain, mécanisme séparé, testée ailleurs)."""
     regime = np.array(["RANGE_NEUTRE", "RANGE_TENDANCIEL"], dtype=object)
-    for profile, expected in (("AGRESSIF", (0.00, 0.50)), ("TRES_AGRESSIF", (0.00, 0.00))):
-        val_v, conf_v = range_money_management_fracs(profile, regime)
-        np.testing.assert_array_equal(val_v, [expected[0], expected[0]])
-        np.testing.assert_array_equal(conf_v, [expected[1], expected[1]])
+    val_v, conf_v = range_money_management_fracs("AGRESSIF", regime)
+    np.testing.assert_array_equal(val_v, [0.00, 0.00])
+    np.testing.assert_array_equal(conf_v, [0.50, 0.50])
+    val_v, conf_v = range_money_management_fracs("TRES_AGRESSIF", regime)
+    np.testing.assert_array_equal(val_v, [0.00, 0.00])
+    np.testing.assert_array_equal(conf_v, [0.00, 0.25])
+
+def test_range_tendanciel_target1_fracs_agressif_tres_agressif_only_in_range_tendanciel():
+    """§3bis "Target 1" (TP25%+SL gain, 45e round) : scope EXACT AGRESSIF/
+    TRES_AGRESSIF ET régime RANGE_TENDANCIEL uniquement -- `lim_close_frac_v`
+    = 0.25 (littéral) et `sl_gain_v` = True SEULEMENT là, 1.0/False partout
+    ailleurs (autre régime pour ces 2 profils, ou tout régime pour FAIBLE/
+    MODERE qui n'ont pas cette ligne dans le tableau)."""
+    regime = np.array(["RANGE_NEUTRE", "RANGE_TENDANCIEL", "TENDANCE"], dtype=object)
+    for profile in ("AGRESSIF", "TRES_AGRESSIF"):
+        lim_v, sl_v = range_tendanciel_target1_fracs(profile, regime)
+        np.testing.assert_array_equal(lim_v, [1.0, 0.25, 1.0])
+        np.testing.assert_array_equal(sl_v, [False, True, False])
+
+def test_range_tendanciel_target1_fracs_faible_modere_always_noop():
+    """FAIBLE/MODERE : AUCUNE ligne "Target 1" dans le tableau §3bis --
+    `lim_close_frac_v=1.0`/`sl_gain_v=False` partout, quel que soit le
+    régime (même en RANGE_TENDANCIEL)."""
+    regime = np.array(["RANGE_NEUTRE", "RANGE_TENDANCIEL", "TENDANCE"], dtype=object)
+    for profile in ("FAIBLE", "MODERE"):
+        lim_v, sl_v = range_tendanciel_target1_fracs(profile, regime)
+        np.testing.assert_array_equal(lim_v, [1.0, 1.0, 1.0])
+        np.testing.assert_array_equal(sl_v, [False, False, False])
 
 def _range_tendanciel_scenario_feat(n, regime_h4_value):
     """Scénario synthétique DÉDIÉ (calculé à la main, cf. `test_position_
@@ -630,6 +660,80 @@ def test_faible_uses_range_tendanciel_grid_end_to_end():
     assert abs(frac_tendanciel - 0.75) < 1e-6, (
         f"fraction restante après Validation (RANGE_TENDANCIEL)={frac_tendanciel}, attendu 0.75 "
         "(§3bis FAIBLE, val_close=0.25 -> il reste 1-0.25=0.75)"
+    )
+
+def _target1_scenario_feat(n, regime_h4_value):
+    """Variante DÉDIÉE de `_range_tendanciel_scenario_feat` -- même squelette,
+    mais `high`/`low` contrôlés INDÉPENDAMMENT de `close` (`high=close`,
+    aucune mèche, `low=close-2`) pour que le calcul de `_max_high_since_
+    entry` (donc du stop "SL gain") soit exact et déterministe : la clôture
+    franchit Validation (105) à WARMUP+2, Confirmation (108) à WARMUP+3,
+    Target 1/Limite (112) à WARMUP+4, puis BONDIT à 150 à partir de
+    WARMUP+5 -- assez loin du stop remonté (113, = plus haut observé
+    jusqu'à et y compris WARMUP+4) pour ne jamais le retoucher, isolant
+    ainsi la seule question testée : la tranche reste-t-elle ouverte après
+    Target 1 (clôture partielle) ou se ferme-t-elle totalement ?"""
+    close = np.full(n, 100.0)
+    close[WARMUP + 2:] = 106.0
+    close[WARMUP + 3:] = 109.0
+    close[WARMUP + 4:] = 113.0
+    close[WARMUP + 5:] = 150.0
+    openp = close.copy()
+    high = close.copy()       # aucune mèche : high == close partout
+    low = close - 2.0         # toujours 2 sous la clôture
+    return {
+        "date": pd.date_range("2020-01-01", periods=n, freq="4h").values,
+        "open": openp, "high": high, "low": low, "close": close,
+        "score": np.full(n, 3.0), "atr": np.full(n, 1.0),
+        "ctx_support_d1": np.full(n, 90.0),   # stop initial, jamais touché avant Target 1
+        "local_range": np.full(n, 5.0), "context_range": np.full(n, 8.0),
+        "n_borders": np.full(n, 3.0), "gate_score": np.full(n, 10.0),
+        "gate_regime": np.full(n, "TENDANCE", dtype=object),
+        "regime_h4": np.full(n, regime_h4_value, dtype=object),
+        "regime": np.full(n, regime_h4_value, dtype=object),
+        "regime_d1": np.full(n, "TENDANCE", dtype=object),
+        "squeeze_d1": np.zeros(n, dtype=bool),
+        "wall_street_active": np.zeros(n, dtype=bool),
+        "wide_channel": np.zeros(n, dtype=bool),
+        "pitchfork_p1": close - 10.0,
+        "squeeze_armed": np.zeros(n, dtype=bool),
+        "squeeze_mid": np.full(n, np.nan), "squeeze_sup": np.full(n, np.nan),
+    }
+
+def test_use_sl_gain_false_default_closes_fully_at_target1_bit_identical_to_before_45e_round():
+    """`use_sl_gain=False` (défaut) : la PREMIÈRE tranche (`trace[0]`, ouverte
+    à WARMUP+1) doit clôturer TOTALEMENT à la Limite/Target 1, exactement
+    comme avant ce round (comportement historique préservé, cf. `_run_core`
+    docstring) -- `close_i` renseigné, `realized_pnl` non nul. (D'autres
+    tranches pyramidées peuvent s'ouvrir ensuite tant que le prix continue
+    de monter -- non pertinent pour cette question, ignoré ici.)"""
+    n = WARMUP + 10
+    feat = _target1_scenario_feat(n, "RANGE_TENDANCIEL")
+    res = _run_core(feat, "TRES_AGRESSIF", start=0, end=n, record_trace=True,
+                     use_sl_gain=False)
+    first = res["trace"][0]
+    assert first["close_i"] is not None, "la 1ère tranche doit s'être fermée (clôture totale à Target 1)"
+    assert first["realized_pnl"] is not None and first["realized_pnl"] > 0
+
+def test_use_sl_gain_true_partial_close_at_target1_keeps_tranche_open():
+    """`use_sl_gain=True` : la PREMIÈRE tranche (`trace[0]`) ne clôture QUE
+    25% à la Limite/Target 1 (`TARGET1_CLOSE_FRAC`) et reste OUVERTE
+    (`close_i is None`) -- le prix ne retouche jamais le stop remonté dans
+    cette fenêtre. `remaining` final = 0,75 (survivant de Confirmation,
+    TRES_AGRESSIF conf_close=0,25 en RANGE_TENDANCIEL) x 0,75 (survivant de
+    Target 1, 1 - 0,25) = 0,5625 x la taille d'entrée."""
+    n = WARMUP + 10
+    feat = _target1_scenario_feat(n, "RANGE_TENDANCIEL")
+    res = _run_core(feat, "TRES_AGRESSIF", start=0, end=n, record_trace=True,
+                     use_sl_gain=True)
+    first = res["trace"][0]
+    assert first["close_i"] is None, (
+        "la 1ère tranche doit rester OUVERTE (clôture partielle seulement à Target 1)"
+    )
+    frac = first["snapshots"][-1][1] / first["entry_size"]
+    assert abs(frac - 0.5625) < 1e-6, (
+        f"fraction restante en fin de fenêtre={frac}, attendu 0,5625 "
+        "(0,75 après Confirmation x 0,75 après Target 1)"
     )
 
 if __name__ == "__main__":

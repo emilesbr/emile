@@ -950,6 +950,60 @@ H-Conf-Struct-5 -- POURQUOI LE DÉFAUT RESTE OFF (motif de FIDÉLITÉ, PAS de
   (*"gardé OPTIONNEL et désactivé par défaut pour une raison de méthode, pas
   de performance"*), et NON un rejet fondé sur le backtest.
 ================================================================================
+"SL gain" -- étape "Target 1" du tableau §3bis (Range TENDANCIEL, profils
+AGRESSIF/TRES_AGRESSIF), 45e round (`docs/PLAN.md`). Décision directe de
+l'utilisateur : accepter une lecture EXTRAPOLÉE (comme pour la cascade MTF de
+`trend_table.py`, 42e round) -- "SL gain" n'a AUCUNE définition codable
+nulle part dans le corpus (0 occurrence en dehors de la citation source
+elle-même, `RULES_EXTRACTION.md` §3bis, cf. 19e round).
+
+Rappel de la source (`RULES_EXTRACTION.md` §3bis) :
+
+    | Profil         | Validation | Confirmation  | Target 1     | Invalidation |
+    |----------------|------------|---------------|--------------|--------------|
+    | Agressif       | —          | TP50%+SL BE   | TP25%+SL gain| TP BE        |
+    | Très agressif  | —          | TP25%+SL BE   | TP25%+SL gain| —            |
+
+Comparé bougie par bougie contre §3 (déjà codé) : Validation/Confirmation
+sont soit déjà identiques (AGRESSIF : val_close=0.00/conf_close=0.50,
+`conf_to_be=True` global -- AUCUN override nécessaire, même constat que
+MODERE au 19e round) soit un override réel déjà couvert par le mécanisme
+existant `RANGE_TENDANCIEL_CLOSE_FRACS` (TRES_AGRESSIF : conf_close 0.00 ->
+0.25, `backtest_phase2_faithful.py`). "Invalidation" reste, comme pour tous
+les profils (cf. bloc "+Reverse" ci-dessus), la clôture totale au stop déjà
+codée en dur -- "TP BE" (Agressif) n'est pas un niveau séparé à construire :
+une fois le stop remonté par "SL gain" (forcément >= entrée, cf. ci-dessous),
+le heurter EST déjà une sortie à un prix >= breakeven.
+
+La seule pièce manquante est donc "Target 1" = TP25%+SL gain, qui remplace
+pour ces 2 profils la clôture à 100% actuellement codée en dur à la Limite
+(`lim_px`, "zone objectif borne opposée du range" -- MÊME niveau que "Target
+1", cf. tête de fichier §4.1 de RULES_EXTRACTION.md : les deux désignent la
+cible du range, jamais deux niveaux distincts).
+
+HYPOTHÈSE D'IMPLÉMENTATION (H-SLGain-1, la seule libre : le corpus ne donne
+ni formule ni niveau pour "gain") : "SL gain" = stop remonté au plus haut
+atteint DEPUIS L'OUVERTURE de la tranche (`tr["_max_high_since_entry"]`,
+tracé bar par bar dans `run_position_engine`, jamais recalculé après coup) --
+MÊME primitif que "Validation = ... SL déplacé au sommet récent" du
+mécanisme Neuneu (`docs/GUIDE_STRATEGIE_PRO_INDICATORS.md`, "Borne-neuneu"/
+"Repli-neuneu"), pas une 2e convention inventée pour ce mécanisme. Puisque
+`lim_px > entry` par construction et que ce plus haut est observé APRÈS que
+le prix a franchi `lim_px` en clôture, le stop remonté est TOUJOURS
+strictement au-dessus de l'entrée -- cohérent avec "gain" (plus qu'un simple
+retour à zéro) et avec `conf_to_be` déjà appliqué à la Confirmation
+précédente (le stop ne peut jamais REDESCENDRE, `max(...)`).
+
+STRICTEMENT ADDITIF : `make_open_tranche_fn` accepte 2 nouveaux paramètres
+optionnels, `lim_close_frac_v`/`sl_gain_v` (défaut `None` -> AUCUN changement
+de comportement ni de résultat numérique pour les 9+ moteurs déjà en place,
+qui ne les passent pas). `process_tranche` généralise l'étape Limite
+(clôture jusqu'ici TOUJOURS totale, 100%) pour supporter une clôture
+PARTIELLE (`tr["lim_close_frac"]`, défaut 1.0 si absent -- comportement
+historique inchangé) suivie de l'action "SL gain" (`tr["lim_stop_action"]`)
+si demandée, la tranche restant ouverte pour son reliquat -- nouveau flag
+`tr["lim_done"]` pour ne jamais reclôturer une 2e fois au même niveau.
+================================================================================
 """
 import numpy as np
 import pandas as pd
@@ -1107,7 +1161,8 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
                           extra_gate_fn=None, wide_channel_v=None,
                           squeeze_armed_v=None, squeeze_mid_v=None, squeeze_sup_v=None,
                           low_v=None, squeeze_lifetime=SQUEEZE_LIFETIME,
-                          val_close_frac_v=None, conf_close_frac_v=None):
+                          val_close_frac_v=None, conf_close_frac_v=None,
+                          lim_close_frac_v=None, sl_gain_v=None):
     """Factory pour `open_tranche_fn`, dette de duplication réelle relevée
     dans la rétrospective (PLAN.md) : 9 moteurs `backtest_phase2_*.py`
     (v4/v5/v6/v7/ut2/patterns/capital_tiers/fib/recommended) portaient
@@ -1197,6 +1252,12 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
       - `squeeze_lifetime` : durée de vie de cet ordre en bougies
         (H-Squeeze-6, la seule hypothèse libre du mécanisme -- 30 par défaut,
         paramétrable pour la mesure de sensibilité, jamais pour calibrer).
+      - `lim_close_frac_v`/`sl_gain_v` (optionnels, défaut `None` -> AUCUN
+        changement de comportement, cf. bloc "SL GAIN" en tête de fichier,
+        45e round) : arrays indexés comme `val_close_frac_v` ci-dessus.
+        Résolus À L'OUVERTURE (`[j]`), stockés dans `tr["lim_close_frac"]`/
+        `tr["lim_stop_action"]` ("SL_GAIN" si `sl_gain_v[j]` vrai, sinon
+        absent), lus ensuite par `process_tranche` à l'étape Limite/Target 1.
 
     Retourne `open_tranche_fn(i, tranches, win_streak)`, prêt à passer tel
     quel à `run_position_engine`.
@@ -1353,6 +1414,10 @@ def make_open_tranche_fn(atr_v, ctx_support_v, local_range_v, context_range_v, n
             tr["val_close_frac"] = val_close_frac_v[j]
         if conf_close_frac_v is not None:
             tr["conf_close_frac"] = conf_close_frac_v[j]
+        if lim_close_frac_v is not None:
+            tr["lim_close_frac"] = lim_close_frac_v[j]
+        if sl_gain_v is not None and bool(sl_gain_v[j]):
+            tr["lim_stop_action"] = "SL_GAIN"
         return tr
 
     return open_tranche_fn
@@ -1391,25 +1456,44 @@ def process_tranche(tr, i, o, low, c, long_signal_prev, val_close_frac, conf_clo
     run, jamais résolu PAR TRANCHE depuis le contexte réel à l'ouverture."""
     val_close_frac = tr.get("val_close_frac", val_close_frac)
     conf_close_frac = tr.get("conf_close_frac", conf_close_frac)
-    # 1) Limite atteinte -> clôture totale (sur CLÔTURE)
-    if c[i] >= tr["lim_px"]:
+    # 1) Limite/Target 1 atteinte -> clôture totale par défaut (sur CLÔTURE),
+    # ou PARTIELLE si `tr["lim_close_frac"]` < 1.0 (cf. bloc "SL GAIN" en tête
+    # de fichier, 45e round) -- `lim_done` empêche de reclôturer une 2e fois
+    # au même niveau tant que le reliquat n'a pas atteint 0.
+    if c[i] >= tr["lim_px"] and not tr.get("lim_done", False):
+        lim_close_frac = tr.get("lim_close_frac", 1.0)
         remaining_before = tr["remaining"]
+        close_amt = remaining_before * lim_close_frac
         pnl = (c[i] - tr["entry"]) / tr["entry"]
-        tr["pnl_accum"] += pnl * remaining_before
-        fee_frac = remaining_before
-        realized = tr["pnl_accum"]
-        tr["remaining"] = 0.0
-        if reverse_at_limit:
-            stop_pct = (tr["entry"] - tr["stop"]) / tr["entry"]        # H-Reverse-Range : miroir du stop
-            gain_pct = (tr["lim_px"] - tr["entry"]) / tr["entry"]      # H-Reverse-Range : miroir de la cible
-            r_entry = c[i]
-            tr["reverse_request"] = {
-                "entry": r_entry,
-                "stop": r_entry * (1 + stop_pct),
-                "target": r_entry * (1 - gain_pct),
-                "remaining": remaining_before,
-            }
-        return True, fee_frac, realized
+        tr["pnl_accum"] += pnl * close_amt
+        fee_frac = close_amt
+        tr["remaining"] -= close_amt
+        tr["lim_done"] = True
+        if tr.get("lim_stop_action") == "SL_GAIN":
+            tr["stop"] = max(tr["stop"], tr.get("_max_high_since_entry", tr["entry"]))
+        if tr["remaining"] <= 1e-9:
+            realized = tr["pnl_accum"]
+            tr["remaining"] = 0.0
+            if reverse_at_limit:
+                stop_pct = (tr["entry"] - tr["stop"]) / tr["entry"]        # H-Reverse-Range : miroir du stop
+                gain_pct = (tr["lim_px"] - tr["entry"]) / tr["entry"]      # H-Reverse-Range : miroir de la cible
+                r_entry = c[i]
+                tr["reverse_request"] = {
+                    "entry": r_entry,
+                    "stop": r_entry * (1 + stop_pct),
+                    "target": r_entry * (1 - gain_pct),
+                    "remaining": remaining_before,
+                }
+            return True, fee_frac, realized
+        # Clôture PARTIELLE seulement (reliquat > 0, cf. bloc "SL GAIN" en
+        # tête de fichier) : les étapes antérieures deviennent moot --
+        # empêche la sortie "flip" (étape 3) de traiter à tort une tranche
+        # qui a sauté Validation/Confirmation en un seul bond (gap) comme
+        # "aucune étape atteinte". AUCUN effet pour une clôture totale
+        # (comportement historique, ci-dessus, jamais atteint ici).
+        tr["val_done"] = True
+        tr["conf_done"] = True
+        return False, fee_frac, None
 
     # 2) Invalidation (stop) touchée -- sur MÈCHE (ordre réel, intrabar)
     if low[i] <= tr["stop"]:
@@ -1607,6 +1691,12 @@ def run_position_engine(n, o, high, low, c, long_signal, open_tranche_fn,
             for tr in tranches:
                 if update_levels_fn is not None:
                     update_levels_fn(tr, i)
+                # Bookkeeping additif (cf. bloc "SL GAIN" en tête de fichier,
+                # 45e round) : plus haut atteint DEPUIS L'OUVERTURE, tracé bar
+                # par bar -- ne change aucun résultat numérique pour un
+                # appelant qui ne lit jamais cette clé (`tr["lim_stop_action"]`
+                # absent).
+                tr["_max_high_since_entry"] = max(tr.get("_max_high_since_entry", tr["entry"]), high[i])
                 closed, fee_frac, realized = process_tranche(
                     tr, i, o, low, c, long_signal_prev, val_close_frac, conf_close_frac, conf_to_be,
                     reverse_at_limit=reverse_at_limit,
