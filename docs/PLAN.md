@@ -2710,6 +2710,62 @@ positifs. Aucun câblage dans `unified_protocol.py`/`faithful.py` à ce stade (`
 reste un moteur STANDALONE mesuré isolément, même statut qu'avant ce round) — ce round mesure et
 outille un paramètre existant, il ne change le comportement par défaut d'aucun moteur câblé.
 
+### 63e application — rendement du Repli Neuneu par année, par actif, sur les 3 UT d'exécution natives déjà testées (H1/H4/M15)
+
+**Demande directe de l'utilisateur** : "je veux connaître le rendement cumulé de tous les trades
+sur chaque année pour chaque actif sur toutes les time frame". Clarifié par question directe
+(`AskUserQuestion`) : moteur = Repli Neuneu (celui discuté juste avant), "toutes les timeframes" =
+les UT d'exécution NATIVES déjà testées ailleurs dans ce projet pour un moteur de ce type (H1
+`h1_timeframe_bench.py`, H4 déjà la référence de `neuneu_repli.py`, M15 `m15_timeframe_bench.py`)
+— aucune UT nouvellement inventée.
+
+**Implémenté** :
+- `run_repli_neuneu` (`emile/core/neuneu_repli.py`) : nouveaux paramètres optionnels `start: int
+  = 1, end: int = None`, comportement par défaut RIGOUREUSEMENT inchangé pour tout appelant
+  existant. MÊME convention que `unified_protocol.py::_run_core_unified` (déjà utilisée par
+  `cross_stress_test_unified_capital_tiers.py::yearly_breakdown_by_tier` pour produire un
+  rendement PAR ANNÉE) : le signal causal (`compute_repli_neuneu_signal`) reste calculé sur
+  l'historique COMPLET (aucune perte de warmup), seule la boucle de gestion du compte est
+  restreinte à `[start, end)`, capital remis à 1,0 à `start` — un redémarrage propre à chaque
+  année, pas un mark-to-market d'une position à cheval sur 2 années. 3 nouveaux tests
+  (`test_neuneu_repli.py`) : défaut explicite `start=1, end=len(df)` reproduit EXACTEMENT le
+  résultat par défaut ; une fenêtre restreinte exclut bien les trades hors fenêtre ; un signal
+  dont l'ouverture précède `start` n'est JAMAIS repris en cours de route (pas de carry-over).
+- `emile/core/neuneu_repli_measure.py::main_yearly_by_timeframe()` (nouveau) : rejoue le moteur
+  sur BTC/ETH/BNB/SOL, 3 UT natives (H1 = `load_h1`, H4 = `resample(load_h1(...), "4h")`, M15 =
+  `load_m15`), par année calendaire complète. `LOCAL_DURATION_H1_BARS`/`CONTEXT_DURATION_H1_BARS`
+  (120/360) et `LOCAL_DURATION_M15_BARS`/`CONTEXT_DURATION_M15_BARS` (480/1440) : MÊME cible
+  calendaire 5D/15D que `LOCAL_DURATION_H4_BARS`/`CONTEXT_DURATION_H4_BARS` (39e round), juste
+  exprimée dans le nombre de bougies de chaque UT — aucun nouveau chiffre inventé, une conversion
+  d'unité de la même valeur déjà citée. Résultat officiel :
+  `results/neuneu_repli_yearly_by_timeframe_results.csv` (96 lignes : 4 actifs × 3 UT × 7-8
+  années selon l'historique disponible par actif).
+
+**Lecture honnête, compoundée par actif/UT sur toute la période disponible** (produit des facteurs
+annuels — PROCHE mais pas identique au rendement continu déjà mesuré en H4/46e-62e rounds, l'écart
+vient des trades à cheval sur une frontière d'année qui sont exclus des DEUX années dans ce
+découpage, MÊME effet de bord que `yearly_breakdown_by_tier` avant lui) :
+
+| Actif | H1 | H4 | M15 |
+|---|---|---|---|
+| BTC | +6,21% | -6,53% | -9,92% |
+| ETH | -8,77% | +5,64% | -10,44% |
+| BNB | +11,26% | -2,37% | -5,45% |
+| SOL | +4,21% | +4,07% | +13,87% |
+
+**Ce que révèlent les chiffres, sans les habiller** : aucune UT ni aucun actif n'est
+systématiquement meilleur — le classement change complètement d'un actif à l'autre (H1 meilleur
+sur BTC/BNB, H4 meilleur sur ETH, M15 meilleur sur SOL mais le PIRE sur BTC/ETH/BNB). Les valeurs
+année par année (CSV) montrent une forte variance : 2022 est l'année la plus dégradée presque
+partout (ex. ETH M15 2022 : -9,14%, BTC H1 2022 : -4,92%), cohérent avec le marché baissier réel
+de cette année-là, pas un artefact du découpage. Confirme, sur un axe supplémentaire
+(temporel/par-UT plutôt que par-paramètre), le même message que le 62e round : ce moteur reste
+IN-SAMPLE, mesuré isolément, pas encore câblé dans `faithful.py`/`unified_protocol.py`, et son
+signe dépend fortement de l'actif/l'UT/l'année choisis — aucune conclusion GO/NO-GO globale n'en
+est tirée ici, seulement le tableau demandé, rapporté tel quel.
+
+Suite de tests : `pytest -m ""` → 343/343 (340 + 3 nouveaux).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

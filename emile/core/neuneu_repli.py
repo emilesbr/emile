@@ -283,15 +283,30 @@ def open_repli_neuneu_tranche(entry_price, local_r, context_r, dz_level, ctx_hig
 
 def run_repli_neuneu(df: pd.DataFrame, context_duration, local_duration,
                       fee: float = 0.0004, record_trace: bool = False,
-                      objectif_close_frac: float = NEUNEU_OBJECTIF_CLOSE_FRAC) -> dict:
+                      objectif_close_frac: float = NEUNEU_OBJECTIF_CLOSE_FRAC,
+                      start: int = 1, end: int = None) -> dict:
     """Moteur COMPLET, mono-tranche (le corpus ne décrit aucune
     pyramidalisation pour ce mécanisme) : détecte le pattern, ouvre/gère une
     tranche à la fois, agrège les statistiques standard du projet
     (n_trades/max_dd_%/total_return_%/win_rate_%/profit_factor).
 
     `objectif_close_frac` (62e round, additif, défaut inchangé) : transmis
-    tel quel à `process_repli_neuneu_tranche` (cf. sa docstring)."""
+    tel quel à `process_repli_neuneu_tranche` (cf. sa docstring).
+
+    `start`/`end` (63e round, additif, défauts `1`/`len(df)` -- comportement
+    RIGOUREUSEMENT inchangé pour tout appelant existant qui ne les passe
+    pas) : MÊME convention que `unified_protocol.py::_run_core_unified`
+    (déjà utilisée par `cross_stress_test_unified_capital_tiers.py::
+    yearly_breakdown_by_tier` pour un rendement PAR ANNÉE) -- le signal
+    causal (`compute_repli_neuneu_signal`) reste calculé sur `df` EN ENTIER
+    (aucune perte de warmup/historique), seule la BOUCLE de gestion du
+    compte (equity/trades) est restreinte à `[start, end)`, capital remis à
+    1,0 à `start` -- pas un mark-to-market d'une position ouverte à cheval
+    sur la frontière, un redémarrage propre, identique au précédent déjà
+    établi."""
     n = len(df)
+    if end is None:
+        end = n
     o = df["open"].values
     high = df["high"].values
     low = df["low"].values
@@ -301,13 +316,13 @@ def run_repli_neuneu(df: pd.DataFrame, context_duration, local_duration,
     long_signal = sig["long_signal"]
 
     equity = 1.0
-    equity_curve = np.empty(n)
+    equity_curve = np.empty(end - start + 1)
     equity_curve[0] = equity
     tr = None
     trades = []
     trace = [] if record_trace else None
 
-    for i in range(1, n):
+    for k, i in enumerate(range(start, end), start=1):
         if tr is not None:
             tr["_max_high_since_entry"] = max(tr.get("_max_high_since_entry", tr["entry"]), high[i])
             if record_trace:
@@ -332,7 +347,7 @@ def run_repli_neuneu(df: pd.DataFrame, context_duration, local_duration,
             ctx_high_ref = sig["ctx_high_ref"][i]
             tr = open_repli_neuneu_tranche(entry_price, local_r, context_r, dz_level, ctx_high_ref)
             if tr is None:
-                equity_curve[i] = equity
+                equity_curve[k] = equity
                 continue
             equity *= (1 - fee * tr["remaining"])
             if record_trace:
@@ -342,7 +357,7 @@ def run_repli_neuneu(df: pd.DataFrame, context_duration, local_duration,
                     "entry_price": entry_price, "entry_size": tr["remaining"],
                     "close_i": None, "realized_pnl": None, "snapshots": [],
                 })
-        equity_curve[i] = equity
+        equity_curve[k] = equity
 
     max_dd = 0.0
     peak = equity_curve[0]

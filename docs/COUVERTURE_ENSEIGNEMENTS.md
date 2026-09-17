@@ -739,6 +739,20 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   la meilleure valeur testée, BTC et BNB restent NÉGATIFS. Toujours PAS câblé dans
   `faithful.py`/`unified_protocol.py` (moteur standalone). Détail complet : `PLAN.md` section
   "62e application".
+
+  **63e round — rendement du Repli Neuneu par année/actif/UT (H1/H4/M15), demande directe de
+  l'utilisateur.** Nouveaux paramètres `start`/`end` sur `run_repli_neuneu` (défauts inchangés,
+  MÊME convention que `_run_core_unified`/`yearly_breakdown_by_tier` déjà établie : signal causal
+  sur l'historique complet, seule la boucle de compte restreinte à l'année, capital remis à 1,0).
+  Rejoué sur BTC/ETH/BNB/SOL × H1/H4/M15 (UT natives déjà testées ailleurs dans ce projet, aucune
+  UT inventée), par année calendaire — `results/neuneu_repli_yearly_by_timeframe_results.csv`.
+  Compoundé sur toute la période : BTC H1 +6,21%/H4 -6,53%/M15 -9,92% ; ETH H1 -8,77%/H4 +5,64%/
+  M15 -10,44% ; BNB H1 +11,26%/H4 -2,37%/M15 -5,45% ; SOL H1 +4,21%/H4 +4,07%/M15 +13,87% —
+  aucune UT ni aucun actif systématiquement meilleur, forte variance annuelle (2022 le plus
+  dégradé presque partout, cohérent avec le marché baissier réel). 3 nouveaux tests
+  (non-régression du refactor `start`/`end`, exclusion hors-fenêtre, non-carryover d'un signal
+  antérieur à `start`). Rapporté tel quel, aucune conclusion GO/NO-GO globale. Détail complet :
+  `PLAN.md` section "63e application".
 - ~~**Invalidation 3BR par SQUEEZE (`Range/3eme-borne/3ème-borne.png`), citation exacte** : *"On ne
   doit plus la trader si jamais le range produit un SQUEEZE... Si le range se forme juste après
   un SQUEEZE sur l'unité de temps supérieure, il faudra alors éviter de trader cette 3BR..."*~~ —

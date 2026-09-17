@@ -338,6 +338,99 @@ def test_run_repli_neuneu_no_signal_no_trades():
     assert res["n_trades"] == 0
     assert res["total_return_%"] == 0.0
 
+
+def _two_trades_fake_signal(n):
+    """2 signaux bien séparés (63e round) -- i=2 (stop touché à i=3) et
+    i=6 (stop touché à i=7), même géométrie que les tests existants
+    ci-dessus (stop_distance=max(10, 0.5*40)=20, stop=entry-20=80)."""
+    def fake_signal(df, context_duration, local_duration):
+        long_signal = np.zeros(n, dtype=bool)
+        long_signal[2] = True
+        long_signal[6] = True
+        dumb_zone_level = np.full(n, np.nan)
+        local_range = np.full(n, np.nan)
+        context_range = np.full(n, np.nan)
+        ctx_high_ref = np.full(n, np.nan)
+        for j in (2, 6):
+            dumb_zone_level[j] = 200.0
+            local_range[j] = 10.0
+            context_range[j] = 40.0
+            ctx_high_ref[j] = 300.0
+        return {"long_signal": long_signal, "dumb_zone_level": dumb_zone_level,
+                "local_range": local_range, "context_range": context_range,
+                "ctx_high_ref": ctx_high_ref}
+    return fake_signal
+
+
+def _two_trades_df_and_signal():
+    n = 10
+    o = np.full(n, 100.0); high = np.full(n, 100.0); low = np.full(n, 100.0); c = np.full(n, 100.0)
+    low[3] = 70.0  # stop du 1er trade (ouvert à i=2, stop=80)
+    low[7] = 70.0  # stop du 2e trade (ouvert à i=6, stop=80)
+    df = pd.DataFrame({"open": o, "high": high, "low": low, "close": c})
+    return df, _two_trades_fake_signal(n)
+
+
+def test_start_end_default_matches_explicit_full_range(monkeypatch):
+    """`start=1, end=n` explicite doit donner EXACTEMENT le même résultat
+    que les défauts (non-régression du refactor 63e round)."""
+    df, fake_signal = _two_trades_df_and_signal()
+    monkeypatch.setattr(neuneu_repli_mod, "compute_repli_neuneu_signal", fake_signal)
+    res_default = run_repli_neuneu(df, context_duration=5, local_duration=2, fee=0.0)
+    res_explicit = run_repli_neuneu(df, context_duration=5, local_duration=2, fee=0.0,
+                                     start=1, end=len(df))
+    assert res_default == res_explicit
+    assert res_default["n_trades"] == 2
+
+
+def test_start_end_restricts_to_window_ignores_trades_outside(monkeypatch):
+    """`start`/`end` restreint la boucle de compte -- un signal HORS de la
+    fenêtre ne doit produire aucun trade dans cette fenêtre, même si le
+    signal existe dans le tableau causal complet."""
+    df, fake_signal = _two_trades_df_and_signal()
+    monkeypatch.setattr(neuneu_repli_mod, "compute_repli_neuneu_signal", fake_signal)
+    # Fenêtre [1, 5) : ne voit que le 1er trade (signal i=2, stop i=3).
+    res_first_only = run_repli_neuneu(df, context_duration=5, local_duration=2, fee=0.0,
+                                       start=1, end=5)
+    assert res_first_only["n_trades"] == 1
+    # Fenêtre [5, 10) : ne voit que le 2e trade (signal i=6, stop i=7) --
+    # le 1er trade (déjà clos à i=3, avant la fenêtre) n'apparaît pas non
+    # plus, capital redémarré à 1,0 à `start`.
+    res_second_only = run_repli_neuneu(df, context_duration=5, local_duration=2, fee=0.0,
+                                        start=5, end=10)
+    assert res_second_only["n_trades"] == 1
+
+
+def test_start_mid_open_trade_drops_it_no_carryover():
+    """Un signal dont l'ouverture précède `start` ne doit PAS être repris
+    en cours de route -- `start` redémarre la boucle avec `tr=None`, sans
+    jamais visiter l'indice d'ouverture original."""
+    n = 10
+    o = np.full(n, 100.0); high = np.full(n, 100.0); low = np.full(n, 100.0); c = np.full(n, 100.0)
+    df = pd.DataFrame({"open": o, "high": high, "low": low, "close": c})
+
+    def fake_signal(df, context_duration, local_duration):
+        long_signal = np.zeros(n, dtype=bool)
+        long_signal[2] = True  # avant la fenêtre [4, n) ci-dessous
+        dumb_zone_level = np.full(n, np.nan); dumb_zone_level[2] = 200.0
+        local_range = np.full(n, np.nan); local_range[2] = 10.0
+        context_range = np.full(n, np.nan); context_range[2] = 40.0
+        ctx_high_ref = np.full(n, np.nan); ctx_high_ref[2] = 300.0
+        return {"long_signal": long_signal, "dumb_zone_level": dumb_zone_level,
+                "local_range": local_range, "context_range": context_range,
+                "ctx_high_ref": ctx_high_ref}
+
+    import emile.core.neuneu_repli as mod
+    orig = mod.compute_repli_neuneu_signal
+    mod.compute_repli_neuneu_signal = fake_signal
+    try:
+        res = run_repli_neuneu(df, context_duration=5, local_duration=2, fee=0.0, start=4, end=n)
+    finally:
+        mod.compute_repli_neuneu_signal = orig
+    assert res["n_trades"] == 0
+    assert res["total_return_%"] == 0.0
+
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     failures = 0
