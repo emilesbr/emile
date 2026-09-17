@@ -2356,6 +2356,32 @@ période, pour confirmer ou infirmer `H-Context-MA20` avant d'envisager de recal
 
 Aucun changement de code — suite de tests inchangée (`pytest -m ""` → 313/313).
 
+### 52e application — 2e lot de captures personnelles : le 2e point ne corrobore PAS `H-Context-MA20`, rapporté tel quel
+
+Suite du 51e round, à la propre demande de l'utilisateur ("les voici !" avec 9 nouvelles captures,
+dont 4 doublons déjà traitées). Détail complet, chiffres et méthode : `docs/CONTEXT_CHANNEL_
+REVERSE_ENGINEERING.md` section 7.
+
+**Résumé honnête** : une capture BTCUSD 15 min (BITSTAMP) affiche un label "CONTEXT" pointant une
+valeur UNIQUE de l'échelle de prix (63 968,1$) — nuance en soi (le "contexte" n'est donc pas
+toujours une paire haut/bas). Bougie identifiée dans notre donnée réelle (`BTCUSDT_15m_processed.
+csv`, 2024-07-18 13:45, écart OHLC cumulé ~0,02%). **Aucune période de `SMA(close, n)` (n=3 à 99,
+M15 natif) ne descend sous 0,9% d'écart** avec cette valeur ; `SMA20` sur H1/H4/D1 donne 0,98%/
+0,54%/-6,05% — rien qui s'approche du 0,07% obtenu au 51e round sur ETH 1D. Le close BRUT du D1 en
+cours est à 0,013% (match trompeusement parfait mais jugé coïncidence de basse volatilité, pas une
+confirmation — hypothèse "context = dernier close" trop peu contraignante pour valoir preuve).
+
+**Conclusion, sans arrondir dans le sens espéré** : ce 2e point ne renforce PAS `H-Context-MA20`
+(un seul point reste corroboré, celui du 51e round) — ni ne l'infirme fermement (UT/actif/preset
+différents, mesure moins complète que la section 2-3). Toujours aucun changement de code.
+
+**Nouveau, hors périmètre "contexte"** : une capture ETHUSD 15 min montre l'outil "Pro Alerte"
+(déjà mentionné par la communauté, jamais vu en action) — panneau par UT (1M/1W/1D/4H/1H/15m/3m/1m)
+donnant un %, un score `dev`, et une couleur de fond. Aucune légende visible pour interpréter ces
+deux nombres — noté pour mémoire, rien d'exploitable sans capture montrant le survol/la légende.
+
+Aucun changement de code — suite de tests inchangée (`pytest -m ""` → 313/313).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

@@ -593,6 +593,15 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   qualitatives de ce même document. Prochaine étape proposée : captures supplémentaires (plateau de
   contexte propre, en-tête OHLC visible, autre actif/période) avant d'envisager une recalibration.
   Détail complet : `PLAN.md` section "51e application".
+
+  **52e round (2e lot, 9 captures dont 4 doublons)** : un 2e point de mesure (BTCUSD 15 min,
+  label "CONTEXT" pointant une valeur UNIQUE de l'échelle — pas une paire haut/bas) **ne corrobore
+  PAS** `H-Context-MA20` — aucune période de SMA (3 à 99, M15/H1/H4/D1) ne descend sous 0,5%
+  d'écart avec la valeur mesurée (63 968,1$), contre 0,07% au 51e round sur ETH 1D. Rapporté tel
+  quel, sans arrondir dans le sens espéré : l'hypothèse reste à UN SEUL point corroboré, ni
+  renforcée ni infirmée par ce 2e essai (UT/actif/préréglage différents). Nouveau outil "Pro
+  Alerte" vu en action pour la 1ère fois (panneau %/`dev` par UT) mais sans légende exploitable.
+  Aucun changement de code. Détail complet : `PLAN.md` section "52e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre
