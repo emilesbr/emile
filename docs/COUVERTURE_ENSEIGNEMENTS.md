@@ -575,6 +575,24 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   Philippe en tension non résolue avec une autre lecture communautaire, outil "Pro Alerte" et
   sous-type "3BR de Pullback" mentionnés pour la 1ère fois. Aucun changement de code. Détail
   complet : `PLAN.md` section "50e application".
+
+  **NOUVEAU (51e round) — 1ère mesure CHIFFRÉE (pas qualitative) du canal de "contexte", nouveau
+  document `docs/CONTEXT_CHANNEL_REVERSE_ENGINEERING.md`** : analyse programmatique de pixels
+  (calibration prix/date par image, recoupée avec notre propre donnée OHLCV réelle) sur 5 captures
+  ETHUSD fournies par l'utilisateur (pas communautaires). 2 findings : (1) légende de l'indicateur
+  lue en clair donnant ses VRAIS paramètres numériques — PRO Framework `(Expert (Advanced Risks),
+  1, 20, 2)`, PRO Momentum `(Beginner (Range), 14, 5, 0)` ; (2) sur un point daté et recoupé (30
+  nov. 2024), la borne HAUTE du canal de contexte mesurée (3 312,5$) correspond à **0,07%** d'une
+  `SMA(close, 20)` calculée sur notre donnée réelle — cohérent avec le "20" du point (1). Borne
+  BASSE dans le bon ordre de grandeur d'un `SMA20 − (2 à 2,5)×ATR20`, sans multiplicateur rond
+  exact. **Nommé `H-Context-MA20`** — UN SEUL point propre corroboré (tentative sur d'autres zones
+  du même graphique non concluante, contamination par des tracés manuels, pas un signal contre
+  l'hypothèse). Aucun changement de `regime_classifier.py` (proxy EMA±ATR actuel, documenté
+  imparfait à de nombreux endroits de ce fichier, reste en l'état) — un seul point, même précis,
+  n'est pas une corroboration suffisante par le principe déjà appliqué à toutes les nuances
+  qualitatives de ce même document. Prochaine étape proposée : captures supplémentaires (plateau de
+  contexte propre, en-tête OHLC visible, autre actif/période) avant d'envisager une recalibration.
+  Détail complet : `PLAN.md` section "51e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre

@@ -2313,6 +2313,49 @@ nouvelle, mais une confirmation que le principe s'applique au-delà du périmèt
 **Aucun changement de code ce round** — round de documentation pure, comme le 49e. Suite de tests
 inchangée : `python -m pytest -m ""` → **313/313 passés, 0 échec** (vérifié par exécution réelle).
 
+### 51e application — 1ère mesure chiffrée du canal de "contexte" par analyse d'image (pas une lecture à l'œil)
+
+**Demande directe de l'utilisateur**, après l'échange sur le rétro-ingénierie des seuils de
+contexte : *"je t'en ai fourni [des captures] à travers des captures d'écran, peux-tu mesurer
+l'écart entre les prix pour le déduire ?"* — 5 nouvelles captures fournies (pas communautaires
+cette fois, directement par l'utilisateur), ETHUSD, 4 unités de temps (1h/4h/1D/1M) + une capture
+affichant la légende complète de l'indicateur PRO Framework/PRO Momentum avec ses paramètres
+numériques réels.
+
+**Méthode, plus rigoureuse qu'une lecture visuelle** : analyse programmatique des pixels (Python/
+PIL/numpy, `Pillow` installé pour l'occasion) — calibration prix↔pixel via les libellés d'axe
+détectés automatiquement, calibration date confirmée en recoupant l'OHLC affiché sur la capture
+(30 nov. 2024, ETHUSD "INDEX") avec notre propre donnée réelle (`ETHUSDT_1h_processed.csv`
+resamplée 1D, close 3 705,73$ vs 3 660,95$ affiché — écart 1,2%, cohérent cross-exchange), puis
+détection du remplissage gris du canal de contexte par masque de couleur. Détail complet, code et
+chiffres : `docs/CONTEXT_CHANNEL_REVERSE_ENGINEERING.md` (nouveau document).
+
+**2 findings factuels** :
+1. La légende de l'indicateur, lue en clair sur une capture (pas déduite) : PRO Framework configuré
+   `(Expert (Advanced Risks), 1, 20, 2)`, PRO Momentum `(Beginner (Range), 14, 5, 0)` — les VRAIS
+   paramètres numériques de l'outil de Philippe, une première dans les 5 sources du corpus.
+2. **Mesuré sur un point daté et recoupé avec nos données réelles (30 nov. 2024)** : la borne HAUTE
+   du canal de contexte (3 312,5$ mesurée) correspond à **0,07% près** à une simple `SMA(close, 20)`
+   calculée sur notre donnée réelle (3 314,80$) — cohérent avec le "20" confirmé en clair dans la
+   légende (finding 1). La borne BASSE (2 845,8$ mesurée) est dans le bon ordre de grandeur d'un
+   `SMA20 − k×ATR20` (k entre 2 et 2,5) mais ne colle exactement à aucun multiplicateur rond testé.
+
+**Nommé pour référence future : H-Context-MA20** (borne haute du contexte ≈ SMA20 du close).
+
+**Ce que ce round NE fait PAS** : aucun changement de `regime_classifier.py`. Une tentative de
+corroborer l'hypothèse sur d'autres zones du MÊME graphique (avril-juin 2024) a donné des écarts de
+20-40%, mais ces zones sont traversées par les lignes de mesure manuelles de l'utilisateur qui
+contaminent la détection du gris — **ni confirmé ni infirmé**, pas un signal contre l'hypothèse,
+juste une mesure impossible à cet endroit. Un seul point propre, même à 0,07%, reste une
+corroboration unique — le principe du projet (jamais coder sans corroboration suffisante)
+s'applique ici exactement comme pour les nuances communautaires qualitatives. Prochaine étape
+proposée à l'utilisateur : 1-2 captures supplémentaires avec un plateau de contexte propre (non
+traversé par des tracés manuels) et l'en-tête OHLC visible, idéalement sur un autre actif/une autre
+période, pour confirmer ou infirmer `H-Context-MA20` avant d'envisager de recalibrer
+`regime_classifier.py` (round séparé si corroboré).
+
+Aucun changement de code — suite de tests inchangée (`pytest -m ""` → 313/313).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.
