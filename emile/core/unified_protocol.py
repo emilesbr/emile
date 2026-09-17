@@ -297,6 +297,27 @@ logique dupliquée ici, exactement le même principe que le reste de ce
 fichier pour RANGE/TENDANCE (cf. tête de fichier). `LOCAL_DURATION_H4_BARS`/
 `CONTEXT_DURATION_H4_BARS` (39e round) réutilisés pour les canaux internes
 de Neuneu, cohérents avec le reste du protocole sur cette UT.
+
+================================================================================
+CANDIDAT `H-Context-BB-UT+1` POUR LE GATE RÉGIME DE NEUNEU (58e round,
+`docs/CONTEXT_CHANNEL_REVERSE_ENGINEERING.md`) -- OPT-IN, N'AFFECTE QUE
+NEUNEU
+================================================================================
+Demande directe de l'utilisateur : proposer une hypothèse candidate pour
+identifier le "contexte" et vérifier si elle rend Neuneu plus rentable.
+`use_bb_context_for_neuneu: bool = False` (additif, défaut `False` = AUCUN
+changement de comportement) fait consommer au gate régime de Neuneu
+(ci-dessus, `feat["regime"][j] in (RANGE_NEUTRE, RANGE_TENDANCIEL)`) le
+candidat `context_bollinger.compute_regime_bb_context` (Bollinger(20,2) de
+l'UT supérieure -- D1 pour ce moteur H4 -- joint sans lookahead) au lieu du
+proxy EMA+/-ATR historique. **Scope strictement limité au gate Neuneu** :
+RANGE et TENDANCE (les 2 autres canaux) continuent de lire `feat["regime"]`
+(proxy EMA+/-ATR historique), INCHANGÉS -- ce round ne recalibre PAS
+`regime_classifier.py` ni aucun autre consommateur de `feat["regime"]`,
+seulement Neuneu, sur demande explicite. `H-Context-BB-UT+1` reste à 2
+corroborations sur 3 (1 désaccord non résolu, round 51) -- ce câblage est
+une MESURE pour informer la décision, pas une validation actée de
+l'hypothèse.
 """
 import sys
 
@@ -332,6 +353,7 @@ from emile.core.neuneu_borne import (
     compute_borne_neuneu_signal, process_borne_neuneu_tranche, open_borne_neuneu_tranche,
     context_channel_median,
 )
+from emile.core.context_bollinger import compute_regime_bb_context
 
 # Profils partagés entre les deux moteurs (mêmes 4 clés dans PROFILES_V4 et
 # PROFILES_TREND -- FAIBLE/MODERE/AGRESSIF/TRES_AGRESSIF).
@@ -348,7 +370,7 @@ def resample_h4_with_volume(h1: pd.DataFrame) -> pd.DataFrame:
     return merged.reset_index(drop=True)
 
 def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
-                      use_mtf_gate: bool = True) -> dict:
+                      use_mtf_gate: bool = True, use_bb_context_for_neuneu: bool = False) -> dict:
     """Calcule TOUTES les colonnes nécessaires aux deux moteurs, une fois,
     sur l'historique complet fourni.
 
@@ -424,6 +446,15 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         "ema_trend": ema_trend_v,
         "volume_expansion": volume_expansion,
     })
+    if use_bb_context_for_neuneu:
+        # H-Context-BB-UT+1 (58e round, cf. bloc "CANDIDAT H-Context-BB-UT+1"
+        # en tête de fichier) -- calculé UNE FOIS ici, jamais recalculé par
+        # bougie, même discipline que le reste de cette fonction. `d1` est
+        # déjà un paramètre de cette fonction, aucune donnée supplémentaire
+        # à faire transiter.
+        feat["regime_bb"] = compute_regime_bb_context(
+            h4[["date", "open", "high", "low", "close"]], d1[["date", "open", "high", "low", "close"]],
+        )
     return feat
 
 def _valid_trend_inputs(feat: dict, j: int) -> bool:
@@ -485,7 +516,8 @@ def _campaign_ev(feat: dict, i: int) -> dict:
 def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profile_name: str,
                  capital_eur: float = None,
                  use_mtf_gate: bool = True, record_state: bool = False,
-                 use_sl_gain: bool = False, use_neuneu: bool = False) -> dict:
+                 use_sl_gain: bool = False, use_neuneu: bool = False,
+                 use_bb_context_for_neuneu: bool = False) -> dict:
     """Boucle d'orchestration bar-par-bar -- LE seul code nouveau de ce
     fichier (cf. tête de fichier, décision #3). `h4` DOIT inclure une
     colonne `volume` (cf. `resample_h4_with_volume`, U1). `d1` : niveau
@@ -519,14 +551,16 @@ def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profil
     `record_state=True` ajoute la clé "live_state" au résultat : l'état du
     protocole à la TOUTE DERNIÈRE bougie de l'historique fourni, utilisé par
     `decide_now` (cf. U4 pour l'approximation "bougie fantôme")."""
-    feat = _prepare_unified(h4, d1, weekly, use_mtf_gate=use_mtf_gate)
+    feat = _prepare_unified(h4, d1, weekly, use_mtf_gate=use_mtf_gate,
+                             use_bb_context_for_neuneu=use_bb_context_for_neuneu)
     risk_pct = None
     if capital_eur is not None:
         # U3 : capital par palier appliqué SEULEMENT au moteur RANGE.
         sizing = effective_sizing(capital_eur, profile_name, PROFILES_V4, MAX_TRANCHES)
         risk_pct = sizing.risk_pct
     return _run_core_unified(feat, profile_name, risk_pct=risk_pct, record_state=record_state,
-                              use_sl_gain=use_sl_gain, use_neuneu=use_neuneu)
+                              use_sl_gain=use_sl_gain, use_neuneu=use_neuneu,
+                              use_bb_context_for_neuneu=use_bb_context_for_neuneu)
 
 # NOTE (chantier d'architecture, SUITE du 24e round, cf. PLAN.md) :
 # `_range_gate`/`_range_gate_extra` (extraits comme fonctions de module au
@@ -540,7 +574,8 @@ def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profil
 
 def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
                        record_state: bool = False, start: int = 0, end: int = None,
-                       use_sl_gain: bool = False, use_neuneu: bool = False) -> dict:
+                       use_sl_gain: bool = False, use_neuneu: bool = False,
+                       use_bb_context_for_neuneu: bool = False) -> dict:
     """La boucle d'orchestration elle-même, séparée de `run_unified` sur le
     modèle `_prepare_features`/`_run_core` de `backtest_phase2_recommended.py`
     -- pour pouvoir être testée unitairement (`test_unified_protocol.py`) sur
@@ -570,6 +605,14 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
     "Target 1" (TP25%+SL gain, AGRESSIF/TRES_AGRESSIF, RANGE_TENDANCIEL),
     cf. `range_tendanciel_target1_fracs` et le bloc "SL GAIN" en tête de
     `position_engine.py`.
+
+    `use_bb_context_for_neuneu` (58e round, additif, défaut `False`) : si
+    `True`, le gate régime de Neuneu (ci-dessous) lit `feat["regime_bb"]`
+    (candidat `H-Context-BB-UT+1`, cf. bloc dédié en tête de fichier) au lieu
+    de `feat["regime"]` -- exige que `feat` ait été préparé avec le même flag
+    (`_prepare_unified(..., use_bb_context_for_neuneu=True)`), sinon
+    `ValueError` explicite plutôt qu'un `KeyError` opaque. N'affecte QUE
+    Neuneu -- RANGE et TENDANCE continuent de lire `feat["regime"]`.
 
     `start`/`end` (défaut : historique complet) : même principe que
     `backtest_phase2_faithful.py::_run_core` -- permet à `walkforward_unified.py`
@@ -649,7 +692,16 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
         # `neuneu_gate[i]` reflète la décision prise à `j = i-1`, cohérent
         # avec `long_signal[i]`/`short_signal[i]` déjà résolus à `j` par les
         # fonctions `compute_*_neuneu_signal` elles-mêmes.
-        in_range_regime = np.isin(feat["regime"], ("RANGE_NEUTRE", "RANGE_TENDANCIEL"))
+        if use_bb_context_for_neuneu:
+            if "regime_bb" not in feat:
+                raise ValueError(
+                    "use_bb_context_for_neuneu=True exige feat['regime_bb'] -- "
+                    "préparer feat via _prepare_unified(..., use_bb_context_for_neuneu=True)"
+                )
+            regime_for_neuneu_gate = feat["regime_bb"]
+        else:
+            regime_for_neuneu_gate = feat["regime"]
+        in_range_regime = np.isin(regime_for_neuneu_gate, ("RANGE_NEUTRE", "RANGE_TENDANCIEL"))
         combined_gate = feat["use_neuneu"] & in_range_regime
         neuneu_gate_shifted = np.zeros(n_total, dtype=bool)
         neuneu_gate_shifted[1:] = combined_gate[:-1]

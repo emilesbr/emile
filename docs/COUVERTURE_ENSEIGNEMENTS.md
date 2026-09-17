@@ -656,6 +656,22 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   la mesure d'origine aurait pu cibler par erreur la bande native au lieu de la vraie boîte figée.
   `H-Context-BB-UT+1` reste au statut du 56e round. Aucun changement de code. Détail complet :
   `PLAN.md` section "57e application".
+
+  **58e round — `H-Context-BB-UT+1` câblé et MESURÉ sur Neuneu (demande directe : "vérifie sa
+  capacité à rendre Neuneu rentable") : résultat mitigé, PAS un gain net.** Nouveau module
+  `context_bollinger.py` (Bollinger(20,2) de l'UT supérieure, jointure causale identique à
+  `attach_higher_context`, réutilise `regime_classifier.add_regime` SANS LE MODIFIER) + nouveau
+  paramètre `use_bb_context_for_neuneu=False` (additif) sur `unified_protocol.py`, scope
+  strictement limité au gate régime de Neuneu (RANGE/TENDANCE inchangés). Produit les 3 mêmes
+  catégories que le proxy historique — le 4e état "KO"/Chaos demandé reste NON défini (44e round,
+  toujours bloqué, rien inventé de plus). Mesuré sur BTC/ETH/BNB/SOL × 4 profils : le candidat
+  ouvre systématiquement un peu moins de tranches (gate plus restrictif partout), mais l'effet sur
+  la rentabilité est fortement dépendant de l'actif — BTC/ETH/SOL se dégradent (-10,8 à -24,0 pt de
+  retour), **BNB s'améliore nettement (+20,4 pt de retour ET +5,6 pt de drawdown)**, notable car
+  BNB/TRES_AGRESSIF est le chiffre le plus surveillé du projet. Conclusion honnête : pas un gain net
+  uniforme, reste opt-in, défaut inchangé. 10 nouveaux tests (6 `context_bollinger`, 4
+  `unified_protocol`), suite complète **323/323**. Détail complet : `PLAN.md` section
+  "58e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre

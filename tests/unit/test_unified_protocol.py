@@ -742,6 +742,101 @@ def test_use_neuneu_blocked_when_regime_is_tendance(monkeypatch):
     res = _run_core_unified(feat, "MODERE", use_neuneu=True)
     assert res["n_neuneu_opened"] == 0, "régime TENDANCE -- doit bloquer même avec un signal prix présent"
 
+# ---------------------------------------------------------------------------
+# Candidat H-Context-BB-UT+1 pour le gate régime de Neuneu (58e round) --
+# `use_bb_context_for_neuneu` fait consommer `feat["regime_bb"]` au lieu de
+# `feat["regime"]`, SEULEMENT pour le gate Neuneu.
+# ---------------------------------------------------------------------------
+
+def test_use_bb_context_for_neuneu_false_ignores_regime_bb(monkeypatch):
+    """Défaut (`False`) : même si `feat["regime_bb"]` existe et diffère de
+    `feat["regime"]`, le gate Neuneu doit continuer à lire `feat["regime"]`
+    -- comportement rigoureusement inchangé."""
+    n = N
+    open_i = WARMUP + 5
+    feat = _feat_with_neuneu(n, use_neuneu_val=True, regime_val="TENDANCE")
+    feat["regime_bb"] = np.full(n, "RANGE_NEUTRE", dtype=object)  # favorable, mais ignoré
+
+    def fake_repli(df, context_duration, local_duration):
+        sig = _empty_repli_sig(n)
+        sig["long_signal"][open_i] = True
+        sig["dumb_zone_level"][open_i] = 200.0
+        sig["local_range"][open_i] = 10.0
+        sig["context_range"][open_i] = 40.0
+        sig["ctx_high_ref"][open_i] = 300.0
+        return sig
+
+    monkeypatch.setattr(unified_protocol_mod, "compute_repli_neuneu_signal", fake_repli)
+    monkeypatch.setattr(unified_protocol_mod, "compute_borne_neuneu_signal",
+                         lambda df, cd, ld, regime=None: _empty_borne_sig(n))
+    monkeypatch.setattr(unified_protocol_mod, "context_channel_median", lambda df, d: np.full(n, np.nan))
+
+    res = _run_core_unified(feat, "MODERE", use_neuneu=True, use_bb_context_for_neuneu=False)
+    assert res["n_neuneu_opened"] == 0, "regime (TENDANCE) doit primer, regime_bb ignoré par défaut"
+
+def test_use_bb_context_for_neuneu_true_uses_regime_bb_instead_of_regime(monkeypatch):
+    """`True` : le gate Neuneu doit suivre `feat["regime_bb"]`, pas
+    `feat["regime"]` -- ici `regime`=TENDANCE (bloquerait normalement) mais
+    `regime_bb`=RANGE_NEUTRE (favorable) : la tranche doit s'ouvrir."""
+    n = N
+    open_i = WARMUP + 5
+    feat = _feat_with_neuneu(n, use_neuneu_val=True, regime_val="TENDANCE")
+    feat["regime_bb"] = np.full(n, "RANGE_NEUTRE", dtype=object)
+
+    def fake_repli(df, context_duration, local_duration):
+        sig = _empty_repli_sig(n)
+        sig["long_signal"][open_i] = True
+        sig["dumb_zone_level"][open_i] = 200.0
+        sig["local_range"][open_i] = 10.0
+        sig["context_range"][open_i] = 40.0
+        sig["ctx_high_ref"][open_i] = 300.0
+        return sig
+
+    monkeypatch.setattr(unified_protocol_mod, "compute_repli_neuneu_signal", fake_repli)
+    monkeypatch.setattr(unified_protocol_mod, "compute_borne_neuneu_signal",
+                         lambda df, cd, ld, regime=None: _empty_borne_sig(n))
+    monkeypatch.setattr(unified_protocol_mod, "context_channel_median", lambda df, d: np.full(n, np.nan))
+
+    res = _run_core_unified(feat, "MODERE", use_neuneu=True, use_bb_context_for_neuneu=True)
+    assert res["n_neuneu_opened"] == 1, "regime_bb (RANGE_NEUTRE) doit primer quand use_bb_context_for_neuneu=True"
+
+def test_use_bb_context_for_neuneu_true_blocked_when_regime_bb_is_tendance(monkeypatch):
+    """Symétrique : `regime`=RANGE_NEUTRE (favorable) mais `regime_bb`=
+    TENDANCE -- doit bloquer, exactement H-Borne-6 appliqué au candidat."""
+    n = N
+    open_i = WARMUP + 5
+    feat = _feat_with_neuneu(n, use_neuneu_val=True, regime_val="RANGE_NEUTRE")
+    feat["regime_bb"] = np.full(n, "TENDANCE", dtype=object)
+
+    def fake_repli(df, context_duration, local_duration):
+        sig = _empty_repli_sig(n)
+        sig["long_signal"][open_i] = True
+        sig["dumb_zone_level"][open_i] = 200.0
+        sig["local_range"][open_i] = 10.0
+        sig["context_range"][open_i] = 40.0
+        sig["ctx_high_ref"][open_i] = 300.0
+        return sig
+
+    monkeypatch.setattr(unified_protocol_mod, "compute_repli_neuneu_signal", fake_repli)
+    monkeypatch.setattr(unified_protocol_mod, "compute_borne_neuneu_signal",
+                         lambda df, cd, ld, regime=None: _empty_borne_sig(n))
+    monkeypatch.setattr(unified_protocol_mod, "context_channel_median", lambda df, d: np.full(n, np.nan))
+
+    res = _run_core_unified(feat, "MODERE", use_neuneu=True, use_bb_context_for_neuneu=True)
+    assert res["n_neuneu_opened"] == 0
+
+def test_use_bb_context_for_neuneu_true_without_regime_bb_key_raises():
+    """`feat` non préparé avec `regime_bb` -- ValueError explicite plutôt
+    qu'un KeyError opaque."""
+    feat = _feat_with_neuneu(N, use_neuneu_val=True, regime_val="RANGE_NEUTRE")
+    assert "regime_bb" not in feat
+    try:
+        _run_core_unified(feat, "MODERE", use_neuneu=True, use_bb_context_for_neuneu=True)
+    except ValueError as e:
+        assert "regime_bb" in str(e)
+    else:
+        raise AssertionError("aurait dû lever ValueError sans feat['regime_bb']")
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     failures = 0

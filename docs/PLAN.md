@@ -2510,6 +2510,38 @@ contexte figée — les 2 constructions étant visuellement proches, une confusi
 retenu comme acquis. `H-Context-BB-UT+1` reste au statut du 56e round (2/3, désaccord non résolu
 mais potentiellement expliqué). Aucun changement de code. Suite de tests inchangée (313/313).
 
+### 58e application — `H-Context-BB-UT+1` câblé et MESURÉ sur Neuneu (demande directe : "vérifie sa capacité à rendre Neuneu rentable") : résultat mitigé, PAS un gain net
+
+Demande directe de l'utilisateur : proposer une/des hypothèses pour identifier le contexte et
+faire un des 4 choix (KO/Tendance/Range/Excès), et vérifier concrètement leur capacité à rendre
+Neuneu rentable. Détail complet, code et chiffres : `docs/CONTEXT_CHANNEL_REVERSE_ENGINEERING.md`
+section 12.
+
+**Implémenté, strictement additif** : nouveau module `emile/core/context_bollinger.py`
+(`compute_bollinger`/`attach_context_bb`/`compute_regime_bb_context`, 6 tests) — réutilise
+`regime_classifier.add_regime` TEL QUEL (zéro modification), même jointure causale que
+`backtest_phase2_v7.py::attach_higher_context`. Nouveau paramètre `use_bb_context_for_neuneu:
+bool = False` sur `run_unified`/`_run_core_unified`/`_prepare_unified` : quand `True`, SEUL le gate
+régime de Neuneu lit le candidat `feat["regime_bb"]` au lieu du proxy EMA±ATR historique — RANGE/
+TENDANCE inchangés. 4 nouveaux tests (monkeypatch) dans `test_unified_protocol.py`.
+
+**"4 choix" — honnêteté** : le candidat produit les 3 mêmes catégories que le proxy historique
+(RANGE_NEUTRE/RANGE_TENDANCIEL/TENDANCE/EXCES). Le 4e état demandé, "KO"/Chaos, reste NON défini
+(44e round, resté bloqué — le corpus ne le chiffre toujours pas) — ce round n'invente rien de plus.
+
+**Mesuré sur données réelles** (BTC/ETH/BNB/SOL × 4 profils, `results/neuneu_bb_context_results.
+csv`) : le candidat ouvre systématiquement un peu moins de tranches (-4% à -13% selon l'actif,
+gate un peu plus restrictif partout). Impact sur la rentabilité **fortement dépendant de l'actif** :
+BTC (-10,8 pt de retour), ETH (-11,6 pt), SOL (-24,0 pt) se dégradent nettement ; **BNB s'améliore
+nettement** (+20,4 pt de retour ET +5,6 pt de drawdown, moins profond) — notable car BNB/TRES_
+AGRESSIF est le chiffre le plus surveillé du projet (37e round).
+
+**Conclusion honnête** : PAS un gain net uniforme — 1 actif sur 4 bénéficie, 3 en pâtissent. Reste
+opt-in, défaut `False` inchangé. Aucune conclusion de performance n'a influencé le câblage
+(principe inviolable du projet) — ce résultat informe, ne tranche pas.
+
+Suite de tests : `pytest -m ""` → 323/323 (313 + 6 + 4 nouveaux, tout appelant existant inchangé).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

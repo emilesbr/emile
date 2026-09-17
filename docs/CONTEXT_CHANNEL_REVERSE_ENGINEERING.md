@@ -361,3 +361,60 @@ où 3 éléments se superposent.
 round (l'hypothèse de réconciliation ci-dessus reste non vérifiée). `H-Context-BB-UT+1` reste au
 statut du 56e round (2 corroborations fortes sur 3, désaccord du 51e round toujours non résolu —
 mais potentiellement expliqué, pas contredit, par cette clarification).
+
+## 12. 58e round — `H-Context-BB-UT+1` câblé et MESURÉ sur Neuneu : résultat honnête, MITIGÉ, pas un gain net
+
+**Demande directe de l'utilisateur** : *"en tant qu'ingénieur senior, mets une ou plusieurs
+hypothèses permettant de prendre connaissance du contexte et de faire un des 4 choix (KO/tendance/
+range/excès)... vérifie notamment sur sa capacité à rendre la stratégie de trading de range neuneu
+rentable."*
+
+**Implémenté** (strictement additif, aucun changement de comportement par défaut) :
+- `emile/core/context_bollinger.py` (nouveau module, 4 tests unitaires) : `compute_bollinger`
+  (Bollinger(20,2) natif sur l'UT supérieure), `attach_context_bb` (jointure causale merge_asof,
+  MÊME convention `CLOSURE_DELAY=1 jour` que `backtest_phase2_v7.py::attach_higher_context`, jamais
+  dupliquée), `compute_regime_bb_context` (réutilise `regime_classifier.add_regime` TEL QUEL — zéro
+  modification de ce fichier, il acceptait déjà `ctx_median`/`ctx_width_pct` en paramètres
+  génériques).
+- `unified_protocol.py` : nouveau paramètre `use_bb_context_for_neuneu: bool = False` (additif) sur
+  `run_unified`/`_run_core_unified`/`_prepare_unified`. Quand `True`, SEUL le gate régime de Neuneu
+  (`feat["regime"][j] in (RANGE_NEUTRE, RANGE_TENDANCIEL)`, H-Borne-6) lit `feat["regime_bb"]`
+  (candidat) au lieu de `feat["regime"]` (proxy EMA±ATR historique) — RANGE et TENDANCE restent
+  inchangés dans les deux cas. `ValueError` explicite si `feat["regime_bb"]` absent. 4 nouveaux
+  tests (`test_unified_protocol.py`, monkeypatch), dont un vérifiant explicitement que `regime_bb`
+  prime sur `regime` quand le flag est actif, et l'inverse par défaut.
+
+**Réponse à la question "4 choix (KO/Tendance/Range/Excès)"** : `compute_regime_bb_context`
+produit EXACTEMENT les mêmes 3 catégories que le proxy historique (RANGE_NEUTRE/RANGE_TENDANCIEL/
+TENDANCE/EXCES) — le 4e état demandé par l'utilisateur, "KO"/Chaos, reste NON défini : le corpus ne
+le chiffre toujours pas (44e round, `docs/PLAN.md`, resté bloqué) et ce round n'invente rien de plus
+que lui. Honnêteté : la demande "4 choix" n'est donc satisfaite qu'à 3/4 par ce round.
+
+**Mesuré sur données réelles** (`emile/core/neuneu_bb_context_measure.py`, BTC/ETH/BNB/SOL × 4
+profils, `use_neuneu=True` des deux côtés, seul `use_bb_context_for_neuneu` diffère,
+`results/neuneu_bb_context_results.csv`) :
+
+| symbole | Δ retour moyen (candidat − référence) | Δ drawdown max moyen | tranches Neuneu ouvertes (réf→candidat) |
+|---|---|---|---|
+| BTC | **-10,8 pt** | -2,6 pt (plus profond) | 86 → 83 |
+| ETH | **-11,6 pt** | +0,9 pt (à peine plus profond/quasi neutre) | 77 → 74 |
+| BNB | **+20,4 pt** | **+5,6 pt (nettement moins profond)** | 67 → 58 |
+| SOL | **-24,0 pt** | -2,9 pt (plus profond) | 84 → 77 |
+
+**Lecture honnête, sans arrondir dans un sens** : le candidat ouvre systématiquement UN PEU MOINS
+de tranches Neuneu que le proxy historique sur les 4 actifs (-4% à -13%) — le gate régime basé sur
+`H-Context-BB-UT+1` est un peu plus restrictif partout, effet structurel cohérent. Mais l'impact sur
+la rentabilité est **fortement dépendant de l'actif, pas un gain net** : BTC/ETH/SOL se dégradent
+nettement (-10,8 à -24,0 pt de retour), tandis que BNB s'améliore nettement, à la fois en retour
+(+20,4 pt) ET en drawdown (+5,6 pt, moins profond) — un résultat notable car BNB/TRES_AGRESSIF est
+"le chiffre le plus surveillé du projet" (37e round). **Aucune conclusion de performance n'a
+influencé ce câblage** (principe inviolable du projet) — `use_bb_context_for_neuneu=False` reste le
+défaut, ce résultat informe une décision future sans la trancher à la place de l'utilisateur.
+
+**Conclusion** : `H-Context-BB-UT+1` ne rend PAS Neuneu uniformément plus rentable — 1 actif sur 4
+en bénéficie nettement, 3 en pâtissent. Pas un signal suffisant pour changer le défaut. Le candidat
+reste disponible en opt-in pour un usage ciblé (ex. BNB seul) si l'utilisateur le souhaite, mais ce
+round ne recommande PAS de l'activer globalement.
+
+Suite de tests inchangée pour tout appelant existant, `pytest -m ""` → 323/323 (313 + 6 nouveaux
+tests `context_bollinger` + 4 nouveaux tests `unified_protocol`).
