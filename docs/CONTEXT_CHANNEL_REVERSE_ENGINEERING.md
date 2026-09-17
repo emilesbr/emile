@@ -162,3 +162,55 @@ inchangée : d'autres captures avec plateau de contexte propre ET en-tête OHLC 
 sur la MÊME UT/le même actif que la section 2-3 pour départager si "contexte" varie selon le
 préréglage de l'indicateur (Beginner/Intermediate/Expert × Range/Trend/Advanced Risk, nuance déjà
 notée dans `docs/NEUNEU_COMMUNITY_OBSERVATIONS.md` section 2.5).
+
+## 8. 3e lot (6 captures, actions/forex hors périmètre crypto du projet) — enseignements structurels, aucune mesure chiffrée possible
+
+Nouvelles captures fournies par l'utilisateur, hors du périmètre BTC/ETH/BNB/SOL de ce projet
+(Sodexo SA en hebdomadaire ET mensuel, Euronext Paris ; Microsoft Corp. hebdomadaire, NASDAQ,
+publiée par le compte "PRO_Indicators" lui-même ; NEC Corporation hebdomadaire, TSE ; USDJPY 15 min,
+FXCM). **Aucune mesure quantitative recoupée contre nos propres données réelles n'est possible
+ici** — ce projet n'a QUE de la donnée crypto (`data/processed/`) ; ces 4 instruments (actions
+JP/US/FR, forex) sont hors périmètre par construction (`CLAUDE.md`). Enseignements purement
+structurels/qualitatifs :
+
+- **"CONTEXT" confirmé une 3e fois comme valeur UNIQUE (pas toujours une paire haut/bas)** : sur la
+  capture USDJPY 15 min, le tag "CONTEXT" pointe une seule ligne pointillée grise, alignée sur le
+  rang "159,0" de l'échelle des prix — même lecture qu'au 52e round (BTC 15 min), sur un 3e type
+  d'instrument (forex). Style visuel différent de la capture ETH 1D (51e round, un NUAGE gris
+  rempli) : ici une simple ligne pointillée fine — indice que "contexte" a possiblement DEUX modes
+  de représentation graphique (bande remplie sur UT lentes, ligne fine sur UT rapides/intraday),
+  pas nécessairement deux définitions différentes.
+- **Cohérence structurelle des légendes entre préréglages différents, jamais vérifiée jusqu'ici** :
+  la légende PRO Framework affiche sensiblement la MÊME structure de positions sur Sodexo Weekly
+  (préréglage *"Expert (Advanced Risks)"*, valeurs `0,0 / 0,0 / 42,3 / 58,4 / 64,7 / 57,7 / 38,5 /
+  34,5 / ⌀ / 48,1(rouge) / 55,3(gras) / 35,7 / 74,9 / ⌀ / 50,1 / ⌀ / 45,2 / 51,2 / 56,1 / 60,9 /
+  66,9 / ⌀`) et sur NEC Weekly (préréglage *"Intermediate (Trend)"*, valeurs `0,0 / 0,0 / 3 774,6 /
+  5 104,0 / 5 433,6 / 5 016,8 / 3 796,5 / 3 516,0 / ⌀ / 4 406,6(rouge) / 2 520,1(gras) / ⌀ / ⌀ / ⌀ /
+  ⌀ / 4 419,4 / ⌀ / …`) : positions 1-2 toujours `0,0`, position 9 toujours `⌀`, position 10
+  toujours colorée en rouge, position 11 toujours en gras — **l'ORDRE des grandeurs plottées est
+  stable quel que soit le préréglage/l'actif**, seul le préréglage change le CALCUL sous-jacent, pas
+  la structure de sortie. Utile pour une future tentative de mapping position→nom si une capture
+  montrant le "Data Window" (légendes nommées) apparaît un jour.
+- **Sur Sodexo Weekly, une paire resserrée autour du prix courant** (58,05€) : positions 4 et 6
+  (58,4 / 57,7, largeur 0,7€ soit ±0,6%) contre les autres valeurs bien plus éloignées (42,3 / 64,7
+  / 38,5 / 34,5). Piste plausible pour "contexte serré" (un canal local, pas la bande large) — mais
+  **non vérifiable** : pas de donnée Sodexo dans ce dépôt, et une seule capture ne suffirait de
+  toute façon pas à corroborer (même principe qu'aux sections 4/7).
+- **Nouveau terme, jamais rencontré dans les 6 sources précédentes** : *"3BR en retard"* (Sodexo
+  Monthly) — la 3ème borne semble pouvoir être qualifiée de "en retard" (délai/tolérance de
+  reconnaissance temporelle), une nuance de timing non documentée ailleurs. Aucun chiffre associé,
+  noté pour mémoire.
+- **Le panneau multi-UT (%, vu au 52e round avec un score `dev` sur ETH) réapparaît sur Microsoft
+  Corp., PUBLIÉ PAR LE COMPTE OFFICIEL "PRO_Indicators" lui-même** (donc pas une capture
+  communautaire tierce — plus proche de la source), mais SANS colonne `dev` cette fois (1M 74%,
+  1W -99,6%, 1D 54%, 4H 95,4%, 1H 92,6%, 15m tronqué ~-99%) — confirme que le pourcentage est
+  probablement une variante d'oscillateur BORNÉ (proche de ±99% aux extrêmes, jamais au-delà),
+  conceptuellement proche d'un rang percentile — cohérent avec l'approche déjà utilisée dans
+  `regime_classifier.py` (percentiles glissants), mais aucune formule exacte lisible. La couleur de
+  fond de la valeur (gris/rose/bleu) ne suit PAS une règle simple de signe (74% positif = gris,
+  95,4% positif = bleu, -99,6% négatif = rose, 54% positif = gris) — encodage encore inconnu.
+
+**Ce que ce round NE fait PAS** : aucune mesure chiffrée contre nos données (hors périmètre crypto),
+donc aucune corroboration ni infirmation possible de `H-Context-MA20` ici — uniquement des
+enseignements structurels/qualitatifs, comme pour les captures communautaires. Aucun changement de
+code.

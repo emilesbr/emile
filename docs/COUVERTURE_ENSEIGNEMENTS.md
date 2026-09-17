@@ -602,6 +602,17 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   renforcée ni infirmée par ce 2e essai (UT/actif/préréglage différents). Nouveau outil "Pro
   Alerte" vu en action pour la 1ère fois (panneau %/`dev` par UT) mais sans légende exploitable.
   Aucun changement de code. Détail complet : `PLAN.md` section "52e application".
+
+  **53e round (3e lot, 6 captures actions/forex — hors périmètre crypto, aucune donnée à recouper)**
+  : enseignements structurels seulement. "CONTEXT" confirmé une 3e fois comme valeur unique
+  (USDJPY, ligne pointillée — style différent du nuage rempli d'ETH 1D, deux représentations
+  possibles d'un même concept) ; structure de légende STABLE entre 2 préréglages différents
+  (positions `0,0`/`⌀`/rouge/gras identiques sur Sodexo "Expert" et NEC "Intermediate" malgré des
+  valeurs totalement différentes) — utile pour un futur mapping position→nom ; nouveau terme
+  "3BR en retard" (tolérance de timing, non chiffrée) ; panneau multi-UT % (sans `dev` cette fois)
+  vu sur une capture publiée par le compte officiel de l'outil — pourcentages bornés ±99%,
+  cohérent avec une logique percentile déjà utilisée dans `regime_classifier.py`. Aucun changement
+  de code. Détail complet : `PLAN.md` section "53e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre

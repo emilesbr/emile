@@ -2382,6 +2382,32 @@ deux nombres — noté pour mémoire, rien d'exploitable sans capture montrant l
 
 Aucun changement de code — suite de tests inchangée (`pytest -m ""` → 313/313).
 
+### 53e application — 3e lot de captures (actions/forex, hors périmètre crypto) : enseignements structurels, aucune mesure chiffrée possible
+
+6 nouvelles captures (Sodexo SA W/M Euronext Paris, Microsoft Corp. W NASDAQ publiée par le compte
+officiel "PRO_Indicators", NEC Corporation W TSE, USDJPY 15 min FXCM) — toutes hors du périmètre
+crypto de ce projet (`CLAUDE.md`), donc **aucune mesure recoupée contre nos propres données n'est
+possible** (pas de donnée actions/forex dans `data/processed/`). Détail complet : `docs/CONTEXT_
+CHANNEL_REVERSE_ENGINEERING.md` section 8.
+
+**4 enseignements structurels/qualitatifs, aucun chiffré contre nos données** :
+1. "CONTEXT" confirmé une 3e fois comme VALEUR UNIQUE (USDJPY 15 min, ligne pointillée fine) —
+   style visuel différent du nuage rempli vu sur ETH 1D (51e round), suggérant deux modes de
+   représentation (bande sur UT lentes, ligne sur UT rapides), pas nécessairement deux définitions.
+2. Structure de légende STABLE entre 2 préréglages différents (Sodexo "Expert Advanced Risks" vs
+   NEC "Intermediate Trend") — mêmes positions toujours `0,0`/`⌀`/rouge/gras dans les deux cas :
+   seul le calcul change avec le préréglage, jamais l'ordre des grandeurs plottées. Utile pour un
+   futur mapping position→nom.
+3. Nouveau terme jamais rencontré : *"3BR en retard"* (Sodexo Monthly) — nuance de timing/tolérance
+   sur la reconnaissance de la 3ème borne, sans chiffre associé.
+4. Le panneau multi-UT (%, vu 52e round avec `dev` sur ETH) réapparaît sur MSFT, publié par le
+   compte officiel de l'outil lui-même, mais SANS colonne `dev` — pourcentages bornés proches de
+   ±99%, cohérent avec un rang percentile (rapproche conceptuellement de notre propre approche
+   percentile dans `regime_classifier.py`, sans formule exacte lisible). Couleur de fond de la
+   valeur sans règle de signe évidente — encodage encore inconnu.
+
+Aucun changement de code — suite de tests inchangée (`pytest -m ""` → 313/313).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.
