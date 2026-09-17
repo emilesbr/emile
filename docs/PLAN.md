@@ -2272,6 +2272,47 @@ exception candidate à coût nul (corriger `NEUNEU_FIB_76` de 0,76 à 0,764) pro
 appliquée — en attente de voir si d'autres captures à venir corroborent ce chiffre avant de toucher
 au code déjà mesuré (46e-48e rounds). Suite de tests inchangée (**313/313**).
 
+### 50e application — 2ème fournée de captures communautaires (13 captures, actions W1) : 4 nouvelles nuances, dont la 1ère corroborée deux fois
+
+**Suite directe de l'engagement pris au 49e round** ("Envoie tes prochaines captures quand tu veux —
+je les ajouterai au même document au fil de l'eau") : l'utilisateur a fourni, sans texte
+d'accompagnement, 13 nouvelles captures du même salon Discord communautaire "analyse-range" (fils
+"EXEMPLE ----- MSFT - W1 = 3RB en approche", "SW SODEXO W - 3BR en approche", "(Exo débutant) 6701
+NEC Weekly") — cette fois sur des actions (MSFT, Sodexo, NEC) en hebdomadaire, pas des cryptos, mais
+avec les mêmes VRAIS indicateurs PRO Framework/PRO Momentum de Philippe.
+
+**4 nouvelles nuances ajoutées à `docs/NEUNEU_COMMUNITY_OBSERVATIONS.md` (sections 2.6-2.9)**,
+détail complet et citations anonymisées dans ce fichier :
+1. **2.6** — Un compte identifié comme l'auteur du fil ("Phil_RX", tag OP, avatar logo "PRO" —
+   probablement Philippe Roux lui-même ou un compte officiel de l'outil) énonce directement la règle
+   de timing de la 3ème borne (*"la 3BR c'est dès qu'on a eu une tendance et qu'on renverse le
+   contexte"*) et confirme que **"moyenne dans le contexte"** qualifie un Range Neuneu — 1er critère
+   de qualification univoque du Range Neuneu vu dans les 4 sources du corpus, recoupant la piste
+   déjà notée en 2.1 (1ère fournée) sur le rôle du canal de contexte dans le re-marquage des bornes.
+2. **2.7** — **"Boîtes disjointes" (canaux de contexte qui ne se chevauchent plus entre UT) comme
+   signal d'EXCES, pas de TENDANCE** — cité indépendamment par 2 membres sur 2 fils différents.
+   Première nuance de ce document à atteindre le seuil de corroboration que l'utilisateur avait
+   lui-même fixé pour envisager une discussion de mise en code (*"dès qu'une nuance est corroborée
+   par plusieurs exemples cohérents, on pourra discuter de la coder"*) — signalé explicitement à
+   l'utilisateur comme tel, mais PAS codé ce round : ni le seuil de distance entre canaux, ni le
+   nombre d'UT concernées ne sont donnés par les captures.
+3. **2.8** — Une règle de sélection d'UT attribuée à Philippe par un membre (*"si on a déjà
+   renversé le contexte en UT+1 il faut aller trader sur cet UT"*) apparaît en tension, dans le même
+   fil, avec le raisonnement d'un autre membre — désaccord non résolu dans la capture (fil coupé),
+   noté tel quel, pas tranché arbitrairement dans un sens.
+4. **2.9** — Première mention d'un outil "Pro Alerte" (tableau de bord distinct du PRO Framework/PRO
+   Momentum) et d'un sous-type "3BR de Pullback" — recoupe la nuance 2.5 de la 1ère fournée
+   (préréglages d'indicateur potentiellement orthogonaux à nos profils de risque), sans plus de
+   détail exploitable pour l'instant.
+
+**Confirmation croisée notée en passant** : ces captures, sur des actions plutôt que des cryptos,
+répètent l'exigence déjà câblée dans `regime_classifier.py` de cohérence multi-timeframe (moyenne
+dans le contexte simultanément en W ET en M) pour qualifier une vraie tendance — pas une nuance
+nouvelle, mais une confirmation que le principe s'applique au-delà du périmètre crypto du projet.
+
+**Aucun changement de code ce round** — round de documentation pure, comme le 49e. Suite de tests
+inchangée : `python -m pytest -m ""` → **313/313 passés, 0 échec** (vérifié par exécution réelle).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

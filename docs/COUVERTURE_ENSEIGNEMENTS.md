@@ -566,6 +566,15 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   pour l'instant (preuve insuffisante par nuance), 1 correction de fidélité à coût nul identifiée
   mais pas encore appliquée (`NEUNEU_FIB_76` 0,76→0,764). Détail complet : `PLAN.md` section
   "49e application".
+  **2ème fournée (50e round, 13 captures, actions W1 — MSFT/Sodexo/NEC)** : 4 nouvelles nuances
+  (sections 2.6-2.9 de `NEUNEU_COMMUNITY_OBSERVATIONS.md`) — "moyenne dans le contexte" confirmée
+  comme critère de qualification du Range Neuneu par le compte de l'auteur du fil (probablement
+  Philippe/compte officiel), **"boîtes disjointes" = EXCES corroboré 2 fois indépendamment (1ère
+  nuance de ce document à atteindre le seuil de corroboration fixé par l'utilisateur, signalée mais
+  toujours PAS codée — seuil/paramètres non chiffrés)**, règle de sélection d'UT attribuée à
+  Philippe en tension non résolue avec une autre lecture communautaire, outil "Pro Alerte" et
+  sous-type "3BR de Pullback" mentionnés pour la 1ère fois. Aucun changement de code. Détail
+  complet : `PLAN.md` section "50e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre
