@@ -1991,6 +1991,84 @@ exact) resterait tout aussi défendable. Et même une fois acceptée, la mesure 
 mécanisme précis ne change RIEN sur BTC/ETH/BNB/SOL avec l'historique actuel — pas un rejet de la
 lecture, une population trop rare pour la tester utilement sur cette fenêtre.
 
+### 46e application (cycle suivant) — Repli Neuneu (long) construit, testé et mesuré : mécanisme réel, résultat mitigé honnête
+
+**Décision directe de l'utilisateur** : suite de "trouve une solution", confirmation explicite item
+par item d'autoriser la réutilisation du détecteur de swing déjà établi (`compute_swing_high_
+confirmed`) pour construire la "dumb zone", jusqu'ici sans définition codable (32e/36e rounds).
+
+**Ce qui a permis de lever le blocage** : en rouvrant les captures ELLES-MÊMES (`Repli-neuneu.png`),
+pas seulement leur transcription texte, la table "Gestion du risque" s'avère quasi entièrement
+chiffrée (stop = MAX(canal de tendance, 0,5×canal de contexte), risque max 2%, Validation = stop
+remonté au sommet récent) — seule la position EXACTE de la "dumb zone" manquait d'un chiffre, mais
+elle a une définition STRUCTURELLE ("tient plusieurs clôtures sans sortir du haut de la zone") qui
+correspond exactement à ce que `compute_swing_high_confirmed` calcule déjà ailleurs dans ce projet
+(3ème borne, `n_borders`, routage Neuneu du 32e round) — pas une nouvelle primitive à inventer.
+
+**Hypothèses d'implémentation (H-Neuneu-Repli-1..7, citations et justifications complètes en tête
+de `emile/core/neuneu_repli.py`)** — résumé :
+1. Creux/dumb zone = swings confirmés (`compute_swing_low_confirmed`/`compute_swing_high_confirmed`,
+   `SWING_ORDER=3`, réutilisation directe, pas une nouvelle convention).
+2. Canal de tendance/contexte = `local_range`/`context_range`, DÉJÀ nommés et calculés ailleurs dans
+   ce projet — aucune nouvelle définition.
+3. Zone fibo "achat" = 14,6%-23,6% de la hauteur du canal de contexte, ancrée au bas (littéral,
+   direction déduite du sens LONG du mécanisme).
+4. "Dumb zone" traitée comme UN SEUL niveau (le swing high), pas une bande à 2 bornes — une
+   RÉDUCTION DE PORTÉE documentée, pas un chiffre inventé (le corpus ne chiffre jamais son plancher).
+5. "Proche du contexte" (règle #1) : redondant avec la règle #2 (être dans la zone fibo basse
+   implique déjà d'être proche du contexte bas) — pas un gate séparé.
+6. Règles #3/#4 "optionnelles" : lues littéralement, donc NON gatantes (un gate obligatoire
+   contredirait le mot "optionnel").
+7. **Fraction du "TP partiel", EXTRAPOLATION SUPPLÉMENTAIRE** (distincte de #1) : `NEUNEU_OBJECTIF_
+   CLOSE_FRAC=0,50`, réutilise la même valeur déjà établie ailleurs (Validation du profil FAIBLE)
+   plutôt qu'un chiffre choisi au hasard — mais reste une extrapolation, pas une citation littérale.
+
+**Implémenté** (`emile/core/neuneu_repli.py`, nouveau module STANDALONE — PAS encore câblé dans
+`faithful.py`/`unified_protocol.py`, même statut que `h1_timeframe_bench.py` avant son câblage) :
+- `_repli_neuneu_state_machine` : cœur pur de la machine à états (creux → dumb zone → retour),
+  séparé du calcul des fenêtres glissantes pour rester testable avec des arrays fabriqués à la main.
+- `compute_repli_neuneu_signal` : calcule les arrays causaux réels (swings, `context_channel_bounds`
+  — nouvelle fonction ajoutée à `position_engine.py`, sœur de `context_channel_median` déjà
+  existante, MÊME construction, zéro risque de régression sur celle-ci) puis délègue à la machine.
+- `process_repli_neuneu_tranche` : Objectif (TP partiel, une fois) → Validation (stop remonté au
+  plus haut depuis l'ouverture, AUCUNE clôture — ordre INVERSE de `process_tranche`, d'où une
+  fonction dédiée plutôt qu'un forçage dans le moule existant, même principe que "+Reverse") → Stop
+  (sur mèche).
+- `run_repli_neuneu` : boucle complète mono-tranche (aucune pyramidalisation décrite par le corpus
+  pour ce mécanisme), sizing par risque (`NEUNEU_RISK_PCT=0,02`, littéral), statistiques standard du
+  projet.
+
+**13 nouveaux tests** (`test_neuneu_repli.py`) : machine à états (pattern complet vérité terrain,
+creux non qualifiant n'engage rien, swing high AVANT le creux ignoré comme dumb zone, remise à zéro
+pour un 2e cycle, canal NaN → jamais de signal) ; `process_repli_neuneu_tranche` (Objectif partiel
++ non-retrigger, Validation par dumb-zone ET par contexte opposé, stop sur mèche) ; `run_repli_
+neuneu` bout en bout avec `compute_repli_neuneu_signal` monkeypatché (sizing/stop calculés à la main
+et vérifiés). Suite complète **281 → 294 tests, tous verts**.
+
+**Mesuré sur données réelles (`emile/core/neuneu_repli_measure.py`, BTC/ETH/BNB/SOL H4, `LOCAL_
+DURATION_H4_BARS`/`CONTEXT_DURATION_H4_BARS` du 39e round), résultat honnête, mitigé** :
+
+| symbole | signaux pattern | trades | retour | DD max | win rate | profit factor |
+|---|---|---|---|---|---|---|
+| BTC | 71 | 57 | **-6,35%** | -9,86% | 70,2% | 0,72 |
+| ETH | 65 | 49 | +5,65% | -2,02% | 79,6% | 1,74 |
+| BNB | 40 | 34 | **-2,37%** | -4,33% | 79,4% | 0,78 |
+| SOL | 77 | 63 | +9,26% | -6,17% | 73,0% | 1,65 |
+
+**Lecture honnête** : le pattern est loin d'être rare (34-63 trades réels sur l'historique complet
+par actif, pas un cas isolé) et le win rate est élevé partout (70-80%) — mais BTC/BNB sont négatifs
+avec un profit factor sous 1,0 (les pertes, peu fréquentes, sont en moyenne plus grandes que les
+gains fréquents mais petits — profil "many small wins, occasional big loss" typique d'un stop large
+et d'une prise de profit partielle à 50%) tandis qu'ETH/SOL sont positifs. **2/4 actifs négatifs,
+2/4 positifs** — ni un GO ni un NO-GO franc, rapporté tel quel, sans arrondir dans un sens ou l'autre.
+
+**Ce que ce round ne fait PAS** : le câblage réel dans `faithful.py`/`unified_protocol.py` (brancher
+le routage `regime_classifier.compute_use_neuneu` déjà existant depuis le 32e round pour décider
+QUAND appliquer Neuneu plutôt que "3ème borne") reste un chantier séparé, non fait ici — ce round
+livre un moteur complet, testé et mesuré en isolation, pas encore intégré au protocole de
+production. Half du mécanisme Neuneu (Borne Neuneu, le short) reste également à construire (cf.
+section "47e application").
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

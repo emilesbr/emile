@@ -537,14 +537,20 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   **SHORT**, structure qui n'existe NULLE PART dans `position_engine.py` (la seule jambe short du
   fichier, `H-Reverse-Range`, est explicitement BORNÉE — un seul stop/une seule cible, jamais une
   table à étapes) — construire "Borne Neuneu" fidèlement exigerait une vraie table RANGE short
-  symétrique, chantier d'architecture à part entière. **Et "Repli Neuneu" (la moitié long,
-  a priori compatible) bute à son tour sur un blocage catégorie A** : aucun chiffre, nulle part
-  dans le corpus (grep confirmé sur les 17 sources + `RULES_EXTRACTION.md` : "Neuneu" n'existe que
-  dans ce guide), ne définit la "dumb zone" elle-même (le point intermédiaire du pattern) — un
-  seuil inventé de toutes pièces, ce que le principe du projet interdit. **Conclusion : toujours
-  PAS implémenté, backlog ouvert, décision de conception (Borne Neuneu) + parties non chiffrables
-  (Repli Neuneu) à traiter dans un round séparé** — détail complet : `PLAN.md`, section
-  "36e application".
+  symétrique, chantier d'architecture à part entière (cf. section "47e application" pour son
+  traitement séparé).
+  **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
+  l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
+  établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre
+  pour la dumb zone") a été levé en rouvrant les captures elles-mêmes, pas seulement leur
+  transcription — la table "Gestion du risque" est en fait quasi entièrement chiffrée (stop, risque
+  max 2%, Validation), seule la POSITION de la dumb zone manquait d'un nombre mais a une définition
+  STRUCTURELLE réutilisable sans invention. Nouveau module STANDALONE `emile/core/neuneu_repli.py`
+  (13 tests), mesuré sur données réelles BTC/ETH/BNB/SOL H4 : 34-63 trades par actif (pattern non
+  rare), win rate élevé partout (70-80%) mais résultat MITIGÉ — BTC -6,35%/BNB -2,37% (profit
+  factor <1) contre ETH +5,65%/SOL +9,26% — ni GO ni NO-GO franc, rapporté tel quel. PAS encore
+  câblé dans `faithful.py`/`unified_protocol.py` (chantier de routage séparé). Détail complet :
+  `PLAN.md` section "46e application".
 - ~~**Invalidation 3BR par SQUEEZE (`Range/3eme-borne/3ème-borne.png`), citation exacte** : *"On ne
   doit plus la trader si jamais le range produit un SQUEEZE... Si le range se forme juste après
   un SQUEEZE sur l'unité de temps supérieure, il faudra alors éviter de trader cette 3BR..."*~~ —

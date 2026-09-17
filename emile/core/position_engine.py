@@ -1046,6 +1046,22 @@ def context_channel_median(df, duration):
     ctx_low = ts["low"].rolling(duration).min().shift(1)
     return (ctx_low + (ctx_high - ctx_low) * CONTEXT_MEDIAN_FRAC).values
 
+def context_channel_bounds(df, duration):
+    """`(ctx_low, ctx_high)` -- les 2 BORNES du même canal de contexte que
+    `context_channel_median` ci-dessus (IDENTIQUE construction, même
+    fenêtre/`.shift(1)` causal -- 2 fonctions distinctes plutôt qu'un
+    refactor de `context_channel_median`, pour ne prendre AUCUN risque de
+    régression sur une fonction déjà testée et utilisée en production ;
+    celle-ci sert un besoin différent : `neuneu_repli.py` a besoin des
+    bornes elles-mêmes, pas seulement de leur médiane, pour y ancrer la
+    zone Fibonacci "achat" du mécanisme Repli Neuneu, 46e round).
+
+    Retourne 2 arrays numpy alignés sur `df` (NaN au warmup)."""
+    ts = df.set_index("date")
+    ctx_high = ts["high"].rolling(duration).max().shift(1)
+    ctx_low = ts["low"].rolling(duration).min().shift(1)
+    return ctx_low.values, ctx_high.values
+
 def make_structural_conf_update_fn(ctx_median_v):
     """Retourne un `update_levels_fn(tr, i)` qui fait de la Confirmation un
     NIVEAU STRUCTUREL ABSOLU relu EN DIRECT à chaque bougie -- la lecture
