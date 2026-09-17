@@ -557,6 +557,15 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   quasi neutre) sont pénalisés. `use_neuneu=False` reste le défaut (aucune conclusion de
   performance n'a influencé le câblage). Backlog "Neuneu" (32e/36e/45e-48e rounds) CLOS de bout en
   bout. Détail complet : `PLAN.md` section "48e application".
+  **NOUVELLE SOURCE (49e round)** : captures d'écran communautaires avec les VRAIS indicateurs de
+  Philippe (pas notre proxy), `docs/NEUNEU_COMMUNITY_OBSERVATIONS.md` (document vivant, alimenté au
+  fil du temps) — 5 nouvelles nuances trouvées (comptage de bornes au jugement + piste de
+  réancrage par retour de contexte, risque réel observé à 1% pas 2%, dépendance multi-timeframe de
+  l'Objectif via "range dans un range", ratio fibo précis 0,764 pas 76% + niveau 0,854 inexpliqué,
+  préréglages d'indicateur Beginner/Intermediate/Expert jamais mappés à nos profils). Aucune codée
+  pour l'instant (preuve insuffisante par nuance), 1 correction de fidélité à coût nul identifiée
+  mais pas encore appliquée (`NEUNEU_FIB_76` 0,76→0,764). Détail complet : `PLAN.md` section
+  "49e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre

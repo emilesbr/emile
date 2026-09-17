@@ -2226,6 +2226,52 @@ de trancher l'usage d'une règle littérale du corpus — seulement d'informer, 
 établi). Le backlog "Neuneu" (32e/36e/45e-48e rounds) est désormais CLOS de bout en bout :
 détection, construction, mesure isolée, câblage, mesure agrégée.
 
+### 49e application (cycle suivant) — nouvelle source communautaire (captures Discord, indicateurs RÉELS de Philippe) : 5 nouvelles nuances trouvées, aucune codée sans plus de preuve
+
+**Décision directe de l'utilisateur**, en réponse à l'inventaire des inconnues Neuneu donné en
+conversation après le 48e round : *"je propose de documenter tout cela comme le ferait un ingénieur
+senior, en parallèle je vais essayer de te fournir des captures d'écran des graphiques avec les
+indicateurs de Philippe."* Une 1ère fournée de 8 captures (salon Discord communautaire "analyse-
+range", USDJPY 15min et ETH 1h) a été fournie et analysée — nouvelle source, distincte des 3
+existantes (manuel PDF, 17 vidéos, guide officiel 38 écrans) : ici, des PRATICIENS RÉELS discutant
+de vrais setups avec les VRAIS indicateurs PRO Framework/PRO Momentum (v5.2) de Philippe, pas notre
+proxy.
+
+**Nouveau document créé** : `docs/NEUNEU_COMMUNITY_OBSERVATIONS.md` (même convention que `GUIDE_
+STRATEGIE_PRO_INDICATORS.md` — aucune capture stockée, seulement leur substance transcrite,
+pseudonymes anonymisés par principe de minimisation). Document VIVANT, l'utilisateur prévoit de
+fournir d'autres captures au fil du temps — nouvelles entrées à ajouter au même fichier.
+
+**1 confirmation** : l'invalidation 3ème borne par squeeze UT+1 (31e round) est activement vérifiée
+en pratique par la communauté elle-même, pas qu'une citation isolée du guide.
+
+**5 nouvelles nuances trouvées, aucune des 18 sources précédentes n'en parlait** (détail complet,
+citations exactes anonymisées : `docs/NEUNEU_COMMUNITY_OBSERVATIONS.md` section 2) :
+1. Le comptage/réancrage des bornes est tranché au JUGEMENT par les praticiens, sans seuil chiffré
+   partagé — et une piste mécanique neuve apparaît (retour/croisement des canaux de contexte comme
+   déclencheur de re-marquage de la 3ème borne), jamais vue dans les 18 sources précédentes.
+   Confirmation indépendante, par la communauté elle-même, que "routé vers Neuneu" n'autorise pas à
+   trader n'importe quelle borne suivante hors discipline propre au mécanisme.
+2. Risque observé en pratique : **1%, jamais le "risque max 2%" littéral**, cité deux fois sur deux
+   setups distincts — plafond discrétionnaire ou convention de sous-risque pour setups
+   secondaires/emboîtés, aucune preuve suffisante pour trancher.
+3. **"Range dans un range"/"UT faible risque"** — une dépendance multi-timeframe de l'Objectif
+   (borne d'une UT supérieure comme cible/rejet) jamais modélisée dans `neuneu_repli.py`/
+   `neuneu_borne.py` (dont l'Objectif ne regarde que le canal de la MÊME UT d'exécution).
+4. Le ratio Fibonacci précis du vrai outil est **0,764 (76,4%)**, pas le "76%" arrondi transcrit du
+   guide (`NEUNEU_FIB_76=0.76` actuel) — écart mineur mais à corriger pour fidélité. Un niveau
+   supplémentaire, **0,854**, apparaît étiqueté sans qu'aucune source n'en parle — rôle inconnu.
+5. L'indicateur réel expose des préréglages (**Beginner/Intermediate/Expert × Range/Trend/Advanced
+   Risk**) jamais mappés à nos 4 profils de risque (FAIBLE/MODERE/AGRESSIF/TRES_AGRESSIF, un axe
+   entièrement différent — money management, pas configuration d'indicateur) : pourrait être un axe
+   de variation totalement orthogonal à ce que ce projet a modélisé jusqu'ici.
+
+**Aucun changement de code ce round** — chaque piste repose sur un seul exemple, parfois
+contradictoire (nuance 2) ou incomplet (nuance 4/5), insuffisant pour coder sans inventer. Seule
+exception candidate à coût nul (corriger `NEUNEU_FIB_76` de 0,76 à 0,764) proposée mais PAS encore
+appliquée — en attente de voir si d'autres captures à venir corroborent ce chiffre avant de toucher
+au code déjà mesuré (46e-48e rounds). Suite de tests inchangée (**313/313**).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.
