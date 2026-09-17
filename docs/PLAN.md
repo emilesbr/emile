@@ -2542,6 +2542,30 @@ opt-in, défaut `False` inchangé. Aucune conclusion de performance n'a influenc
 
 Suite de tests : `pytest -m ""` → 323/323 (313 + 6 + 4 nouveaux, tout appelant existant inchangé).
 
+### 59e application — demande directe "place le contexte sur UT+2" : `H-Context-BB-UT+2` PIRE que UT+1 sur les 4 actifs, sans exception
+
+Suite directe du 58e round : l'utilisateur a demandé de tester le contexte sur l'UT DEUX niveaux
+au-dessus (Hebdomadaire pour un moteur H4) plutôt qu'un seul (D1). Détail complet, code et chiffres :
+`docs/CONTEXT_CHANNEL_REVERSE_ENGINEERING.md` section 13.
+
+**Implémenté, additif** : nouveau paramètre `bb_context_level: str = "ut1"` sur `unified_protocol.py`
+(`"ut1"`=D1, défaut inchangé ; `"ut2"`=Hebdomadaire, déjà un paramètre existant du fichier). 2
+nouveaux tests.
+
+**Mesuré (BTC/ETH/BNB/SOL × 4 profils, moyennes par actif, vs le même référentiel proxy EMA±ATR)** :
+
+| symbole | Δ retour UT+1 | Δ retour UT+2 |
+|---|---|---|
+| BTC | -10,8 pt | -15,8 pt |
+| ETH | -11,6 pt | -36,2 pt |
+| BNB | **+20,4 pt** | **-19,4 pt** |
+| SOL | -24,0 pt | -52,6 pt |
+
+**Conclusion sans ambiguïté** : UT+2 est PIRE que UT+1 sur les 4 actifs SANS EXCEPTION — y compris
+BNB, le seul cas positif de l'UT+1, qui bascule en perte nette. Pas de cas d'usage positif identifié
+pour UT+2. Ce round ne recommande PAS `bb_context_level="ut2"`. Aucun changement de comportement par
+défaut. Suite de tests : `pytest -m ""` → 325/325.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

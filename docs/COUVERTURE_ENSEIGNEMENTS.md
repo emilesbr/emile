@@ -672,6 +672,14 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   uniforme, reste opt-in, défaut inchangé. 10 nouveaux tests (6 `context_bollinger`, 4
   `unified_protocol`), suite complète **323/323**. Détail complet : `PLAN.md` section
   "58e application".
+
+  **59e round — demande directe "place le contexte sur UT+2" : PIRE que UT+1 sur les 4 actifs, sans
+  exception.** Nouveau paramètre `bb_context_level="ut1"/"ut2"` (D1 vs Hebdomadaire). Mesuré : UT+2
+  dégrade le retour sur BTC (-15,8 pt vs -10,8 pt pour UT+1), ETH (-36,2 pt vs -11,6 pt), SOL (-52,6
+  pt vs -24,0 pt), et fait BASCULER BNB en perte nette (-19,4 pt, contre +20,4 pt pour UT+1 — le seul
+  cas positif trouvé jusqu'ici). Aucun cas d'usage positif identifié pour UT+2. Pas recommandé.
+  Aucun changement de comportement par défaut. Suite : 325/325. Détail complet : `PLAN.md` section
+  "59e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre

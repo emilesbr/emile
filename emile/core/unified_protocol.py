@@ -318,6 +318,16 @@ seulement Neuneu, sur demande explicite. `H-Context-BB-UT+1` reste à 2
 corroborations sur 3 (1 désaccord non résolu, round 51) -- ce câblage est
 une MESURE pour informer la décision, pas une validation actée de
 l'hypothèse.
+
+`bb_context_level: str = "ut1"` (59e round, additif) -- demande directe de
+l'utilisateur de tester le contexte sur l'UT DEUX niveaux au-dessus
+("UT+2") plutôt qu'un seul : `"ut1"` (défaut, comportement du 58e round) =
+D1 pour ce moteur H4 ; `"ut2"` = Hebdomadaire (`weekly`, déjà un paramètre
+de `run_unified`/`_prepare_unified`, aucune donnée supplémentaire à faire
+transiter). Ignoré si `use_bb_context_for_neuneu=False`. Nommé
+`H-Context-BB-UT+2` quand ce niveau est actif -- candidat DISTINCT de
+`H-Context-BB-UT+1`, mesuré séparément (cf. `docs/CONTEXT_CHANNEL_REVERSE_
+ENGINEERING.md` section 13), jamais mélangé aux résultats du 58e round.
 """
 import sys
 
@@ -369,8 +379,11 @@ def resample_h4_with_volume(h1: pd.DataFrame) -> pd.DataFrame:
     merged = ohlc.merge(vol, on="date", how="inner")
     return merged.reset_index(drop=True)
 
+BB_CONTEXT_LEVELS = ("ut1", "ut2")
+
 def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
-                      use_mtf_gate: bool = True, use_bb_context_for_neuneu: bool = False) -> dict:
+                      use_mtf_gate: bool = True, use_bb_context_for_neuneu: bool = False,
+                      bb_context_level: str = "ut1") -> dict:
     """Calcule TOUTES les colonnes nécessaires aux deux moteurs, une fois,
     sur l'historique complet fourni.
 
@@ -447,13 +460,16 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         "volume_expansion": volume_expansion,
     })
     if use_bb_context_for_neuneu:
-        # H-Context-BB-UT+1 (58e round, cf. bloc "CANDIDAT H-Context-BB-UT+1"
-        # en tête de fichier) -- calculé UNE FOIS ici, jamais recalculé par
-        # bougie, même discipline que le reste de cette fonction. `d1` est
-        # déjà un paramètre de cette fonction, aucune donnée supplémentaire
-        # à faire transiter.
+        # H-Context-BB-UT+1/+2 (58e/59e rounds, cf. bloc "CANDIDAT
+        # H-Context-BB-UT+1" en tête de fichier) -- calculé UNE FOIS ici,
+        # jamais recalculé par bougie, même discipline que le reste de cette
+        # fonction. `d1`/`weekly` sont déjà des paramètres de cette fonction,
+        # aucune donnée supplémentaire à faire transiter.
+        if bb_context_level not in BB_CONTEXT_LEVELS:
+            raise ValueError(f"bb_context_level inconnu: {bb_context_level!r}, attendu parmi {BB_CONTEXT_LEVELS}")
+        higher = d1 if bb_context_level == "ut1" else weekly
         feat["regime_bb"] = compute_regime_bb_context(
-            h4[["date", "open", "high", "low", "close"]], d1[["date", "open", "high", "low", "close"]],
+            h4[["date", "open", "high", "low", "close"]], higher[["date", "open", "high", "low", "close"]],
         )
     return feat
 
@@ -517,7 +533,7 @@ def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profil
                  capital_eur: float = None,
                  use_mtf_gate: bool = True, record_state: bool = False,
                  use_sl_gain: bool = False, use_neuneu: bool = False,
-                 use_bb_context_for_neuneu: bool = False) -> dict:
+                 use_bb_context_for_neuneu: bool = False, bb_context_level: str = "ut1") -> dict:
     """Boucle d'orchestration bar-par-bar -- LE seul code nouveau de ce
     fichier (cf. tête de fichier, décision #3). `h4` DOIT inclure une
     colonne `volume` (cf. `resample_h4_with_volume`, U1). `d1` : niveau
@@ -552,7 +568,8 @@ def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profil
     protocole à la TOUTE DERNIÈRE bougie de l'historique fourni, utilisé par
     `decide_now` (cf. U4 pour l'approximation "bougie fantôme")."""
     feat = _prepare_unified(h4, d1, weekly, use_mtf_gate=use_mtf_gate,
-                             use_bb_context_for_neuneu=use_bb_context_for_neuneu)
+                             use_bb_context_for_neuneu=use_bb_context_for_neuneu,
+                             bb_context_level=bb_context_level)
     risk_pct = None
     if capital_eur is not None:
         # U3 : capital par palier appliqué SEULEMENT au moteur RANGE.

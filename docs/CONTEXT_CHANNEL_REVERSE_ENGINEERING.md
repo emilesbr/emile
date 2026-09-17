@@ -418,3 +418,36 @@ round ne recommande PAS de l'activer globalement.
 
 Suite de tests inchangée pour tout appelant existant, `pytest -m ""` → 323/323 (313 + 6 nouveaux
 tests `context_bollinger` + 4 nouveaux tests `unified_protocol`).
+
+## 13. 59e round — demande directe : "place le contexte sur UT+2" -- `H-Context-BB-UT+2` mesuré, PIRE que UT+1 sur les 4 actifs
+
+**Implémenté, strictement additif** : nouveau paramètre `bb_context_level: str = "ut1"` sur
+`run_unified`/`_run_core_unified`/`_prepare_unified` (`unified_protocol.py`). `"ut1"` (défaut,
+comportement du 58e round, inchangé) = D1 pour ce moteur H4 ; `"ut2"` = Hebdomadaire (`weekly`, déjà
+un paramètre existant, aucune donnée supplémentaire à faire transiter). `ValueError` explicite pour
+toute autre valeur. 2 nouveaux tests (`test_unified_protocol.py`, monkeypatch) vérifiant que
+`"ut1"`/`"ut2"` sélectionnent bien `d1`/`weekly` respectivement, et le rejet d'une valeur inconnue.
+
+**Mesuré sur données réelles** (BTC/ETH/BNB/SOL × 4 profils, `emile/core/
+neuneu_bb_context_measure.py` étendu, `results/neuneu_bb_context_results.csv`), moyenne des 4
+profils par actif, comparé au MÊME référentiel (proxy EMA±ATR historique) :
+
+| symbole | Δ retour UT+1 (58e round) | Δ retour UT+2 (ce round) | Δ drawdown UT+1 | Δ drawdown UT+2 |
+|---|---|---|---|---|
+| BTC | -10,8 pt | **-15,8 pt** (pire) | -2,6 pt | -1,9 pt |
+| ETH | -11,6 pt | **-36,2 pt** (bien pire) | +0,4 pt | -7,2 pt (pire) |
+| BNB | **+20,4 pt** (seul gain) | **-19,4 pt** (bascule en perte) | +5,6 pt | -9,4 pt (bascule en perte) |
+| SOL | -24,0 pt | **-52,6 pt** (bien pire) | -2,8 pt | -6,6 pt (pire) |
+
+**Conclusion honnête, sans ambiguïté cette fois** : `H-Context-BB-UT+2` est PIRE que `H-Context-BB-
+UT+1` sur les 4 actifs, sans aucune exception — y compris sur BNB, le seul actif qui bénéficiait de
+l'UT+1 (+20,4 pt), et qui BASCULE en perte nette avec l'UT+2 (-19,4 pt). Le gate régime basé sur
+l'Hebdomadaire est généralement plus restrictif (moins de tranches ouvertes sur 3 actifs sur 4) mais
+cette restriction supplémentaire ne protège PAS le rendement — au contraire. Aucune trace
+d'amélioration nulle part, contrairement à UT+1 qui au moins bénéficiait à un actif. **Ce round ne
+recommande PAS `bb_context_level="ut2"`** — reste disponible en opt-in (implémenté, testé) mais
+sans aucun cas d'usage positif identifié à ce stade, contrairement à UT+1 sur BNB spécifiquement.
+
+Aucun changement de comportement par défaut (`use_bb_context_for_neuneu=False` reste le défaut,
+`bb_context_level="ut1"` reste le défaut si le premier est activé). Suite de tests : `pytest -m ""`
+→ 325/325 (323 + 2 nouveaux tests).

@@ -1,17 +1,20 @@
 """
-Mesure honnête de `H-Context-BB-UT+1` (candidat proposé par l'utilisateur,
-cf. `context_bollinger.py` et `docs/CONTEXT_CHANNEL_REVERSE_ENGINEERING.md`)
-appliqué EXCLUSIVEMENT au gate régime de Neuneu (58e round, `docs/PLAN.md`).
+Mesure honnête de `H-Context-BB-UT+1`/`H-Context-BB-UT+2` (candidats proposés
+par l'utilisateur, cf. `context_bollinger.py`/`unified_protocol.py::
+bb_context_level` et `docs/CONTEXT_CHANNEL_REVERSE_ENGINEERING.md`) appliqués
+EXCLUSIVEMENT au gate régime de Neuneu (58e/59e rounds, `docs/PLAN.md`).
 Demande directe de l'utilisateur : "vérifie notamment sur sa capacité à
-rendre la stratégie de trading de range neuneu rentable."
+rendre la stratégie de trading de range neuneu rentable" (58e round), puis
+"place le contexte sur UT+2 et non plus UT+1" (59e round).
 
 CE QUE CE SCRIPT MESURE
 -----------------------------------------------------------------------------
 Pour chaque profil et chaque actif, rejoue `run_unified` avec `use_neuneu=
-True` et compare `use_bb_context_for_neuneu=False` (référence déjà publiée,
-`neuneu_wired_measure.py`, 48e round) contre `use_bb_context_for_neuneu=True`
-(candidat) -- SEUL le gate régime de Neuneu change, RANGE/TENDANCE et tout le
-reste du protocole restent identiques dans les deux colonnes.
+True` et compare 3 variantes -- `use_bb_context_for_neuneu=False` (référence
+déjà publiée, `neuneu_wired_measure.py`, 48e round), `bb_context_level="ut1"`
+(candidat D1, 58e round) et `bb_context_level="ut2"` (candidat Hebdomadaire,
+59e round) -- SEUL le gate régime de Neuneu change entre les 3, RANGE/
+TENDANCE et tout le reste du protocole restent identiques.
 """
 import pandas as pd
 
@@ -35,22 +38,28 @@ def main():
         for profile in PROFILES_V4:
             res_ema = run_unified(h4.copy(), d1.copy(), weekly.copy(), profile,
                                    use_neuneu=True, use_bb_context_for_neuneu=False)
-            res_bb = run_unified(h4.copy(), d1.copy(), weekly.copy(), profile,
-                                  use_neuneu=True, use_bb_context_for_neuneu=True)
+            res_ut1 = run_unified(h4.copy(), d1.copy(), weekly.copy(), profile,
+                                   use_neuneu=True, use_bb_context_for_neuneu=True, bb_context_level="ut1")
+            res_ut2 = run_unified(h4.copy(), d1.copy(), weekly.copy(), profile,
+                                   use_neuneu=True, use_bb_context_for_neuneu=True, bb_context_level="ut2")
             rows.append({
                 "symbol": symbol, "profile": profile,
-                "n_trades_ema": res_ema["n_trades"], "n_trades_bb": res_bb["n_trades"],
-                "n_neuneu_opened_ema": res_ema["n_neuneu_opened"], "n_neuneu_opened_bb": res_bb["n_neuneu_opened"],
-                "return_ema_%": res_ema["total_return_%"], "return_bb_%": res_bb["total_return_%"],
-                "max_dd_ema_%": res_ema["max_dd_%"], "max_dd_bb_%": res_bb["max_dd_%"],
+                "n_trades_ema": res_ema["n_trades"], "n_trades_ut1": res_ut1["n_trades"], "n_trades_ut2": res_ut2["n_trades"],
+                "n_neuneu_opened_ema": res_ema["n_neuneu_opened"], "n_neuneu_opened_ut1": res_ut1["n_neuneu_opened"],
+                "n_neuneu_opened_ut2": res_ut2["n_neuneu_opened"],
+                "return_ema_%": res_ema["total_return_%"], "return_ut1_%": res_ut1["total_return_%"],
+                "return_ut2_%": res_ut2["total_return_%"],
+                "max_dd_ema_%": res_ema["max_dd_%"], "max_dd_ut1_%": res_ut1["max_dd_%"], "max_dd_ut2_%": res_ut2["max_dd_%"],
             })
         print(f"  {symbol} ok", flush=True)
 
     result = pd.DataFrame(rows)
-    result["delta_return_pt"] = result["return_bb_%"] - result["return_ema_%"]
-    result["delta_max_dd_pt"] = result["max_dd_bb_%"] - result["max_dd_ema_%"]
-    pd.set_option("display.width", 220)
-    pd.set_option("display.max_columns", 20)
+    result["delta_return_ut1_pt"] = result["return_ut1_%"] - result["return_ema_%"]
+    result["delta_return_ut2_pt"] = result["return_ut2_%"] - result["return_ema_%"]
+    result["delta_max_dd_ut1_pt"] = result["max_dd_ut1_%"] - result["max_dd_ema_%"]
+    result["delta_max_dd_ut2_pt"] = result["max_dd_ut2_%"] - result["max_dd_ema_%"]
+    pd.set_option("display.width", 260)
+    pd.set_option("display.max_columns", 24)
     print(result.to_string(index=False))
     result.to_csv("results/neuneu_bb_context_results.csv", index=False)
 

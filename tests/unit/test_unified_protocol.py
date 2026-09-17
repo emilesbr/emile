@@ -837,6 +837,61 @@ def test_use_bb_context_for_neuneu_true_without_regime_bb_key_raises():
     else:
         raise AssertionError("aurait dû lever ValueError sans feat['regime_bb']")
 
+def test_prepare_unified_bb_context_level_selects_d1_or_weekly(monkeypatch):
+    """`bb_context_level` (59e round, demande directe de l'utilisateur --
+    "place le contexte sur UT+2 et non plus UT+1") : `'ut1'` doit passer
+    `d1` à `compute_regime_bb_context`, `'ut2'` doit passer `weekly` --
+    vérifié en interceptant l'appel (`compute_regime_bb_context` monkeypatché)
+    plutôt qu'en construisant un historique assez long pour un vrai calcul
+    de régime (`add_regime` a besoin de 250+ bougies pour ses seuils
+    percentile, hors de portée d'un test unitaire ciblé)."""
+    n_h4 = WARMUP + 10
+    h4 = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=n_h4, freq="4h", tz="UTC"),
+        "open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0, "volume": 100.0,
+    })
+    d1 = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=40, freq="D", tz="UTC"),
+        "open": 111.0, "high": 111.0, "low": 111.0, "close": 111.0,
+    })
+    weekly = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=10, freq="W", tz="UTC"),
+        "open": 222.0, "high": 222.0, "low": 222.0, "close": 222.0,
+    })
+
+    seen = {}
+    def fake_compute_regime_bb_context(df_low, df_higher):
+        seen["higher_close"] = df_higher["close"].iloc[0]
+        return np.full(len(df_low), "RANGE_NEUTRE", dtype=object)
+    monkeypatch.setattr(unified_protocol_mod, "compute_regime_bb_context", fake_compute_regime_bb_context)
+
+    unified_protocol_mod._prepare_unified(h4, d1, weekly, use_bb_context_for_neuneu=True, bb_context_level="ut1")
+    assert seen["higher_close"] == 111.0, "'ut1' doit utiliser d1"
+    unified_protocol_mod._prepare_unified(h4, d1, weekly, use_bb_context_for_neuneu=True, bb_context_level="ut2")
+    assert seen["higher_close"] == 222.0, "'ut2' doit utiliser weekly"
+
+def test_prepare_unified_bb_context_level_unknown_raises():
+    feat_inputs = dict(use_mtf_gate=True, use_bb_context_for_neuneu=True, bb_context_level="ut3")
+    n_h4 = WARMUP + 10
+    h4 = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=n_h4, freq="4h", tz="UTC"),
+        "open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0, "volume": 100.0,
+    })
+    d1 = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=40, freq="D", tz="UTC"),
+        "open": 111.0, "high": 111.0, "low": 111.0, "close": 111.0,
+    })
+    weekly = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=10, freq="W", tz="UTC"),
+        "open": 222.0, "high": 222.0, "low": 222.0, "close": 222.0,
+    })
+    try:
+        unified_protocol_mod._prepare_unified(h4, d1, weekly, **{k: v for k, v in feat_inputs.items() if k != "use_mtf_gate"})
+    except ValueError as e:
+        assert "bb_context_level" in str(e)
+    else:
+        raise AssertionError("aurait dû lever ValueError pour un bb_context_level inconnu")
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     failures = 0
