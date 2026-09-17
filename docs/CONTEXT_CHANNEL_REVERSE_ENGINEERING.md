@@ -214,3 +214,68 @@ structurels/qualitatifs :
 donc aucune corroboration ni infirmation possible de `H-Context-MA20` ici — uniquement des
 enseignements structurels/qualitatifs, comme pour les captures communautaires. Aucun changement de
 code.
+
+## 9. 4e lot (4 captures ETH, retour au périmètre crypto) — auto-correction méthodologique, et `H-Context-MA20` désormais AFFAIBLIE, pas confirmée
+
+4 nouvelles captures ETH (Binance 1h live, Bitfinex 1h/4h datées "Nash0" 29-30 avr. 2026, et
+CRYPTO 4h live avec un 2e indicateur jamais vu : "PRO Financials (v1.0)"). Deux d'entre elles
+affichent une légende PRO Framework COMPLÈTE et non tronquée (14-22 valeurs numériques par bougie),
+une opportunité inédite de tester `H-Context-MA20` sur un préréglage IDENTIQUE à celui du 51e round.
+
+**Auto-correction méthodologique, à documenter explicitement pour ne pas répéter l'erreur** : une
+première passe a comparé les 14 valeurs de la légende ETH 1h (bougie identifiée dans notre donnée
+réelle, `ETHUSDT_1h_processed.csv`, 2026-02-03 22:00, écart OHLC cumulé 4,5$ soit ~0,05%) contre
+**toutes** les périodes de SMA/EMA de 2 à 300 — et a semblé « trouver » une période quasi parfaite
+(< 0,05% d'écart) pour CHACUNE des 14 valeurs. **Ce n'est pas une preuve** : sur une fenêtre de 300
+périodes testées pour une grandeur qui varie de façon lisse et quasi monotone avec la période, il
+est statistiquement presque garanti de trouver une période qui approche n'importe quelle valeur
+cible à moins de 0,05% — un artefact de recherche non contrainte (proche du "p-hacking"), pas une
+corroboration. Rejeté comme méthode ; seule une hypothèse PRÉ-ENREGISTRÉE (une période choisie
+AVANT de regarder les données, comme `20` au 51e round parce que confirmée par la légende de
+l'indicateur) constitue un test valide.
+
+**Test refait correctement (hypothèse pré-enregistrée `SMA20`/`EMA20` uniquement), sur la capture
+au MÊME préréglage que le 51e round ("Expert (Advanced Risks), 1, 20, 2")** : capture ETH 4h
+(CRYPTO), bougie identifiée dans notre donnée réelle resamplée H4 (2026-05-01 04:00, écart OHLC
+cumulé 10,5$ soit ~0,11%). `SMA20` = 2 277,36$, `EMA20` = 2 278,88$. Comparées aux 15 valeurs
+lisibles de la légende (`2220,8 / 2348,4 / 2527,2 / 2412,8 / 2053,3 / 1962,4 / 2233,0 / 2394,9 /
+1488,0 / 3301,9 / 2295,4 / 2190,6 / 2105,9 / 2021,2 / 1916,4`) : **la MEILLEURE correspondance est à
+0,72-0,79% d'écart** (2295,4) — dix fois PIRE que le 0,07% du 51e round, et aucune autre valeur ne
+s'approche. Même préréglage, même actif (ETH), méthode identique — et cette fois `SMA20`/`EMA20`
+NE matchent RIEN dans la légende.
+
+**Tentative complémentaire, non concluante** : la capture ETH 1h Bitfinex (datée "Nash0", 30 avr.
+2026) affiche un tag "CONTEXT" pointant une bande rose — mesurée par pixels (méthode identique aux
+rounds précédents) à environ [2 303$ ; 2 319$]. Mais cette bande ne s'étend PAS jusqu'à la bougie la
+plus récente (elle s'arrête plusieurs dizaines de bougies avant le bord droit) — probablement une
+boîte figée dessinée à un instant passé plutôt qu'un canal vivant qui suit le prix courant. Aucune
+date fiable ne peut lui être associée sans un ancrage OHLC propre à CETTE zone précise (nous n'avons
+que l'ancrage de la bougie la plus récente) — mesure abandonnée, pas assez fiable pour en tirer une
+conclusion dans un sens ou l'autre.
+
+**Conclusion honnête, mise à jour par rapport au 51e/52e round** : avec ce 3e point chiffré (même
+préréglage que le point favorable du 51e round, cette fois clairement défavorable), le poids des
+preuves **penche maintenant CONTRE `H-Context-MA20`** comme règle générale simple — le match à
+0,07% du 51e round apparaît, avec le recul et après la correction méthodologique ci-dessus, plus
+probablement une coïncidence qu'un signal réel. `H-Context-MA20` n'est PAS formellement réfutée
+(un seul point favorable + deux points défavorables, échantillon encore petit, préréglages/UT pas
+tous identiques), mais elle ne doit plus être présentée comme la piste la plus prometteuse pour
+recalibrer `regime_classifier.py` — statut rétrogradé à "hypothèse affaiblie", pas "en attente de
+corroboration".
+
+**Nouveau, noté pour mémoire** : un 2e indicateur de la suite de Philippe jamais rencontré avant ce
+round, **"PRO Financials (v1.0)"**, apparaît dans la légende d'une capture (en plus de PRO
+Framework/PRO Momentum déjà connus) — aucune valeur ni fonction déductible d'une seule mention. Les
+labels "PRU Actuel"/"23k$" et "neuneu" visibles sur la capture ETH 1h live sont des annotations
+manuelles de l'utilisateur lui-même (suivi de position personnelle), pas des sorties de
+l'indicateur — non pertinentes pour la reverse-ingénierie de "contexte".
+
+**Ce que ce round NE fait PAS** : aucun changement de code — au contraire, ce round est un exemple
+du principe "ne pas coder sur un résultat favorable non reproduit" qui vient d'éviter une erreur :
+si `regime_classifier.py` avait été recalibré sur `SMA20` après le seul point du 51e round, ce 4e
+lot aurait révélé l'erreur après coup. Prochaine étape, révisée : il faudrait soit (a) une preuve
+NETTEMENT plus directe (une capture montrant le survol exact du plot "contexte" nommé comme tel
+dans un "Data Window" TradingView, éliminant toute ambiguïté de correspondance), soit (b)
+abandonner la piste `SMA20` et chercher un autre schéma (nested Fibonacci ratios, ATR bandé sur une
+UT différente, etc.) — mais SANS recherche non contrainte sur l'espace des périodes, pour ne pas
+retomber dans l'erreur méthodologique documentée ci-dessus.

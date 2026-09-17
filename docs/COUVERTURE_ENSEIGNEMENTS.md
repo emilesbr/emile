@@ -613,6 +613,18 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   vu sur une capture publiée par le compte officiel de l'outil — pourcentages bornés ±99%,
   cohérent avec une logique percentile déjà utilisée dans `regime_classifier.py`. Aucun changement
   de code. Détail complet : `PLAN.md` section "53e application".
+
+  **54e round (4e lot, retour ETH) — auto-correction méthodologique, `H-Context-MA20` RÉTROGRADÉE**
+  : une recherche non contrainte sur 300 périodes de SMA/EMA a d'abord semblé "confirmer" plusieurs
+  valeurs de légende — rejetée comme artefact statistique (quasi garanti de matcher n'importe quoi
+  sur un espace de recherche aussi large), pas une preuve. Test refait avec la SEULE hypothèse
+  pré-enregistrée valide (`SMA20`/`EMA20`, même préréglage "Expert Advanced Risks" que le 51e
+  round) : sur une nouvelle bougie ETH 4h identifiée dans nos données réelles, la meilleure
+  correspondance dans la légende est à 0,72-0,79% — dix fois pire que le 0,07% du 51e round. Le
+  poids des preuves penche désormais CONTRE `H-Context-MA20` (probablement une coïncidence au 51e
+  round) — statut rétrogradé de "en attente de corroboration" à "hypothèse affaiblie", plus
+  présentée comme piste prometteuse pour `regime_classifier.py`. Aucun changement de code. Détail
+  complet : `PLAN.md` section "54e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre

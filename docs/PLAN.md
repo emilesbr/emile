@@ -2408,6 +2408,38 @@ CHANNEL_REVERSE_ENGINEERING.md` section 8.
 
 Aucun changement de code — suite de tests inchangée (`pytest -m ""` → 313/313).
 
+### 54e application — 4e lot (retour ETH) : auto-correction méthodologique, `H-Context-MA20` rétrogradée
+
+4 nouvelles captures ETH (Binance 1h live, Bitfinex 1h/4h datées "Nash0", CRYPTO 4h live) — retour
+au périmètre crypto, avec deux légendes PRO Framework COMPLÈTES (non tronquées). Détail complet,
+méthode et chiffres : `docs/CONTEXT_CHANNEL_REVERSE_ENGINEERING.md` section 9.
+
+**Auto-correction méthodologique importante** : une 1ère passe comparant les 14 valeurs d'une
+légende contre TOUTES les périodes de SMA/EMA (2 à 300) a semblé trouver une période quasi parfaite
+pour chacune — **rejeté comme artefact statistique** (sur 300 périodes testées, une correspondance
+à <0,05% est quasi garantie pour n'importe quelle cible, ce n'est pas une preuve). Seule une
+hypothèse PRÉ-ENREGISTRÉE (choisie avant de regarder les données) constitue un test valide.
+
+**Test refait correctement, MÊME préréglage que le 51e round** ("Expert (Advanced Risks), 1, 20,
+2") : capture ETH 4h, bougie identifiée dans notre donnée réelle (2026-05-01 04:00, écart OHLC
+~0,11%). `SMA20`/`EMA20` calculés sur cette bougie : **meilleure correspondance dans la légende à
+0,72-0,79% d'écart** — dix fois pire que le 0,07% du 51e round, aucune autre valeur ne s'approche.
+
+**Conclusion honnête, mise à jour** : avec ce point supplémentaire (même préréglage, cette fois
+défavorable) et la correction méthodologique, le poids des preuves **penche désormais CONTRE**
+`H-Context-MA20` — le match du 51e round semble, avec le recul, plus probablement une coïncidence.
+Pas formellement réfutée (échantillon encore petit), mais rétrogradée de "en attente de
+corroboration" à "hypothèse affaiblie" — ne plus la présenter comme piste prometteuse pour
+recalibrer `regime_classifier.py`.
+
+**Nouveau, noté pour mémoire** : un 2e indicateur jamais rencontré, "PRO Financials (v1.0)",
+apparaît dans une légende — aucune valeur déductible d'une seule mention. Les labels "PRU Actuel"/
+"23k$"/"neuneu" vus sur une capture sont des annotations manuelles de l'utilisateur (suivi de
+position personnelle), pas des sorties de l'indicateur.
+
+Aucun changement de code — ce round illustre au contraire pourquoi ne JAMAIS coder sur un seul
+résultat favorable non reproduit. Suite de tests inchangée (`pytest -m ""` → 313/313).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.
