@@ -2566,6 +2566,31 @@ BNB, le seul cas positif de l'UT+1, qui bascule en perte nette. Pas de cas d'usa
 pour UT+2. Ce round ne recommande PAS `bb_context_level="ut2"`. Aucun changement de comportement par
 défaut. Suite de tests : `pytest -m ""` → 325/325.
 
+### 60e application — 2 demandes directes : faire varier `k`, et expliquer le routage Neuneu actuel
+
+Détail complet, chiffres et code : `docs/CONTEXT_CHANNEL_REVERSE_ENGINEERING.md` section 14.
+
+**Faire varier `k`** : implémenté (`bb_k`, additif) et mesuré (k∈{1,5 ; 2 ; 2,5 ; 3} sur UT+1, BTC/
+ETH/BNB/SOL × 4 profils). **Résultat exact : `k` n'a STRICTEMENT AUCUN EFFET** — chiffres
+rigoureusement identiques pour les 4 valeurs. Propriété mathématique de `regime_classifier.
+add_regime` (jamais modifié) : la classification EXCES/squeeze utilise des seuils PERCENTILE
+ADAPTATIFS (rang relatif dans une fenêtre glissante), invariants à toute mise à l'échelle uniforme
+de la série de largeur — multiplier toute la série par `k` multiplie aussi son propre seuil de
+percentile par `k`, la comparaison reste inchangée. `k` n'est donc PAS un axe utile pour affiner ce
+candidat tant que le classificateur reste percentile-relatif plutôt qu'à seuil absolu.
+
+**Expliquer le routage** : vérifié dans le code (pas supposé) — il y a 2 décisions distinctes.
+(1) Le ROUTAGE (`feat["use_neuneu"]`, round 32, `regime_classifier.compute_use_neuneu`) décide SI un
+range utilise Neuneu plutôt que 3ème borne ; calculé dans `backtest_phase2_faithful.py::_prepare_
+features`, AVANT le bloc H-Context-BB, et lit TOUJOURS `h4["regime"]` (proxy EMA±ATR historique) —
+AUCUN paramètre de ce chantier (58e-60e rounds) n'y touche. (2) Le GATE bar-par-bar (H-Borne-6,
+`in_range_regime`) décide si UNE bougie précise autorise l'ouverture UNE FOIS le routage déjà
+décidé ; c'est CE SEUL filtre que `use_bb_context_for_neuneu` fait basculer entre le proxy et le
+candidat. `H-Context-BB` ne peut donc jamais faire router vers Neuneu un range qui ne l'aurait pas
+déjà été par le proxy historique — explique en partie l'ampleur modeste de l'effet mesuré.
+
+Aucun changement de comportement par défaut. Suite de tests : `pytest -m ""` → 326/326.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

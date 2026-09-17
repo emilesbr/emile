@@ -451,3 +451,58 @@ sans aucun cas d'usage positif identifié à ce stade, contrairement à UT+1 sur
 Aucun changement de comportement par défaut (`use_bb_context_for_neuneu=False` reste le défaut,
 `bb_context_level="ut1"` reste le défaut si le premier est activé). Suite de tests : `pytest -m ""`
 → 325/325 (323 + 2 nouveaux tests).
+
+## 14. 60e round — 2 demandes directes : faire varier `k`, et expliquer ce qui pilote le routage Neuneu aujourd'hui
+
+**Demande 1 : faire varier le multiplicateur d'écart-type `k` (toujours 2 jusqu'ici).** Implémenté
+(`bb_k: float = BB_K`, additif, transmis tel quel à `compute_regime_bb_context`, 1 nouveau test) et
+mesuré (BTC/ETH/BNB/SOL × 4 profils × k∈{1,5 ; 2 ; 2,5 ; 3}, `bb_context_level="ut1"` -- le seul
+candidat ayant un cas d'usage positif à ce jour, `results/neuneu_bb_context_k_sweep_results.csv`).
+
+**Résultat, exact et vérifié, PAS approximatif** : `k` n'a **STRICTEMENT AUCUN EFFET** sur le
+résultat -- les 4 valeurs de `k` testées donnent des chiffres RIGOUREUSEMENT IDENTIQUES (retour,
+drawdown, nombre de tranches) sur les 16 combinaisons actif×profil. Ce n'est pas un artefact de
+mesure : c'est une propriété MATHÉMATIQUE de `regime_classifier.add_regime` (jamais modifié), qui
+classe EXCES/squeeze par **percentile ADAPTATIF glissant** (`width_series.shift(1).rolling(250).
+quantile(...)`) et non par un seuil ABSOLU. Multiplier toute la série de largeur par une constante
+`k` (`bb_width_pct = 2*k*std/sma*100`) multiplie le seuil de percentile calculé sur CETTE MÊME série
+par la MÊME constante -- la comparaison `largeur < seuil`/`largeur > seuil` est donc **invariante à
+l'échelle** : `k*base_largeur ⋛ k*base_seuil ⟺ base_largeur ⋛ base_seuil`, quel que soit `k > 0`. La
+classification TENDANCE/RANGE_TENDANCIEL, elle, dépend de `ctx_median` (la SMA, indépendante de `k`)
+et de la pente/fraction au-dessus -- également indépendante de `k`. **Conclusion : `k` ne peut
+structurellement rien changer à `add_regime` tel qu'il existe aujourd'hui**, quelle que soit la
+valeur choisie -- ce n'est donc PAS un axe utile pour affiner `H-Context-BB-UT+1`/`UT+2` tant que le
+classificateur reste basé sur des seuils percentile relatifs plutôt qu'un seuil absolu. Nuance
+importante à retenir pour tout travail futur sur ce candidat.
+
+**Demande 2 : qu'est-ce qui, aujourd'hui, décide d'adopter Neuneu (routage), et ce round y touche-
+t-il ?** Réponse précise, vérifiée dans le code (pas supposée) -- il y a en réalité DEUX décisions
+distinctes, à des étages différents, et ce round (58e/59e/60e) n'en a modifié qu'une SEULE :
+
+1. **Le ROUTAGE** ("ce range doit-il utiliser la structure Neuneu plutôt que la structure 3ème
+   borne ?", round 32) -- `feat["use_neuneu"]`, calculé UNE SEULE FOIS par range via
+   `regime_classifier.compute_use_neuneu` (lui-même combinant `compute_range_precedes_by_trend` et
+   `compute_range_border_count`, cf. leurs docstrings pour les 3 conditions littérales du guide :
+   pas assez d'historique / range avec plus de 4 bornes / forex au-delà de l'UT hebdo, hors
+   périmètre). Ce calcul vit dans `backtest_phase2_faithful.py::_prepare_features`, EXÉCUTÉ AVANT le
+   bloc `H-Context-BB` de `unified_protocol.py`, et lit **TOUJOURS** `h4["regime"]` -- le régime H4
+   NATIF du proxy EMA±ATR historique. **Aucun paramètre de ce round (`use_bb_context_for_neuneu`/
+   `bb_context_level`/`bb_k`) ne touche à cette décision** -- elle reste, aujourd'hui, 100% pilotée
+   par le proxy historique, quel que soit le réglage du candidat `H-Context-BB`.
+2. **Le GATE d'ouverture bar-par-bar** ("étant donné qu'on route vers Neuneu, CETTE bougie précise
+   autorise-t-elle l'ouverture ?", H-Borne-6, 47e round) -- `in_range_regime` dans
+   `unified_protocol.py::_run_core_unified`, qui exige `regime ∈ (RANGE_NEUTRE, RANGE_TENDANCIEL)`.
+   **C'est CE filtre, et UNIQUEMENT celui-là, que `use_bb_context_for_neuneu` fait basculer** entre
+   `feat["regime"]` (proxy historique) et `feat["regime_bb"]` (candidat `H-Context-BB`).
+
+Autrement dit : `H-Context-BB` (quel que soit `ut1`/`ut2`/`k`) ne peut JAMAIS faire router un range
+vers Neuneu qui ne l'aurait pas déjà été par le proxy historique -- il peut seulement, une fois ce
+routage déjà décidé, bloquer ou autoriser l'ouverture bougie par bougie plus ou moins souvent que le
+proxy historique. Explique en partie pourquoi l'effet mesuré reste modeste comparé à un remplacement
+total du proxy : la décision la plus en amont (routage) n'a jamais été touchée par ce chantier.
+
+**Ce que ce round NE fait PAS** : ne fait PAS router `use_neuneu` lui-même via `H-Context-BB` (ce
+serait un chantier séparé, plus large, potentiellement plus risqué -- affecterait aussi 3BR/RANGE
+puisque `use_neuneu` est un booléen partagé entre les deux structures) ; ne recalibre PAS `k` compte
+tenu de son invariance démontrée. Aucun changement de comportement par défaut. Suite de tests :
+`pytest -m ""` → 326/326.

@@ -680,6 +680,18 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   cas positif trouvé jusqu'ici). Aucun cas d'usage positif identifié pour UT+2. Pas recommandé.
   Aucun changement de comportement par défaut. Suite : 325/325. Détail complet : `PLAN.md` section
   "59e application".
+
+  **60e round — 2 demandes directes : faire varier `k`, expliquer le routage Neuneu actuel.**
+  `k` (multiplicateur d'écart-type, toujours 2 jusqu'ici) testé à 1,5/2/2,5/3 : **résultat exact,
+  AUCUN EFFET** — chiffres rigoureusement identiques pour les 4 valeurs, propriété mathématique de
+  `regime_classifier.add_regime` (seuils EXCES/squeeze percentile-relatifs, invariants à toute mise
+  à l'échelle uniforme de la largeur). `k` n'est donc pas un axe utile pour ce candidat tant que le
+  classificateur reste percentile-relatif. Routage clarifié : `feat["use_neuneu"]` (round 32, décide
+  SI un range utilise Neuneu) lit TOUJOURS le proxy EMA±ATR historique, jamais touché par
+  `H-Context-BB` (58e-60e rounds) — seul le gate bar-par-bar (H-Borne-6) bascule entre proxy et
+  candidat. `H-Context-BB` ne peut donc jamais router vers Neuneu un range que le proxy historique
+  n'aurait pas déjà routé. Aucun changement de comportement par défaut. Suite : 326/326. Détail
+  complet : `PLAN.md` section "60e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre

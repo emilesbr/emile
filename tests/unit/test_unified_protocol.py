@@ -860,7 +860,7 @@ def test_prepare_unified_bb_context_level_selects_d1_or_weekly(monkeypatch):
     })
 
     seen = {}
-    def fake_compute_regime_bb_context(df_low, df_higher):
+    def fake_compute_regime_bb_context(df_low, df_higher, k=None):
         seen["higher_close"] = df_higher["close"].iloc[0]
         return np.full(len(df_low), "RANGE_NEUTRE", dtype=object)
     monkeypatch.setattr(unified_protocol_mod, "compute_regime_bb_context", fake_compute_regime_bb_context)
@@ -869,6 +869,32 @@ def test_prepare_unified_bb_context_level_selects_d1_or_weekly(monkeypatch):
     assert seen["higher_close"] == 111.0, "'ut1' doit utiliser d1"
     unified_protocol_mod._prepare_unified(h4, d1, weekly, use_bb_context_for_neuneu=True, bb_context_level="ut2")
     assert seen["higher_close"] == 222.0, "'ut2' doit utiliser weekly"
+
+def test_prepare_unified_bb_k_forwarded_to_compute_regime_bb_context(monkeypatch):
+    """`bb_k` (60e round, demande directe de l'utilisateur -- faire varier
+    le multiplicateur d'écart-type) doit être transmis tel quel à
+    `compute_regime_bb_context`, jamais recalculé ni ignoré."""
+    n_h4 = WARMUP + 10
+    h4 = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=n_h4, freq="4h", tz="UTC"),
+        "open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0, "volume": 100.0,
+    })
+    d1 = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=40, freq="D", tz="UTC"),
+        "open": 111.0, "high": 111.0, "low": 111.0, "close": 111.0,
+    })
+    weekly = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=10, freq="W", tz="UTC"),
+        "open": 222.0, "high": 222.0, "low": 222.0, "close": 222.0,
+    })
+    seen = {}
+    def fake_compute_regime_bb_context(df_low, df_higher, k=None):
+        seen["k"] = k
+        return np.full(len(df_low), "RANGE_NEUTRE", dtype=object)
+    monkeypatch.setattr(unified_protocol_mod, "compute_regime_bb_context", fake_compute_regime_bb_context)
+
+    unified_protocol_mod._prepare_unified(h4, d1, weekly, use_bb_context_for_neuneu=True, bb_k=2.5)
+    assert seen["k"] == 2.5
 
 def test_prepare_unified_bb_context_level_unknown_raises():
     feat_inputs = dict(use_mtf_gate=True, use_bb_context_for_neuneu=True, bb_context_level="ut3")

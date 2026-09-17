@@ -64,5 +64,46 @@ def main():
     result.to_csv("results/neuneu_bb_context_results.csv", index=False)
 
 
+def main_k_sweep():
+    """60e round -- demande directe de l'utilisateur : faire varier le
+    multiplicateur `k` de Bollinger (jusqu'ici toujours 2, jamais testé
+    ailleurs). UNIQUEMENT sur `bb_context_level="ut1"` -- le seul candidat
+    ayant un cas d'usage positif identifié à ce jour (BNB, 58e round)."""
+    K_VALUES = (1.5, 2.0, 2.5, 3.0)
+    rows = []
+    for symbol in SYMBOLS:
+        h1 = load_h1(symbol)
+        vol_h1 = load_volume(symbol)
+        h1_full = h1.merge(vol_h1, on="date", how="inner")
+        h4 = resample_h4_with_volume(h1_full)
+        d1 = resample(h1_full[["date", "open", "high", "low", "close"]], "1D")
+        weekly = resample(h1_full[["date", "open", "high", "low", "close"]], "W")
+        for profile in PROFILES_V4:
+            res_ema = run_unified(h4.copy(), d1.copy(), weekly.copy(), profile,
+                                   use_neuneu=True, use_bb_context_for_neuneu=False)
+            row = {"symbol": symbol, "profile": profile,
+                   "n_trades_ema": res_ema["n_trades"], "return_ema_%": res_ema["total_return_%"],
+                   "max_dd_ema_%": res_ema["max_dd_%"]}
+            for k in K_VALUES:
+                res_k = run_unified(h4.copy(), d1.copy(), weekly.copy(), profile,
+                                     use_neuneu=True, use_bb_context_for_neuneu=True,
+                                     bb_context_level="ut1", bb_k=k)
+                row[f"n_trades_k{k}"] = res_k["n_trades"]
+                row[f"n_neuneu_opened_k{k}"] = res_k["n_neuneu_opened"]
+                row[f"return_k{k}_%"] = res_k["total_return_%"]
+                row[f"max_dd_k{k}_%"] = res_k["max_dd_%"]
+                row[f"delta_return_k{k}_pt"] = res_k["total_return_%"] - res_ema["total_return_%"]
+                row[f"delta_max_dd_k{k}_pt"] = res_k["max_dd_%"] - res_ema["max_dd_%"]
+            rows.append(row)
+        print(f"  {symbol} ok", flush=True)
+
+    result = pd.DataFrame(rows)
+    pd.set_option("display.width", 300)
+    pd.set_option("display.max_columns", 40)
+    delta_cols = ["symbol", "profile"] + [f"delta_return_k{k}_pt" for k in K_VALUES] + [f"delta_max_dd_k{k}_pt" for k in K_VALUES]
+    print(result[delta_cols].to_string(index=False))
+    result.to_csv("results/neuneu_bb_context_k_sweep_results.csv", index=False)
+
+
 if __name__ == "__main__":
     main()

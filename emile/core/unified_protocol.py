@@ -328,7 +328,26 @@ transiter). Ignoré si `use_bb_context_for_neuneu=False`. Nommé
 `H-Context-BB-UT+2` quand ce niveau est actif -- candidat DISTINCT de
 `H-Context-BB-UT+1`, mesuré séparément (cf. `docs/CONTEXT_CHANNEL_REVERSE_
 ENGINEERING.md` section 13), jamais mélangé aux résultats du 58e round.
-"""
+
+`bb_k: float = BB_K` (60e round, additif) -- demande directe de
+l'utilisateur de faire varier le multiplicateur de l'écart-type (jusqu'ici
+toujours `2`, le "2" du triplet confirmé de la légende de l'indicateur,
+jamais testé à une autre valeur). Transmis tel quel à
+`context_bollinger.compute_regime_bb_context`. Ignoré si
+`use_bb_context_for_neuneu=False`.
+
+**IMPORTANT -- ce que `use_bb_context_for_neuneu`/`bb_context_level`/`bb_k`
+NE changent PAS** : la décision de ROUTAGE "ce range doit-il utiliser la
+structure Neuneu plutôt que 3ème borne ?" (`feat["use_neuneu"]`,
+`regime_classifier.compute_use_neuneu`, round 32 -- cf. sa docstring pour
+les 3 conditions littérales du guide) est calculée dans
+`_prepare_range_features`, AVANT ce bloc, et lit TOUJOURS le régime H4
+NATIF du proxy EMA+/-ATR historique (`h4["regime"]`), jamais
+`feat["regime_bb"]`. Ce round ne touche QUE le second filtre, en aval du
+premier : une fois qu'un range a déjà été routé vers Neuneu par
+`use_neuneu`, `in_range_regime` (ci-dessus) décide si CETTE bougie précise
+autorise l'ouverture -- c'est CE filtre qui devient `regime_bb` quand
+`use_bb_context_for_neuneu=True`, pas la décision de routage elle-même."""
 import sys
 
 import numpy as np
@@ -363,7 +382,7 @@ from emile.core.neuneu_borne import (
     compute_borne_neuneu_signal, process_borne_neuneu_tranche, open_borne_neuneu_tranche,
     context_channel_median,
 )
-from emile.core.context_bollinger import compute_regime_bb_context
+from emile.core.context_bollinger import compute_regime_bb_context, BB_K
 
 # Profils partagés entre les deux moteurs (mêmes 4 clés dans PROFILES_V4 et
 # PROFILES_TREND -- FAIBLE/MODERE/AGRESSIF/TRES_AGRESSIF).
@@ -383,7 +402,7 @@ BB_CONTEXT_LEVELS = ("ut1", "ut2")
 
 def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
                       use_mtf_gate: bool = True, use_bb_context_for_neuneu: bool = False,
-                      bb_context_level: str = "ut1") -> dict:
+                      bb_context_level: str = "ut1", bb_k: float = BB_K) -> dict:
     """Calcule TOUTES les colonnes nécessaires aux deux moteurs, une fois,
     sur l'historique complet fourni.
 
@@ -470,6 +489,7 @@ def _prepare_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame,
         higher = d1 if bb_context_level == "ut1" else weekly
         feat["regime_bb"] = compute_regime_bb_context(
             h4[["date", "open", "high", "low", "close"]], higher[["date", "open", "high", "low", "close"]],
+            k=bb_k,
         )
     return feat
 
@@ -533,7 +553,8 @@ def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profil
                  capital_eur: float = None,
                  use_mtf_gate: bool = True, record_state: bool = False,
                  use_sl_gain: bool = False, use_neuneu: bool = False,
-                 use_bb_context_for_neuneu: bool = False, bb_context_level: str = "ut1") -> dict:
+                 use_bb_context_for_neuneu: bool = False, bb_context_level: str = "ut1",
+                 bb_k: float = BB_K) -> dict:
     """Boucle d'orchestration bar-par-bar -- LE seul code nouveau de ce
     fichier (cf. tête de fichier, décision #3). `h4` DOIT inclure une
     colonne `volume` (cf. `resample_h4_with_volume`, U1). `d1` : niveau
@@ -569,7 +590,7 @@ def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profil
     `decide_now` (cf. U4 pour l'approximation "bougie fantôme")."""
     feat = _prepare_unified(h4, d1, weekly, use_mtf_gate=use_mtf_gate,
                              use_bb_context_for_neuneu=use_bb_context_for_neuneu,
-                             bb_context_level=bb_context_level)
+                             bb_context_level=bb_context_level, bb_k=bb_k)
     risk_pct = None
     if capital_eur is not None:
         # U3 : capital par palier appliqué SEULEMENT au moteur RANGE.
