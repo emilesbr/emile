@@ -258,6 +258,45 @@ U5. **Pas de plafond de risque agrégé RANGE+TENDANCE** (limite ouverte,
     étendu pour englober aussi la diversification Cluster Technique dans le
     même routeur (hors périmètre actuel, cf. "Ce que ce chantier NE fait
     PAS" dans PLAN.md).
+
+================================================================================
+CANAL NEUNEU (48e round, `docs/PLAN.md`) -- 3e système INDÉPENDANT, OPT-IN
+================================================================================
+`emile/core/neuneu_repli.py`/`neuneu_borne.py` (46e/47e rounds) étaient
+construits, testés et mesurés en isolation mais jamais câblés dans un
+moteur de production -- ce round comble ce manque, en réutilisant TELLE
+QUELLE la décision de routage déjà exposée depuis le 32e round
+(`feat["use_neuneu"]`, `regime_classifier.compute_use_neuneu`) mais jamais
+consommée par aucun moteur jusqu'ici.
+
+`use_neuneu: bool = False` (nouveau paramètre, additif -- défaut `False` =
+AUCUN changement de comportement pour tout appelant existant) active un 3e
+canal de position INDÉPENDANT (mono-tranche, ni long ni short exclusif),
+géré exactement sur le MÊME modèle que les 2 canaux déjà indépendants de ce
+fichier (TENDANCE/RANGE, cf. "CORRECTION" plus haut, décision #1) : traité
+à chaque bougie, agrégé dans la MÊME `equity`/`trades`, sans exclusivité
+mutuelle avec TENDANCE ou RANGE (les 3 systèmes peuvent être actifs
+simultanément sur le même actif -- même limite déjà documentée U5
+ci-dessus pour RANGE+TENDANCE, qui s'étend maintenant à 3 systèmes).
+
+Gate d'ouverture = `feat["use_neuneu"][j]` (round 32) ET `feat["regime"][j]
+in (RANGE_NEUTRE, RANGE_TENDANCIEL)` (H-Borne-6, 47e round -- trouvaille
+faite en mesurant Borne Neuneu isolément : le gate PRIX seul se déclenche
+aussi bien en TENDANCE établie qu'en vrai excès de range, alors que
+"Neuneu" est explicitement une famille RANGE du guide, jamais Tendance).
+Repli Neuneu (long) et Borne Neuneu (short) restent tous deux évalués
+CHAQUE bougie sous ce même gate -- long ET short ne se déclenchant jamais
+sur la même bougie en pratique (conditions prix opposées), mais si les deux
+coïncidaient le long est arbitrairement prioritaire (`elif`), cas non
+observé sur les 4 actifs mesurés.
+
+Sizing/stop/gestion de risque : RÉUTILISÉS tels quels depuis `neuneu_repli.py`/
+`neuneu_borne.py` (`open_repli_neuneu_tranche`/`open_borne_neuneu_tranche`,
+`process_repli_neuneu_tranche`/`process_borne_neuneu_tranche`) -- AUCUNE
+logique dupliquée ici, exactement le même principe que le reste de ce
+fichier pour RANGE/TENDANCE (cf. tête de fichier). `LOCAL_DURATION_H4_BARS`/
+`CONTEXT_DURATION_H4_BARS` (39e round) réutilisés pour les canaux internes
+de Neuneu, cohérents avec le reste du protocole sur cette UT.
 """
 import sys
 
@@ -267,7 +306,7 @@ import pandas as pd
 from emile.backtests.backtest_phase2 import FEE, load_h1, resample
 from emile.backtests.backtest_phase2_v7 import (
     prepare, PROFILES_V4, MIN_BORDERS, RULE3_STREAK, RULE3_SIZE_MULT,
-    MAX_TRANCHES, EMA_SLOW,
+    MAX_TRANCHES, EMA_SLOW, LOCAL_DURATION_H4_BARS, CONTEXT_DURATION_H4_BARS,
 )
 from emile.backtests.backtest_phase2_recommended import WARMUP
 from emile.backtests.backtest_phase2_faithful import (
@@ -286,6 +325,13 @@ from emile.core.trend_table import (
     BREAKOUT_SPACE_MULT,
 )
 from emile.core.capital_tiers import effective_sizing
+from emile.core.neuneu_repli import (
+    compute_repli_neuneu_signal, process_repli_neuneu_tranche, open_repli_neuneu_tranche,
+)
+from emile.core.neuneu_borne import (
+    compute_borne_neuneu_signal, process_borne_neuneu_tranche, open_borne_neuneu_tranche,
+    context_channel_median,
+)
 
 # Profils partagés entre les deux moteurs (mêmes 4 clés dans PROFILES_V4 et
 # PROFILES_TREND -- FAIBLE/MODERE/AGRESSIF/TRES_AGRESSIF).
@@ -439,7 +485,7 @@ def _campaign_ev(feat: dict, i: int) -> dict:
 def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profile_name: str,
                  capital_eur: float = None,
                  use_mtf_gate: bool = True, record_state: bool = False,
-                 use_sl_gain: bool = False) -> dict:
+                 use_sl_gain: bool = False, use_neuneu: bool = False) -> dict:
     """Boucle d'orchestration bar-par-bar -- LE seul code nouveau de ce
     fichier (cf. tête de fichier, décision #3). `h4` DOIT inclure une
     colonne `volume` (cf. `resample_h4_with_volume`, U1). `d1` : niveau
@@ -480,7 +526,7 @@ def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profil
         sizing = effective_sizing(capital_eur, profile_name, PROFILES_V4, MAX_TRANCHES)
         risk_pct = sizing.risk_pct
     return _run_core_unified(feat, profile_name, risk_pct=risk_pct, record_state=record_state,
-                              use_sl_gain=use_sl_gain)
+                              use_sl_gain=use_sl_gain, use_neuneu=use_neuneu)
 
 # NOTE (chantier d'architecture, SUITE du 24e round, cf. PLAN.md) :
 # `_range_gate`/`_range_gate_extra` (extraits comme fonctions de module au
@@ -494,7 +540,7 @@ def run_unified(h4: pd.DataFrame, d1: pd.DataFrame, weekly: pd.DataFrame, profil
 
 def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
                        record_state: bool = False, start: int = 0, end: int = None,
-                       use_sl_gain: bool = False) -> dict:
+                       use_sl_gain: bool = False, use_neuneu: bool = False) -> dict:
     """La boucle d'orchestration elle-même, séparée de `run_unified` sur le
     modèle `_prepare_features`/`_run_core` de `backtest_phase2_recommended.py`
     -- pour pouvoir être testée unitairement (`test_unified_protocol.py`) sur
@@ -585,6 +631,31 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
         (score[i] >= 2) and gate(i) and not bool(wall_street_v[i]) for i in range(n_total)
     ])
 
+    # ---- Canal Neuneu (48e round, OPT-IN, cf. tête de fichier) ----------------
+    # Précalculé UNE FOIS sur l'historique complet, jamais recalculé par bougie
+    # -- même discipline que le reste de ce fichier (`trend_df`/`obstacle_ut1`
+    # etc. ci-dessus dans `_prepare_unified`).
+    if use_neuneu:
+        neuneu_df = pd.DataFrame({
+            "date": feat["date"], "open": o, "high": high, "low": low, "close": c,
+        })
+        repli_sig = compute_repli_neuneu_signal(neuneu_df, CONTEXT_DURATION_H4_BARS,
+                                                 LOCAL_DURATION_H4_BARS)
+        borne_sig = compute_borne_neuneu_signal(neuneu_df, CONTEXT_DURATION_H4_BARS,
+                                                 LOCAL_DURATION_H4_BARS)
+        neuneu_ctx_median = context_channel_median(neuneu_df, CONTEXT_DURATION_H4_BARS)
+        # Gate de routage (round 32) ET restriction régime (H-Borne-6, 47e
+        # round) -- réutilisés tels quels, jamais recalculés. Décalé de 1 :
+        # `neuneu_gate[i]` reflète la décision prise à `j = i-1`, cohérent
+        # avec `long_signal[i]`/`short_signal[i]` déjà résolus à `j` par les
+        # fonctions `compute_*_neuneu_signal` elles-mêmes.
+        in_range_regime = np.isin(feat["regime"], ("RANGE_NEUTRE", "RANGE_TENDANCIEL"))
+        combined_gate = feat["use_neuneu"] & in_range_regime
+        neuneu_gate_shifted = np.zeros(n_total, dtype=bool)
+        neuneu_gate_shifted[1:] = combined_gate[:-1]
+    else:
+        repli_sig = borne_sig = neuneu_ctx_median = neuneu_gate_shifted = None
+
     equity = 1.0
     equity_curve = np.empty(end - start)
     equity_curve[0] = equity
@@ -593,10 +664,12 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
     range_reverses: list = []
     campaign = None
     trend_reverse = None
+    neuneu_tr = None   # dict avec en plus "_side" ("long"/"short"), cf. ci-dessous
     trades: list = []
     win_streak = 0
     n_trend_campaigns_opened = 0
     n_range_fresh_entries = 0
+    n_neuneu_opened = 0
 
     for i in range(max(1, start + 1), end):
         # ---- 0) "+Reverse" TENDANCE (H10, trend_table.py) en cours ----
@@ -697,6 +770,50 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
                     n_range_fresh_entries += 1
                 equity *= (1 - FEE * new_tr["remaining"])
 
+        # ---- 4bis) canal Neuneu (48e round, OPT-IN, cf. tête de fichier) --
+        # 3e système INDÉPENDANT (ni long ni short exclusif, ni RANGE/TENDANCE
+        # exclusif) -- géré/ouvert exactement sur le même modèle que les 2
+        # canaux ci-dessus, agrégé dans la MÊME equity/trades.
+        if use_neuneu:
+            if neuneu_tr is not None:
+                if neuneu_tr["_side"] == "long":
+                    neuneu_tr["_max_high_since_entry"] = max(
+                        neuneu_tr.get("_max_high_since_entry", neuneu_tr["entry"]), high[i])
+                    closed_n, fee_n, realized_n = process_repli_neuneu_tranche(neuneu_tr, i, high, low, c)
+                else:
+                    neuneu_tr["_min_low_since_entry"] = min(
+                        neuneu_tr.get("_min_low_since_entry", neuneu_tr["entry"]), low[i])
+                    closed_n, fee_n, realized_n = process_borne_neuneu_tranche(neuneu_tr, i, high, low, c)
+                if fee_n > 0:
+                    equity *= (1 - FEE * fee_n)
+                if closed_n:
+                    equity *= (1 + realized_n)
+                    trades.append(realized_n)
+                    win_streak = win_streak + 1 if realized_n > 0 else 0
+                    neuneu_tr = None
+            elif neuneu_gate_shifted[i]:
+                j = i - 1
+                if repli_sig["long_signal"][i]:
+                    new_neuneu = open_repli_neuneu_tranche(
+                        o[i], repli_sig["local_range"][i], repli_sig["context_range"][i],
+                        repli_sig["dumb_zone_level"][i], repli_sig["ctx_high_ref"][i],
+                    )
+                    side = "long"
+                elif borne_sig["short_signal"][i]:
+                    new_neuneu = open_borne_neuneu_tranche(
+                        o[i], borne_sig["local_range"][i], borne_sig["context_range"][i],
+                        borne_sig["ctx_high_ref"][i], borne_sig["ctx_low_ref"][i],
+                        borne_sig["local_low_ref"][i], neuneu_ctx_median[j],
+                    )
+                    side = "short"
+                else:
+                    new_neuneu = None
+                if new_neuneu is not None:
+                    new_neuneu["_side"] = side
+                    neuneu_tr = new_neuneu
+                    n_neuneu_opened += 1
+                    equity *= (1 - FEE * neuneu_tr["remaining"])
+
         # ---- 5) mark-to-market / equity curve ----
         mtm = 0.0
         for tr in tranches:
@@ -707,6 +824,10 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
             mtm += (c[i] - campaign["entry"]) / campaign["entry"] * campaign["remaining"]
         if trend_reverse is not None:
             mtm += (trend_reverse["entry"] - c[i]) / trend_reverse["entry"] * trend_reverse["frac"]
+        if neuneu_tr is not None:
+            side_sign = 1 if neuneu_tr["_side"] == "long" else -1
+            mtm += neuneu_tr["pnl_accum"] + side_sign * (
+                (c[i] - neuneu_tr["entry"]) / neuneu_tr["entry"]) * neuneu_tr["remaining"]
         equity_curve[i - start] = equity * (1 + mtm)
 
     trades_arr = np.array(trades) if trades else np.array([])
@@ -721,6 +842,7 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
         if len(trades_arr) and (trades_arr < 0).any() else None,
         "n_trend_campaigns_opened": n_trend_campaigns_opened,
         "n_range_fresh_entries": n_range_fresh_entries,
+        "n_neuneu_opened": n_neuneu_opened,
         "final_equity": equity,
     }
 
@@ -728,10 +850,12 @@ def _run_core_unified(feat: dict, profile_name: str, risk_pct: float = None,
         result["live_state"] = _build_live_state(
             feat, i=end - 1, tranches=tranches,
             range_reverses=range_reverses, campaign=campaign, trend_reverse=trend_reverse,
+            neuneu_tr=neuneu_tr,
         )
     return result
 
-def _build_live_state(feat, i, tranches, range_reverses, campaign, trend_reverse) -> dict:
+def _build_live_state(feat, i, tranches, range_reverses, campaign, trend_reverse,
+                       neuneu_tr=None) -> dict:
     """État DESCRIPTIF du protocole à la dernière bougie `i` de l'historique
     fourni -- ne devine RIEN au-delà de cet historique. `range_active` et
     `trend_active` sont rapportés INDÉPENDAMMENT (peuvent être vrais tous les
@@ -740,7 +864,11 @@ def _build_live_state(feat, i, tranches, range_reverses, campaign, trend_reverse
     (cf. ci-dessous) est responsable de l'éventuelle évaluation "bougie
     fantôme" (U4) quand un système est FLAT ici : elle rappelle
     `run_unified` sur un historique étendu d'UNE bougie plutôt que de
-    dupliquer la logique de gate dans cette fonction."""
+    dupliquer la logique de gate dans cette fonction.
+
+    `neuneu_tr` (48e round, additif, défaut `None`) : tranche du canal
+    Neuneu (`use_neuneu=True` seulement -- `None` pour tout appelant
+    existant, qui ne passe pas ce paramètre)."""
     return {
         "last_date": str(feat["date"][i]),
         "last_close": float(feat["close"][i]),
@@ -749,10 +877,12 @@ def _build_live_state(feat, i, tranches, range_reverses, campaign, trend_reverse
         "gate_regime_weekly": str(feat["gate_regime"][i]),
         "range_active": bool(tranches or range_reverses),
         "trend_active": bool(campaign is not None or trend_reverse is not None),
+        "neuneu_active": neuneu_tr is not None,
         "range_tranches": [dict(tr) for tr in tranches],
         "range_reverses": [dict(rp) for rp in range_reverses],
         "trend_campaign": dict(campaign) if campaign is not None else None,
         "trend_reverse": dict(trend_reverse) if trend_reverse is not None else None,
+        "neuneu_tranche": dict(neuneu_tr) if neuneu_tr is not None else None,
     }
 
 def _describe_range_hold(live: dict) -> dict:

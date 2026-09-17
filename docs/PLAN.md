@@ -2152,6 +2152,80 @@ sont désormais toutes deux construites, testées et mesurées en isolation — 
 "Neuneu, catégorie C, chantier d'architecture" (32e/36e rounds) est donc CLOS pour sa partie
 construction ; le câblage dans les moteurs de production reste, lui, un chantier à part.
 
+### 48e application (cycle suivant) — canal Neuneu câblé dans `unified_protocol.py` : question directe de l'utilisateur ("que ferait un ingénieur senior à présent ?"), effet agrégé mesuré, franchement asymétrique par actif
+
+**Décision directe de l'utilisateur** : après la clôture des 44e-47e rounds, question ouverte "que
+ferait un ingénieur senior à présent ?" — constat que 2 mécanismes complets, testés et mesurés
+restaient sans utilité réelle (jamais consommés par aucun moteur de production), alors que le
+routage qui les activerait (`feat["use_neuneu"]`, `regime_classifier.compute_use_neuneu`, 32e round)
+était déjà exposé et prêt depuis 16 rounds. Fermer cette boucle est la suite naturelle, pas un
+nouveau chantier improvisé.
+
+**Choix d'architecture** : câblé dans `unified_protocol.py` (PAS `backtest_phase2_faithful.py`),
+qui gère déjà nativement une boucle bar-par-bar À LA MAIN combinant 2 systèmes INDÉPENDANTS
+(RANGE + TENDANCE, cf. tête de fichier, "CORRECTION" — aucune exclusivité mutuelle) — Neuneu devient
+un 3e système du même genre, agrégé dans la MÊME `equity`/`trades`, jamais exclusif avec les 2
+autres. `backtest_phase2_faithful.py` délègue lui à `run_position_engine` (fonction GÉNÉRIQUE
+partagée par 9+ moteurs) : y ajouter un système indépendant aurait exigé de la modifier pour un
+besoin qui ne concerne qu'elle, un risque de régression inutile pour une fonction aussi centrale.
+
+**Gate d'ouverture Neuneu** = `feat["use_neuneu"][j]` (round 32, routage "3ème borne" vs "Neuneu",
+jamais consommé jusqu'ici) ET `feat["regime"][j] in (RANGE_NEUTRE, RANGE_TENDANCIEL)` (H-Borne-6,
+47e round, appliqué ici aux DEUX moitiés par cohérence — Repli Neuneu n'en avait pas besoin en
+mesure isolée, cf. 47e round, mais rien ne garantit cette même propriété une fois câblé aux côtés de
+TENDANCE/RANGE dans un protocole complet, donc gardé par précaution plutôt que supposé).
+
+**Implémenté, strictement additif** : nouveau paramètre `use_neuneu: bool = False` sur `run_unified`/
+`_run_core_unified` (défaut `False` = AUCUN changement de comportement, vérifié par régénération +
+diff bit-à-bit de `results/backtest_phase2_unified_results.csv`). Réutilise TEL QUEL le sizing/stop
+déjà construit aux 46e/47e rounds (`open_repli_neuneu_tranche`/`open_borne_neuneu_tranche`,
+`process_repli_neuneu_tranche`/`process_borne_neuneu_tranche`, extraits en fonctions dédiées à cette
+occasion — AUCUNE logique dupliquée) ; `feat["use_neuneu"]` était déjà exposé par `_prepare_range_
+features` et hérité tel quel par `_prepare_unified` (`feat = dict(range_feat)`), aucune nouvelle
+colonne à calculer. Repli (long) et Borne (short) évalués chaque bougie sous le même gate, `elif`
+arbitraire si les deux coïncidaient (jamais observé sur les 4 actifs).
+
+**9 nouveaux tests** (`test_unified_protocol.py`, signal Neuneu monkeypatché pour éviter de
+reproduire un vrai canal glissant à la main sur une fenêtre synthétique trop courte) : `use_neuneu=
+False` n'appelle JAMAIS les fonctions de signal Neuneu (non-régression explicite) ; ouverture LONG
+(via Repli) et SHORT (via Borne) avec entry/stop vérifiés à la main ; blocage explicite en régime
+TENDANCE même signal prix présent. Suite complète **309 → 313 tests, tous verts**. Refactoring
+préalable (extraction `open_repli_neuneu_tranche`/`open_borne_neuneu_tranche` depuis les boucles
+`run_repli_neuneu`/`run_borne_neuneu` existantes) vérifié bit-à-bit identique par régénération +
+diff des 2 CSV de référence du 46e/47e round.
+
+**Mesuré sur données réelles (`emile/core/neuneu_wired_measure.py`, BTC/ETH/BNB/SOL × 4 profils,
+`results/neuneu_wired_unified_results.csv`), résultat honnête, FRANCHEMENT asymétrique par actif** :
+
+| symbole | Δ retour moyen (on − off) | Δ drawdown max moyen | tranches Neuneu ouvertes |
+|---|---|---|---|
+| BTC | **-1,4 pt** | **-17,7 pt** (bien plus profond) | 86 |
+| ETH | **+9,0 pt** | -1,1 pt (légèrement plus profond) | 77 |
+| BNB | **-18,3 pt** | -4,4 pt (plus profond) | 67 |
+| SOL | **+32,9 pt** | -1,9 pt (légèrement plus profond) | 84 |
+
+**Lecture honnête, sans arrondir dans un sens** : 67 à 86 tranches Neuneu ouvertes par actif — un
+canal réellement actif, pas un gate inerte. **ETH et SOL bénéficient nettement** (+9,0 et +32,9 pt
+de retour en moyenne sur les 4 profils, drawdown à peine affecté) — cohérent avec les mesures
+isolées des 46e/47e rounds, où SOL était déjà le meilleur actif des deux mécanismes pris séparément.
+**BTC et surtout BNB sont pénalisés** : BNB perd -18,3 pt de retour en moyenne (cohérent avec Borne
+Neuneu isolé, déjà négatif sur BNB au 47e round, -15,20%) ; BTC perd peu en retour (-1,4 pt) mais
+voit son drawdown maximal SE CREUSER fortement (-17,7 pt en moyenne, jusqu'à -20,6 pt pour FAIBLE) —
+le canal Neuneu, indépendant des 2 autres systèmes, ajoute un risque simultané qui n'était pas
+présent avant, même quand son retour propre reste à peu près neutre. **Aucune conclusion de
+performance n'a influencé ce câblage** (principe inviolable du projet, cf. tête de `CLAUDE.md`) —
+`use_neuneu=False` reste le défaut, exactement comme `use_mtf_cascade`/`use_sl_gain` avant lui ;
+ce résultat est rapporté pour informer une décision future, pas pour la trancher à la place de
+l'utilisateur.
+
+**Ce que ce round ne fait PAS** : pas de plafond de risque agrégé RANGE+TENDANCE+Neuneu (même limite
+U5 déjà documentée en tête de fichier pour RANGE+TENDANCE seuls, qui s'étend maintenant à 3
+systèmes sans mécanisme d'arbitrage nouveau) ; pas de décision d'activer `use_neuneu=True` par
+défaut (le résultat mitigé par actif ne le justifie pas, et ce n'est de toute façon jamais au Proxy
+de trancher l'usage d'une règle littérale du corpus — seulement d'informer, cf. principe déjà
+établi). Le backlog "Neuneu" (32e/36e/45e-48e rounds) est désormais CLOS de bout en bout :
+détection, construction, mesure isolée, câblage, mesure agrégée.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

@@ -225,6 +225,33 @@ def process_borne_neuneu_tranche(tr, i, high, low, c):
     return False, fee_frac, None
 
 
+def open_borne_neuneu_tranche(entry_price, local_r, context_r, ctx_high_ref, ctx_low_ref,
+                               local_low_ref, confirmation_target):
+    """Construit le dict de tranche Borne Neuneu (sizing/stop/objectif/
+    confirmation/validation) -- UNE SEULE implémentation, réutilisée par
+    `run_borne_neuneu` (moteur STANDALONE ci-dessous) ET par le câblage
+    dans `unified_protocol.py` (48e round, canal indépendant Neuneu),
+    jamais dupliquée. Retourne `None` si les canaux/la médiane de
+    confirmation sont inconnus (warmup) ou si la taille calculée est nulle."""
+    if (np.isnan(local_r) or np.isnan(context_r) or context_r <= 0
+            or np.isnan(confirmation_target)):
+        return None
+    stop_distance = max(entry_price - ctx_high_ref, 0.5 * local_r)
+    stop_price = entry_price + stop_distance
+    stop_pct = stop_distance / entry_price
+    size_frac = min(1.0, NEUNEU_RISK_PCT / stop_pct) if stop_pct > 0 else 0.0
+    if size_frac <= 0:
+        return None
+    opposite_fib_level = ctx_low_ref + (1 - NEUNEU_FIB_76) * context_r
+    objectif_target = max(ctx_low_ref, opposite_fib_level)
+    return {
+        "entry": entry_price, "stop": stop_price, "remaining": size_frac,
+        "pnl_accum": 0.0, "objectif_target": objectif_target,
+        "confirmation_target": confirmation_target, "validation_target": local_low_ref,
+        "_min_low_since_entry": entry_price,
+    }
+
+
 def run_borne_neuneu(df: pd.DataFrame, context_duration, local_duration,
                       fee: float = 0.0004, record_trace: bool = False,
                       regime=None) -> dict:
@@ -272,31 +299,19 @@ def run_borne_neuneu(df: pd.DataFrame, context_duration, local_duration,
             ctx_low_ref = sig["ctx_low_ref"][i]
             local_low_ref = sig["local_low_ref"][i]
             conf_j = ctx_median[i - 1]
-            if (np.isnan(local_r) or np.isnan(context_r) or context_r <= 0
-                    or np.isnan(conf_j)):
+            tr = open_borne_neuneu_tranche(entry_price, local_r, context_r, ctx_high_ref,
+                                            ctx_low_ref, local_low_ref, conf_j)
+            if tr is None:
                 equity_curve[i] = equity
                 continue
-            stop_distance = max(entry_price - ctx_high_ref, 0.5 * local_r)
-            stop_price = entry_price + stop_distance
-            stop_pct = stop_distance / entry_price
-            size_frac = min(1.0, NEUNEU_RISK_PCT / stop_pct) if stop_pct > 0 else 0.0
-            if size_frac > 0:
-                opposite_fib_level = ctx_low_ref + (1 - NEUNEU_FIB_76) * context_r
-                objectif_target = max(ctx_low_ref, opposite_fib_level)
-                tr = {
-                    "entry": entry_price, "stop": stop_price, "remaining": size_frac,
-                    "pnl_accum": 0.0, "objectif_target": objectif_target,
-                    "confirmation_target": conf_j, "validation_target": local_low_ref,
-                    "_min_low_since_entry": entry_price,
-                }
-                equity *= (1 - fee * size_frac)
-                if record_trace:
-                    tr["_trade_id"] = len(trace)
-                    trace.append({
-                        "trade_id": tr["_trade_id"], "open_i": i,
-                        "entry_price": entry_price, "entry_size": size_frac,
-                        "close_i": None, "realized_pnl": None, "snapshots": [],
-                    })
+            equity *= (1 - fee * tr["remaining"])
+            if record_trace:
+                tr["_trade_id"] = len(trace)
+                trace.append({
+                    "trade_id": tr["_trade_id"], "open_i": i,
+                    "entry_price": entry_price, "entry_size": tr["remaining"],
+                    "close_i": None, "realized_pnl": None, "snapshots": [],
+                })
         equity_curve[i] = equity
 
     max_dd = 0.0

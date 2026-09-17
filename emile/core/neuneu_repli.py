@@ -243,6 +243,31 @@ def process_repli_neuneu_tranche(tr, i, high, low, c):
     return False, fee_frac, None
 
 
+def open_repli_neuneu_tranche(entry_price, local_r, context_r, dz_level, ctx_high_ref):
+    """Construit le dict de tranche Repli Neuneu (sizing/stop/objectif) --
+    UNE SEULE implémentation, réutilisée par `run_repli_neuneu` (moteur
+    STANDALONE ci-dessous) ET par le câblage dans `unified_protocol.py`
+    (48e round, canal indépendant Neuneu), jamais dupliquée. Retourne `None`
+    si les canaux sont inconnus (warmup) ou si la taille calculée est
+    nulle -- même convention que `make_open_tranche_fn`."""
+    if np.isnan(local_r) or np.isnan(context_r) or context_r <= 0:
+        return None
+    stop_distance = max(local_r, 0.5 * context_r)
+    stop_price = entry_price - stop_distance
+    stop_pct = stop_distance / entry_price
+    size_frac = min(1.0, NEUNEU_RISK_PCT / stop_pct) if stop_pct > 0 else 0.0
+    if size_frac <= 0:
+        return None
+    opposite_fib_low = ctx_high_ref - NEUNEU_FIB_HIGH * context_r
+    objectif_target = min(dz_level, opposite_fib_low)
+    return {
+        "entry": entry_price, "stop": stop_price, "remaining": size_frac,
+        "pnl_accum": 0.0, "dumb_zone_level": dz_level,
+        "ctx_high_ref": ctx_high_ref, "objectif_target": objectif_target,
+        "_max_high_since_entry": entry_price,
+    }
+
+
 def run_repli_neuneu(df: pd.DataFrame, context_duration, local_duration,
                       fee: float = 0.0004, record_trace: bool = False) -> dict:
     """Moteur COMPLET, mono-tranche (le corpus ne décrit aucune
@@ -285,32 +310,20 @@ def run_repli_neuneu(df: pd.DataFrame, context_duration, local_duration,
             entry_price = o[i]
             local_r = sig["local_range"][i]
             context_r = sig["context_range"][i]
-            if np.isnan(local_r) or np.isnan(context_r) or context_r <= 0:
+            dz_level = sig["dumb_zone_level"][i]
+            ctx_high_ref = sig["ctx_high_ref"][i]
+            tr = open_repli_neuneu_tranche(entry_price, local_r, context_r, dz_level, ctx_high_ref)
+            if tr is None:
                 equity_curve[i] = equity
                 continue
-            stop_distance = max(local_r, 0.5 * context_r)
-            stop_price = entry_price - stop_distance
-            stop_pct = stop_distance / entry_price
-            size_frac = min(1.0, NEUNEU_RISK_PCT / stop_pct) if stop_pct > 0 else 0.0
-            if size_frac > 0:
-                dz_level = sig["dumb_zone_level"][i]
-                ctx_high_ref = sig["ctx_high_ref"][i]
-                opposite_fib_low = ctx_high_ref - NEUNEU_FIB_HIGH * context_r
-                objectif_target = min(dz_level, opposite_fib_low)
-                tr = {
-                    "entry": entry_price, "stop": stop_price, "remaining": size_frac,
-                    "pnl_accum": 0.0, "dumb_zone_level": dz_level,
-                    "ctx_high_ref": ctx_high_ref, "objectif_target": objectif_target,
-                    "_max_high_since_entry": entry_price,
-                }
-                equity *= (1 - fee * size_frac)
-                if record_trace:
-                    tr["_trade_id"] = len(trace)
-                    trace.append({
-                        "trade_id": tr["_trade_id"], "open_i": i,
-                        "entry_price": entry_price, "entry_size": size_frac,
-                        "close_i": None, "realized_pnl": None, "snapshots": [],
-                    })
+            equity *= (1 - fee * tr["remaining"])
+            if record_trace:
+                tr["_trade_id"] = len(trace)
+                trace.append({
+                    "trade_id": tr["_trade_id"], "open_i": i,
+                    "entry_price": entry_price, "entry_size": tr["remaining"],
+                    "close_i": None, "realized_pnl": None, "snapshots": [],
+                })
         equity_curve[i] = equity
 
     max_dd = 0.0

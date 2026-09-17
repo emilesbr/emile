@@ -548,6 +548,15 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   +4,83%/SOL +10,18%, BNB seul négatif -15,20%), win rate 27-42% (loin des "~85%" revendiqués par le
   corpus, même limite fondamentale — proxy, pas le vrai indicateur). Détail complet : `PLAN.md`
   section "47e application".
+  **CÂBLÉ dans `unified_protocol.py` au 48e round** (question directe de l'utilisateur, "que ferait
+  un ingénieur senior à présent ?") — nouveau canal INDÉPENDANT (`use_neuneu`, opt-in, défaut
+  `False`), 3e système aux côtés de RANGE/TENDANCE, réutilisant `feat["use_neuneu"]` (round 32,
+  jamais consommé jusqu'ici) + le filtre régime H-Borne-6. Mesuré agrégé BTC/ETH/BNB/SOL × 4
+  profils : effet **franchement asymétrique par actif** — ETH (+9,0 pt de retour moyen) et SOL
+  (+32,9 pt) bénéficient nettement, BNB (-18,3 pt) et BTC (drawdown -17,7 pt en moyenne, retour
+  quasi neutre) sont pénalisés. `use_neuneu=False` reste le défaut (aucune conclusion de
+  performance n'a influencé le câblage). Backlog "Neuneu" (32e/36e/45e-48e rounds) CLOS de bout en
+  bout. Détail complet : `PLAN.md` section "48e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre

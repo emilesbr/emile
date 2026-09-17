@@ -615,6 +615,133 @@ def test_decide_now_requires_volume_column():
     else:
         raise AssertionError("decide_now aurait dû lever ValueError sans colonne 'volume'")
 
+# ---------------------------------------------------------------------------
+# Canal Neuneu (48e round) -- OPT-IN, câblage indépendant RANGE/TENDANCE.
+# `compute_repli_neuneu_signal`/`compute_borne_neuneu_signal`/`context_
+# channel_median` monkeypatchés (même technique "monkeypatch-and-observe"
+# déjà établie dans ce projet) pour injecter un signal à un bar précis SANS
+# reproduire un vrai canal glissant à la main -- `_make_base_feat` ne couvre
+# que WARMUP+25 bougies, trop court pour un vrai warmup de canal (90/30
+# bougies, `CONTEXT_DURATION_H4_BARS`/`LOCAL_DURATION_H4_BARS`).
+# ---------------------------------------------------------------------------
+import emile.core.unified_protocol as unified_protocol_mod
+
+def _feat_with_neuneu(n=N, use_neuneu_val=True, regime_val="RANGE_NEUTRE"):
+    feat = _make_base_feat(n)
+    feat["use_neuneu"] = np.full(n, use_neuneu_val)
+    feat["regime"] = np.full(n, regime_val, dtype=object)
+    return feat
+
+def _empty_borne_sig(n):
+    return {"short_signal": np.zeros(n, dtype=bool), "context_range": np.full(n, np.nan),
+            "ctx_high_ref": np.full(n, np.nan), "ctx_low_ref": np.full(n, np.nan),
+            "local_range": np.full(n, np.nan), "local_low_ref": np.full(n, np.nan)}
+
+def _empty_repli_sig(n):
+    return {"long_signal": np.zeros(n, dtype=bool), "dumb_zone_level": np.full(n, np.nan),
+            "local_range": np.full(n, np.nan), "context_range": np.full(n, np.nan),
+            "ctx_high_ref": np.full(n, np.nan)}
+
+def test_use_neuneu_false_default_never_calls_neuneu_signals(monkeypatch):
+    """`use_neuneu=False` (défaut) : `compute_repli_neuneu_signal`/
+    `compute_borne_neuneu_signal` ne doivent JAMAIS être appelées --
+    comportement rigoureusement inchangé pour tout appelant existant."""
+    feat = _feat_with_neuneu()
+    def boom(*a, **k):
+        raise AssertionError("ne doit jamais être appelé quand use_neuneu=False")
+    monkeypatch.setattr(unified_protocol_mod, "compute_repli_neuneu_signal", boom)
+    monkeypatch.setattr(unified_protocol_mod, "compute_borne_neuneu_signal", boom)
+    res = _run_core_unified(feat, "MODERE", use_neuneu=False)
+    assert res["n_neuneu_opened"] == 0
+
+def test_use_neuneu_true_opens_long_tranche_via_repli_signal(monkeypatch):
+    """Signal Repli Neuneu fabriqué à un bar précis : la tranche doit
+    s'ouvrir avec exactement les entry/stop calculés par
+    `open_repli_neuneu_tranche` (réutilisée, pas réimplémentée), et rester
+    seule ouverte tout le reste de la fenêtre (prix plat, ne retouche ni
+    l'objectif ni le stop)."""
+    n = N
+    open_i = WARMUP + 5
+    feat = _feat_with_neuneu(n, use_neuneu_val=True, regime_val="RANGE_NEUTRE")
+
+    def fake_repli(df, context_duration, local_duration):
+        sig = _empty_repli_sig(n)
+        sig["long_signal"][open_i] = True
+        sig["dumb_zone_level"][open_i] = 200.0
+        sig["local_range"][open_i] = 10.0
+        sig["context_range"][open_i] = 40.0
+        sig["ctx_high_ref"][open_i] = 300.0
+        return sig
+
+    monkeypatch.setattr(unified_protocol_mod, "compute_repli_neuneu_signal", fake_repli)
+    monkeypatch.setattr(unified_protocol_mod, "compute_borne_neuneu_signal",
+                         lambda df, cd, ld, regime=None: _empty_borne_sig(n))
+    monkeypatch.setattr(unified_protocol_mod, "context_channel_median", lambda df, d: np.full(n, np.nan))
+
+    res = _run_core_unified(feat, "MODERE", use_neuneu=True, record_state=True)
+    assert res["n_neuneu_opened"] == 1
+    live = res["live_state"]
+    assert live["neuneu_active"] is True
+    tr = live["neuneu_tranche"]
+    assert tr["_side"] == "long"
+    assert abs(tr["entry"] - 100.0) < 1e-9   # open[open_i] du feat de base
+    # stop_distance = max(local_range=10, 0.5*context_range=20) = 20 -> stop=80
+    assert abs(tr["stop"] - 80.0) < 1e-9
+
+def test_use_neuneu_true_opens_short_tranche_via_borne_signal(monkeypatch):
+    """Symétrique : signal Borne Neuneu fabriqué -- tranche SHORT ouverte
+    avec entry/stop calculés par `open_borne_neuneu_tranche`."""
+    n = N
+    open_i = WARMUP + 5
+    feat = _feat_with_neuneu(n, use_neuneu_val=True, regime_val="RANGE_NEUTRE")
+
+    def fake_borne(df, context_duration, local_duration, regime=None):
+        sig = _empty_borne_sig(n)
+        sig["short_signal"][open_i] = True
+        sig["context_range"][open_i] = 50.0
+        sig["ctx_high_ref"][open_i] = 90.0
+        sig["ctx_low_ref"][open_i] = 40.0
+        sig["local_range"][open_i] = 10.0
+        sig["local_low_ref"][open_i] = 60.0
+        return sig
+
+    monkeypatch.setattr(unified_protocol_mod, "compute_repli_neuneu_signal",
+                         lambda df, cd, ld: _empty_repli_sig(n))
+    monkeypatch.setattr(unified_protocol_mod, "compute_borne_neuneu_signal", fake_borne)
+    monkeypatch.setattr(unified_protocol_mod, "context_channel_median", lambda df, d: np.full(n, 65.0))
+
+    res = _run_core_unified(feat, "MODERE", use_neuneu=True, record_state=True)
+    assert res["n_neuneu_opened"] == 1
+    tr = res["live_state"]["neuneu_tranche"]
+    assert tr["_side"] == "short"
+    # stop_distance = max(entry-ctx_high_ref=100-90=10, 0.5*local_range=5) = 10 -> stop=110
+    assert abs(tr["stop"] - 110.0) < 1e-9
+
+def test_use_neuneu_blocked_when_regime_is_tendance(monkeypatch):
+    """H-Borne-6 (47e round), appliqué aussi à Repli Neuneu par cohérence :
+    le canal Neuneu ne doit JAMAIS s'ouvrir sur un bar en régime TENDANCE,
+    même si le signal prix serait par ailleurs présent."""
+    n = N
+    open_i = WARMUP + 5
+    feat = _feat_with_neuneu(n, use_neuneu_val=True, regime_val="TENDANCE")
+
+    def fake_repli(df, context_duration, local_duration):
+        sig = _empty_repli_sig(n)
+        sig["long_signal"][open_i] = True
+        sig["dumb_zone_level"][open_i] = 200.0
+        sig["local_range"][open_i] = 10.0
+        sig["context_range"][open_i] = 40.0
+        sig["ctx_high_ref"][open_i] = 300.0
+        return sig
+
+    monkeypatch.setattr(unified_protocol_mod, "compute_repli_neuneu_signal", fake_repli)
+    monkeypatch.setattr(unified_protocol_mod, "compute_borne_neuneu_signal",
+                         lambda df, cd, ld, regime=None: _empty_borne_sig(n))
+    monkeypatch.setattr(unified_protocol_mod, "context_channel_median", lambda df, d: np.full(n, np.nan))
+
+    res = _run_core_unified(feat, "MODERE", use_neuneu=True)
+    assert res["n_neuneu_opened"] == 0, "régime TENDANCE -- doit bloquer même avec un signal prix présent"
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     failures = 0
