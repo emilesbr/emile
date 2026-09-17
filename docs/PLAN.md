@@ -2466,6 +2466,29 @@ notre résultat déjà publié.
 Aucun changement de code — round de documentation pure. Suite de tests inchangée (`pytest -m ""`
 → 313/313).
 
+### 56e application — hypothèse directe de l'utilisateur testée : `H-Context-BB-UT+1`, 2 corroborations fortes sur 3
+
+L'utilisateur a formulé une hypothèse en conversation (pas une capture) : le canal de "contexte"
+serait une bande de Bollinger (`SMA(n) ± k×écart-type`, pas `SMA ± k×ATR`) calculée sur l'UT
+IMMÉDIATEMENT SUPÉRIEURE à celle du graphique affiché — ce qui expliquerait la forme en paliers
+plats déjà observée partout (grandeur d'UT supérieure, mise à jour une fois par bougie de cette UT
+seulement). Détail complet, méthode, chiffres : `docs/CONTEXT_CHANNEL_REVERSE_ENGINEERING.md`
+section 10.
+
+**Test rigoureux, hypothèse PRÉ-ENREGISTRÉE** (période=20, k=2 — le "2" du triplet confirmé, PAS une
+recherche libre), rejoué sur les 3 points déjà mesurés (rounds 51/52/54) :
+- **Round 54 (ETH 4h → contexte=D1)** : les 2 bornes de la légende collent au `Bollinger(20,2)` du
+  D1 causal à **−0,34%/+0,31%**, simultanément, avec le MÊME k.
+- **Round 52 (BTC 15 min → contexte=H1)** : la valeur unique colle à **−0,07% à k=2,5**.
+- **Round 51 (ETH 1D → contexte=Semaine)** : NE reproduit PAS (+6,1%/−29,7%) — écart non expliqué,
+  possible mesure pixel d'origine contaminée ou convention de semaine différente.
+
+**Statut de l'hypothèse mis à jour** : rebaptisée `H-Context-BB-UT+1` (remplace `H-Context-MA20`) —
+2 corroborations fortes sur 3, la piste la plus solide trouvée à ce jour, mais pas encore
+suffisante pour toucher `regime_classifier.py`. Aucun changement de code.
+
+Suite de tests inchangée (`pytest -m ""` → 313/313).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

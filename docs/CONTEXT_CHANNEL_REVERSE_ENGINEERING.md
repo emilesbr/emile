@@ -279,3 +279,46 @@ dans un "Data Window" TradingView, éliminant toute ambiguïté de correspondanc
 abandonner la piste `SMA20` et chercher un autre schéma (nested Fibonacci ratios, ATR bandé sur une
 UT différente, etc.) — mais SANS recherche non contrainte sur l'espace des périodes, pour ne pas
 retomber dans l'erreur méthodologique documentée ci-dessus.
+
+## 10. 56e round — hypothèse directe de l'utilisateur testée : `H-Context-BB-UT+1` (Bollinger sur l'UT SUPÉRIEURE), 2 corroborations fortes sur 3
+
+**Hypothèse formulée par l'utilisateur** (raisonnement en conversation, pas une capture) : *"le
+contexte est dérivé des unités temporelles supérieures à la timeframe étudiée. C'est déjà un peu
+comme les bandes de Bollinger et non les moyennes mobiles. C'est pour ça que nous voyons sur les
+graphiques des cases grises... elles sont plates car c'est le prix de l'UT au-dessus qui est
+mesuré, et nous sommes dans l'UT inférieur."* Deux idées combinées, jamais testées ensemble
+jusqu'ici : (1) le canal de contexte est une bande de type Bollinger (`SMA(n) ± k×écart-type(n)`,
+PAS `SMA ± k×ATR` comme testé aux rounds précédents), (2) calculée sur l'UT IMMÉDIATEMENT
+SUPÉRIEURE à celle du graphique affiché — ce qui expliquerait directement la forme en paliers plats
+déjà observée sur toutes les captures (une grandeur d'UT supérieure ne se met à jour qu'une fois par
+bougie de cette UT, donc reste figée entre deux mises à jour vues depuis l'UT inférieure).
+
+**Test rigoureux, hypothèse PRÉ-ENREGISTRÉE (période=20, k=2 — le "2" du triplet confirmé `(1, 20,
+2)`, PAS une recherche libre)**, rejoué sur les 3 points déjà mesurés :
+
+| Round | UT du graphique | UT testée ("au-dessus") | Résultat |
+|---|---|---|---|
+| 54 (ETH 4h, légende complète) | H4 | D1 | **top: −0,34%, bot: +0,31%** — les 2 bornes de la légende (2412,8 et 2220,8) collent au `Bollinger(20,2)` du D1 causal, simultanément, avec le MÊME k pré-enregistré |
+| 52 (BTC 15 min, valeur unique) | M15 | H1 | **−0,07% à k=2,5 / −0,11% à k=3** (single-sided, cohérent avec une seule valeur mesurée) — nettement mieux que tout ce qui avait été testé sur cette même bougie aux rounds précédents (meilleur essai alors : 0,9%) |
+| 51 (ETH 1D, bande pixel) | 1D | Semaine (calendaire, dim.-lun.) | **NE REPRODUIT PAS** : top +6,1%, bot −29,7% — écart bien trop large pour être un artefact de calendrier (semaine démarrant lundi vs dimanche) |
+
+**Lecture honnête** : 2 points sur 3 corroborent fortement une hypothèse PRÉCISE et pré-enregistrée
+(pas une recherche libre comme au 54e round) — un progrès net par rapport à tout ce qui avait été
+testé jusqu'ici (le 51e round, meilleur résultat précédent, ne matchait qu'UNE seule borne, sur la
+MÊME UT que le graphique, pas l'UT supérieure). Le 51e round ne réplique PAS sous ce nouveau test —
+soit sa mesure pixel d'origine était contaminée/erronée (déjà signalé comme risque à l'époque : une
+ligne bleue de moyenne mobile distincte traversait la même zone), soit "l'UT au-dessus" n'est pas
+toujours la semaine calendaire standard pour un graphique journalier (convention de semaine
+propriétaire à l'outil, non vérifiable sans plus de captures). Non tranché.
+
+**Statut de l'hypothèse, mis à jour** : rebaptisée `H-Context-BB-UT+1` (remplace `H-Context-MA20`,
+rétrogradée au 54e round) — 2 corroborations indépendantes fortes (rounds 52 et 54, actifs et UT
+différents), 1 point non reproduit (round 51). C'est la piste la plus solide trouvée à ce jour,
+mais PAS encore suffisante pour toucher `regime_classifier.py` : 2/3 n'est pas une preuve
+définitive, et l'écart du 51e round reste inexpliqué plutôt que balayé sous le tapis.
+
+**Ce que ce round NE fait PAS** : aucun changement de code. Prochaine étape proposée : d'autres
+captures avec légende complète (comme aux 54e/56e rounds) sur d'autres UT/actifs pour départager le
+désaccord du 51e round — en particulier une capture 1D avec une valeur de légende explicite (pas
+juste une mesure de nuage par pixels, plus sujette à contamination) permettrait de retester
+proprement l'hypothèse "UT au-dessus = Semaine" pour un graphique journalier.

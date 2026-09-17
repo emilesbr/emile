@@ -634,6 +634,17 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   la lecture de structure sous le Daily, cohérent avec notre propre NO-GO M15 mesuré au 43e round
   (une opinion n'est pas une preuve supplémentaire, mais un signal dans le même sens). Aucun
   changement de code. Détail complet : `PLAN.md` section "55e application".
+
+  **56e round — hypothèse directe de l'utilisateur testée, `H-Context-BB-UT+1` (remplace
+  `H-Context-MA20`) : 2 corroborations fortes sur 3.** L'utilisateur a proposé que le contexte soit
+  une bande de Bollinger (écart-type, pas ATR) calculée sur l'UT IMMÉDIATEMENT SUPÉRIEURE à celle du
+  graphique — expliquant la forme en paliers plats déjà observée partout. Testé rigoureusement
+  (période=20, k=2 pré-enregistrés, PAS de recherche libre) sur les 3 points déjà mesurés : round 54
+  (ETH 4h→contexte D1) colle à −0,34%/+0,31% sur les 2 bornes simultanément ; round 52 (BTC 15
+  min→contexte H1) colle à −0,07% ; round 51 (ETH 1D→contexte Semaine) NE reproduit PAS (+6,1%/
+  −29,7%, écart inexpliqué). 2/3 est la corroboration la plus solide trouvée à ce jour sur ce sujet,
+  toujours pas suffisant pour toucher `regime_classifier.py`. Aucun changement de code. Détail
+  complet : `PLAN.md` section "56e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre
