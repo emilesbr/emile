@@ -536,9 +536,18 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   seulement pour un SHORT, un stop au-dessus de l'entrée n'ayant aucun sens pour un LONG) est un
   **SHORT**, structure qui n'existe NULLE PART dans `position_engine.py` (la seule jambe short du
   fichier, `H-Reverse-Range`, est explicitement BORNÉE — un seul stop/une seule cible, jamais une
-  table à étapes) — construire "Borne Neuneu" fidèlement exigerait une vraie table RANGE short
-  symétrique, chantier d'architecture à part entière (cf. section "47e application" pour son
-  traitement séparé).
+  table à étapes) — **CONSTRUIT ET MESURÉ au 47e round**, nouveau module STANDALONE
+  `emile/core/neuneu_borne.py` (15 tests), MIROIR structurel de `neuneu_repli.py`. Trouvaille
+  majeure faite en mesurant sur données réelles : le gate littéral ("au-delà des contextes"), sans
+  filtre de régime, produit un résultat catastrophique (win rate 23-27%, retours -42% à -64%) car
+  54% de ses signaux BTC surviennent en régime TENDANCE (un nouveau plus haut local y est normal,
+  pas un excès) — shorter systématiquement revient à trader CONTRE la tendance. Corrigé en
+  restreignant aux régimes RANGE_NEUTRE/RANGE_TENDANCIEL (réutilisation directe de `regime_
+  classifier.add_regime`, cohérent avec "Neuneu" = famille RANGE du guide, jamais Tendance — aucun
+  seuil inventé) : résultat honnête bien plus crédible, 3/4 actifs positifs (BTC +4,56%/ETH
+  +4,83%/SOL +10,18%, BNB seul négatif -15,20%), win rate 27-42% (loin des "~85%" revendiqués par le
+  corpus, même limite fondamentale — proxy, pas le vrai indicateur). Détail complet : `PLAN.md`
+  section "47e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre

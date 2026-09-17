@@ -2066,8 +2066,91 @@ et d'une prise de profit partielle à 50%) tandis qu'ETH/SOL sont positifs. **2/
 le routage `regime_classifier.compute_use_neuneu` déjà existant depuis le 32e round pour décider
 QUAND appliquer Neuneu plutôt que "3ème borne") reste un chantier séparé, non fait ici — ce round
 livre un moteur complet, testé et mesuré en isolation, pas encore intégré au protocole de
-production. Half du mécanisme Neuneu (Borne Neuneu, le short) reste également à construire (cf.
-section "47e application").
+production. La moitié du mécanisme Neuneu (Borne Neuneu, le short) reste également à construire
+(cf. section "47e application").
+
+### 47e application (cycle suivant) — Borne Neuneu (short) construit, testé et mesuré : trouvaille majeure (le gate brut fait fondre les résultats en tradant CONTRE la tendance), résultat corrigé bien plus honnête
+
+**Décision directe de l'utilisateur** : suite de "trouve une solution" ("Oui, construire" pour
+Borne Neuneu), construction de la table RANGE symétrique côté short — chantier d'architecture
+identifié dès le 36e round, jamais tenté avant ce round.
+
+**Lecture des 2 clauses du Stoploss ("au-dessus du plus haut du range ET au moins égal à la moitié
+de la taille du canal de tendance")** : comme pour Repli Neuneu, MÊME structure "distance X, au
+moins égale à Y" mais avec les rôles échangés — le stop est ANCRÉ au range (`ctx_high`, pas à
+l'entrée, puisque l'entrée est déjà au-delà de `ctx_high` par construction du gate d'entrée) avec un
+PLANCHER de 0,5×canal de tendance : `stop_distance = MAX(entry - ctx_high, 0,5*local_range)`.
+
+**Distinction réelle entre les 2 écrans, vérifiée mot pour mot (pas une négligence)** : la Validation
+de Borne Neuneu cite "canal de TENDANCE opposé" (≠ "CONTEXTE opposé" de Repli Neuneu) — donc le
+niveau de comparaison est `local_low` (canal LOCAL), pas `ctx_low` (canal de CONTEXTE), pour ce
+mécanisme précis. L'Objectif, lui, cite bien "CONTEXTE opposé" — cohérent avec Repli Neuneu.
+
+**"Sommet récent" réutilisé en MIROIR (H-Borne-4)** : la citation recopie mot pour mot la même
+formule que Repli Neuneu pour la Validation ("déplacement du stoploss au sommet récent") — lue ici
+comme un artefact de gabarit (même auteur, même tournure) plutôt qu'une prescription littérale de
+remonter le stop d'un short vers un sommet (ce qui dégraderait sa protection, et contredirait la
+mise en garde explicite de l'écran "ne jamais déplacer le stop à breakeven") : `_min_low_since_
+entry` (MIROIR exact de `_max_high_since_entry`), resserrant le stop vers le bas.
+
+**Objectif = sortie TOTALE (pas de fraction inventée)** : contrairement à Repli Neuneu ("TP
+partiel"), la citation dit explicitement "sortir TOUS les profits restants" — aucune extrapolation
+de fraction nécessaire ici, contrairement au 46e round.
+
+**Implémenté** (`emile/core/neuneu_borne.py`, nouveau module STANDALONE, MIROIR structurel de
+`neuneu_repli.py`) : `_borne_neuneu_state_machine` (gate DIRECT, pas de machine à états à
+proprement parler — cet écran ne décrit aucun pattern 1/2/3, contrairement à Repli Neuneu) →
+`process_borne_neuneu_tranche` (Objectif sortie totale → Confirmation TP50%/pas de stop →
+Validation stop resserré/pas de clôture, les 2 dernières étapes INDÉPENDANTES l'une de l'autre,
+citation explicite "parfois la confirmation arrivera avant" — vérifiée dans les DEUX écrans) →
+`run_borne_neuneu` (boucle mono-tranche short).
+
+**15 nouveaux tests** (`test_neuneu_borne.py`) : gate conjonctif (les 2 clauses ET, pas OR),
+non-régression sans filtre régime, Objectif/Confirmation/Validation/Stop calculés à la main,
+indépendance Validation/Confirmation vérifiée explicitement, `run_borne_neuneu` bout en bout avec
+signal monkeypatché (sizing/stop/objectif calculés à la main). Suite complète **294 → 309 tests,
+tous verts**.
+
+**TROUVAILLE MAJEURE, faite en mesurant honnêtement sur données réelles (`emile/core/neuneu_borne_
+measure.py`, BTC/ETH/BNB/SOL H4)** : le gate LITTÉRAL ("au-delà des contextes"), appliqué SANS
+filtre de régime, produit un résultat catastrophique et non crédible — **win rate 23-27% partout**
+(à comparer aux "~85%" que le corpus revendique pour ce même mécanisme), profit factor <1 sur les 4
+actifs, retours **-42% à -64%**. Investigué avant de conclure (pas rapporté tel quel sans creuser,
+même discipline que "gate inerte" ailleurs dans ce projet) : **54% des signaux BTC surviennent en
+régime TENDANCE** (compté directement via `regime_classifier.add_regime`, déjà calculé partout
+ailleurs dans ce projet) — un nouveau plus haut local (`close > ctx_high`) est la condition NORMALE
+d'une tendance établie, pas un signe d'excès ; shorter systématiquement ces bougies revient à
+trader CONTRE la tendance, la erreur classique. Or "Neuneu" est explicitement une famille de la
+branche **RANGE** du menu du guide officiel (jamais Tendance) — ce n'est pas une nuance ajoutée
+après coup pour améliorer un chiffre, c'est une CORRECTION DE PORTÉE cohérente avec le principe
+déjà établi de ce projet ("TOUJOURS TRADER DANS UN CONTEXTE", "ne pas trader en Excès").
+
+**Corrigé (H-Borne-6, `regime` optionnel ajouté à `compute_borne_neuneu_signal`/`run_borne_
+neuneu`, défaut `None` = comportement brut inchangé, AUCUNE invention de seuil -- réutilisation
+directe d'une classification déjà établie)** : restreint aux régimes RANGE_NEUTRE/RANGE_TENDANCIEL.
+**Résultat honnête, bien plus crédible, mesuré (`results/neuneu_borne_results.csv`)** :
+
+| symbole | signaux (filtrés régime) | trades | retour | DD max | win rate | profit factor |
+|---|---|---|---|---|---|---|
+| BTC | 102 | 53 | **+4,56%** | -12,62% | 35,9% | 1,14 |
+| ETH | 86 | 51 | **+4,83%** | -9,94% | 39,2% | 1,14 |
+| BNB | 90 | 45 | **-15,20%** | -19,83% | 26,7% | 0,80 |
+| SOL | 75 | 41 | **+10,18%** | -9,74% | 41,5% | 1,26 |
+
+**Lecture honnête** : 3/4 actifs positifs (BTC/ETH/SOL), BNB seul négatif — un résultat MITIGÉ mais
+plausible, très éloigné du taux de réussite de 85% revendiqué par le corpus (35-42% mesuré ici, sur
+le proxy de ce projet, pas le vrai indicateur PRO Framework — même limite fondamentale que partout
+ailleurs dans ce projet). **Vérification croisée faite sur Repli Neuneu (46e round) par précaution**
+: ses signaux sont déjà naturellement dominés par RANGE_NEUTRE (73% sur BTC, 1% seulement en
+TENDANCE) — le pattern creux/dumb-zone/retour s'auto-limite structurellement à des conditions de
+range, contrairement au gate direct de Borne Neuneu — donc PAS de correction nécessaire côté Repli,
+vérifié plutôt que supposé.
+
+**Ce que ce round ne fait PAS** : le câblage réel dans `faithful.py`/`unified_protocol.py` reste un
+chantier séparé (même limite que le 46e round). Les 2 moitiés du mécanisme Neuneu (Repli/Borne)
+sont désormais toutes deux construites, testées et mesurées en isolation — le backlog historique
+"Neuneu, catégorie C, chantier d'architecture" (32e/36e rounds) est donc CLOS pour sa partie
+construction ; le câblage dans les moteurs de production reste, lui, un chantier à part.
 
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 

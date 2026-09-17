@@ -1,0 +1,5 @@
+symbol,n_gate_signals,n_trades,total_return_%,max_dd_%,win_rate_%,profit_factor
+BTCUSDT,102,53,4.56,-12.62,35.85,1.1432
+ETHUSDT,86,51,4.83,-9.94,39.22,1.1395
+BNBUSDT,90,45,-15.2,-19.83,26.67,0.8002
+SOLUSDT,75,41,10.18,-9.74,41.46,1.2603
