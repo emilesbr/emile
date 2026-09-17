@@ -574,6 +574,23 @@ l'audit, pas glissée sous le tapis)** :
    corpus disponible), mais la divergence de traitement par défaut mérite d'être connue plutôt que
    de rester implicite — même remarque que l'item 4 ci-dessus (Excès) sur "reconfirmer un choix
    existant à la lumière de ce contenu".
+   **MISE À JOUR (61e round) — implémenté quand même, EXTRAPOLATION EXPLICITE, décision directe de
+   l'utilisateur** ("comment traiter Chaos, sachant qu'il est indiscernable de RANGE_NEUTRE sans
+   inventer un seuil ?" → "inventer un seuil explicitement marqué comme extrapolation") : cette
+   catégorie A est restée A (le guide ne donne toujours aucun seuil chiffré), mais l'utilisateur a
+   choisi d'accepter des seuils INVENTÉS, avec le même statut que `use_sl_gain`/`use_mtf_cascade`
+   avant elle. `regime_classifier.py::add_chaos_extrapolated` (nouveau, n'écrase pas `add_regime`)
+   modélise Chaos comme un SOUS-ENSEMBLE de RANGE_NEUTRE (H-Chaos-Scope-1, hypothèse de conception
+   assumée, pas une lecture du guide) : "moyenne plate" est déjà la définition de RANGE_NEUTRE
+   (aucune invention), "momentum bruyant"/"contextes irréguliers" utilisent 2 seuils percentile
+   INVENTÉS de toutes pièces (H-Chaos-Momentum-1/H-Chaos-Context-1, taux de retournement de signe
+   et `n_borders`, tous deux avec un percentile adaptatif à 90%, jamais corroborés par le corpus).
+   Mesuré sur données réelles (BTC/ETH/BNB/SOL H4) : CHAOS déclenche sur 0,26%-0,52% de tous les
+   bars (0,5%-0,9% des bars RANGE_NEUTRE) — ni dégénéré à 0% ni envahissant, mais un chiffre qui
+   dépend ENTIÈREMENT des 2 seuils inventés, pas d'une propriété du marché confirmée par le corpus.
+   Aucun câblage dans un moteur de trading à ce stade — outil de classification construit et
+   mesuré, la décision de l'utiliser pour filtrer des entrées reste à prendre séparément. Détail
+   complet : `docs/PLAN.md` section "61e application".
 
 ## Prochaine étape (round séparé)
 

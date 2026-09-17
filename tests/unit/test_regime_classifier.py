@@ -48,6 +48,9 @@ from emile.core.regime_classifier import (
     RECENT_WINDOW, compute_wide_channel, WIDE_PCTL, compute_squeeze,
     compute_range_precedes_by_trend, compute_use_neuneu, NEUNEU_MAX_BORDERS,
     compute_range_border_count,
+    compute_momentum_noise_rate, compute_chaos_momentum_noisy,
+    compute_chaos_irregular_context, add_chaos_extrapolated,
+    CHAOS_MOMENTUM_WINDOW, CHAOS_MOMENTUM_NOISE_PCTL, CHAOS_IRREGULAR_BORDERS_PCTL,
 )
 
 N_WARMUP_MARGIN = 400  # >> PCTL_WINDOW (250) pour que les seuils adaptatifs soient toujours définis
@@ -695,6 +698,138 @@ def test_use_neuneu_nan_border_count_does_not_trigger_too_many_borders():
         "border_count=NaN ne doit pas, à lui seul, router vers Neuneu (précédé d'une tendance réelle par ailleurs)"
     )
 
+# ---------------------------------------------------------------------------
+# CHAOS -- 4e branche du guide, EXTRAPOLATION EXPLICITE (61e round, décision
+# directe de l'utilisateur). `add_chaos_extrapolated` ne modifie PAS
+# `add_regime` -- testé en isolation, sur un `regime` array construit à la
+# main plutôt que recalculé, pour découpler des seuils EXCES/squeeze déjà
+# testés ci-dessus.
+# ---------------------------------------------------------------------------
+
+def test_momentum_noise_rate_alternating_series_is_maximal():
+    n = 60
+    close = np.array([100.0 + (1 if i % 2 == 0 else 0) for i in range(n)])
+    rate = compute_momentum_noise_rate(close, window=20)
+    assert rate[-1] == 1.0
+
+def test_momentum_noise_rate_monotonic_series_is_zero():
+    n = 60
+    close = np.arange(n, dtype=float) + 100.0
+    rate = compute_momentum_noise_rate(close, window=20)
+    assert rate[-1] == 0.0
+
+def _monotonic_with_alternating_tail(n, tail_len=20):
+    close = np.arange(n, dtype=float) + 100.0
+    tail_start = n - tail_len
+    for i in range(tail_start, n):
+        close[i] = close[tail_start - 1] + (1 if (i - tail_start) % 2 == 0 else 0)
+    return close
+
+def test_chaos_momentum_noisy_detects_spike_in_reversal_rate():
+    """Base monotone (aucun retournement, percentile adaptatif bas) puis
+    20 dernières bougies alternées (taux de retournement maximal) : la fin
+    doit dépasser le percentile 90 -- pas le début."""
+    n = PCTL_WINDOW + 100
+    close = _monotonic_with_alternating_tail(n, tail_len=20)
+    noisy = compute_chaos_momentum_noisy(close)
+    assert noisy[-1] == True
+    assert not noisy[PCTL_WINDOW:n - 25].any(), "la base monotone ne doit jamais être 'bruyante'"
+
+def test_chaos_momentum_noisy_is_causal_truncating_future_changes_nothing():
+    n = PCTL_WINDOW + 100
+    close = _monotonic_with_alternating_tail(n, tail_len=20)
+    full = compute_chaos_momentum_noisy(close)
+    truncated_at = n - 30
+    truncated = compute_chaos_momentum_noisy(close[:truncated_at])
+    np.testing.assert_array_equal(full[:truncated_at], truncated)
+
+def test_chaos_irregular_context_detects_spike_in_borders():
+    n = PCTL_WINDOW + 100
+    n_borders = np.full(n, 2.0)
+    n_borders[-20:] = 10.0
+    irregular = compute_chaos_irregular_context(n_borders)
+    assert irregular[-1] == True
+    assert not irregular[PCTL_WINDOW:n - 25].any()
+
+def test_chaos_irregular_context_is_causal_truncating_future_changes_nothing():
+    n = PCTL_WINDOW + 100
+    n_borders = np.full(n, 2.0)
+    n_borders[-20:] = 10.0
+    full = compute_chaos_irregular_context(n_borders)
+    truncated_at = n - 30
+    truncated = compute_chaos_irregular_context(n_borders[:truncated_at])
+    np.testing.assert_array_equal(full[:truncated_at], truncated)
+
+def test_add_chaos_extrapolated_requires_both_criteria():
+    """4 combinaisons sur un bar RANGE_NEUTRE : seul (bruyant ET irrégulier)
+    -> CHAOS, les 3 autres combinaisons restent RANGE_NEUTRE."""
+    n = PCTL_WINDOW + 100
+    idx = n - 1
+
+    def make_df_and_borders(noisy: bool, irregular: bool):
+        close = np.arange(n, dtype=float) + 100.0
+        if noisy:
+            close = _monotonic_with_alternating_tail(n, tail_len=20)
+        df = pd.DataFrame({"close": close})
+        n_borders = np.full(n, 2.0)
+        if irregular:
+            n_borders[-20:] = 10.0
+        regime = np.full(n, "RANGE_NEUTRE", dtype=object)
+        return df, n_borders, regime
+
+    df, n_borders, regime = make_df_and_borders(True, True)
+    out = add_chaos_extrapolated(df, regime, n_borders)
+    assert out[idx] == "CHAOS"
+
+    for noisy, irregular in [(True, False), (False, True), (False, False)]:
+        df, n_borders, regime = make_df_and_borders(noisy, irregular)
+        out = add_chaos_extrapolated(df, regime, n_borders)
+        assert out[idx] == "RANGE_NEUTRE", f"noisy={noisy} irregular={irregular} ne doit PAS suffire seul"
+
+def test_add_chaos_extrapolated_never_overrides_non_range_neutre():
+    """Même si les 2 critères EXTRAPOLÉS seraient réunis, un bar déjà classé
+    TENDANCE/RANGE_TENDANCIEL/EXCES par `add_regime` ne doit JAMAIS devenir
+    CHAOS (H-Chaos-Scope-1 : Chaos est un sous-ensemble strict de
+    RANGE_NEUTRE)."""
+    n = PCTL_WINDOW + 100
+    idx = n - 1
+    close = _monotonic_with_alternating_tail(n, tail_len=20)
+    df = pd.DataFrame({"close": close})
+    n_borders = np.full(n, 2.0)
+    n_borders[-20:] = 10.0
+    for other_regime in ("TENDANCE", "RANGE_TENDANCIEL", "EXCES"):
+        regime = np.full(n, other_regime, dtype=object)
+        out = add_chaos_extrapolated(df, regime, n_borders)
+        assert out[idx] == other_regime
+
+def test_add_chaos_extrapolated_returns_copy_not_view():
+    n = PCTL_WINDOW + 100
+    close = np.arange(n, dtype=float) + 100.0
+    df = pd.DataFrame({"close": close})
+    n_borders = np.full(n, 2.0)
+    regime = np.full(n, "RANGE_NEUTRE", dtype=object)
+    out = add_chaos_extrapolated(df, regime, n_borders)
+    out[0] = "MUTATED"
+    assert regime[0] == "RANGE_NEUTRE", "add_chaos_extrapolated ne doit jamais modifier 'regime' en place"
+
+@pytest.mark.data_dependent
+def test_real_btc_h4_chaos_rate_reported_honestly():
+    """Pas d'assertion de fréquence précise (aucune donnée de référence
+    publiée à comparer, contrairement à `test_real_btc_d1_distribution_
+    close_to_documented`) -- juste un garde-fou de plausibilité : CHAOS doit
+    rester une fraction MINORITAIRE de RANGE_NEUTRE (sous-ensemble strict par
+    construction), jamais la totalité ni zéro sur un historique long
+    (sinon les seuils percentile INVENTÉS seraient dégénérés)."""
+    from emile.backtests.backtest_phase2 import load_h1, resample, atr, EMA_SLOW
+    from emile.backtests.backtest_phase2_v7 import prepare
+
+    df = resample(load_h1("BTCUSDT"), "4h")
+    prepared = prepare(df)
+    chaos_regime = add_chaos_extrapolated(prepared, prepared["regime"].to_numpy(), prepared["n_borders"].to_numpy())
+    n_chaos = (chaos_regime == "CHAOS").sum()
+    n_range_neutre_before = (prepared["regime"].to_numpy() == "RANGE_NEUTRE").sum()
+    assert 0 < n_chaos < n_range_neutre_before
+
 if __name__ == "__main__":
     tests = [
         test_regime_range_neutre_synthetic,
@@ -724,6 +859,16 @@ if __name__ == "__main__":
         test_use_neuneu_routes_on_too_many_borders,
         test_use_neuneu_false_when_preceded_by_trend_and_few_borders,
         test_use_neuneu_nan_border_count_does_not_trigger_too_many_borders,
+        test_momentum_noise_rate_alternating_series_is_maximal,
+        test_momentum_noise_rate_monotonic_series_is_zero,
+        test_chaos_momentum_noisy_detects_spike_in_reversal_rate,
+        test_chaos_momentum_noisy_is_causal_truncating_future_changes_nothing,
+        test_chaos_irregular_context_detects_spike_in_borders,
+        test_chaos_irregular_context_is_causal_truncating_future_changes_nothing,
+        test_add_chaos_extrapolated_requires_both_criteria,
+        test_add_chaos_extrapolated_never_overrides_non_range_neutre,
+        test_add_chaos_extrapolated_returns_copy_not_view,
+        test_real_btc_h4_chaos_rate_reported_honestly,
     ]
     for t in tests:
         t()

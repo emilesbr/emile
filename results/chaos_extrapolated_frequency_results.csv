@@ -1,0 +1,5 @@
+symbol,n_bars,n_range_neutre_before,n_chaos,chaos_%_of_all_bars,chaos_%_of_range_neutre
+BTCUSDT,15360,8195,65,0.42,0.79
+ETHUSDT,14883,7887,58,0.39,0.74
+BNBUSDT,14432,7443,38,0.26,0.51
+SOLUSDT,13131,7317,68,0.52,0.93

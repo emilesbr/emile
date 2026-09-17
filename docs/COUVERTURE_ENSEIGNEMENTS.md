@@ -692,6 +692,20 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   candidat. `H-Context-BB` ne peut donc jamais router vers Neuneu un range que le proxy historique
   n'aurait pas déjà routé. Aucun changement de comportement par défaut. Suite : 326/326. Détail
   complet : `PLAN.md` section "60e application".
+
+  **61e round — CHAOS implémenté, EXTRAPOLATION EXPLICITE (renverse la conclusion "catégorie A" du
+  44e round sur décision directe de l'utilisateur).** Avant de trancher le routage Neuneu/3ème
+  borne, l'utilisateur a demandé de d'abord construire les outils de classification à 4 (Chaos/
+  Excès/Range/Tendance), puis a explicitement choisi d'inventer un seuil pour Chaos plutôt que de
+  le laisser indétectable. `regime_classifier.py::add_chaos_extrapolated` (nouveau, `add_regime`
+  INCHANGÉ) modélise Chaos comme un SOUS-ENSEMBLE STRICT de RANGE_NEUTRE : "moyenne plate" (aucune
+  invention, déjà la condition de RANGE_NEUTRE) + 2 critères EXTRAPOLÉS (H-Chaos-Momentum-1 : taux
+  de retournement de signe sur 20 bougies, percentile adaptatif 90% ; H-Chaos-Context-1 : `n_borders`
+  déjà calculé, nouveau percentile 90% distinct de `NEUNEU_MAX_BORDERS`). 10 nouveaux tests. Mesuré
+  sur BTC/ETH/BNB/SOL H4 : CHAOS déclenche sur 0,26%-0,52% de tous les bars (0,51%-0,93% des bars
+  RANGE_NEUTRE) — ni dégénéré ni envahissant, mais entièrement dépendant des seuils inventés.
+  Aucun câblage dans un moteur de trading à ce stade (outil construit, pas encore utilisé pour
+  filtrer des entrées). Suite : 336/336. Détail complet : `PLAN.md` section "61e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre

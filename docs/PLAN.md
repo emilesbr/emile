@@ -2591,6 +2591,51 @@ déjà été par le proxy historique — explique en partie l'ampleur modeste de
 
 Aucun changement de comportement par défaut. Suite de tests : `pytest -m ""` → 326/326.
 
+### 61e application — CHAOS implémenté, EXTRAPOLATION EXPLICITE (décision directe de l'utilisateur, renverse la conclusion "catégorie A" du 44e round)
+
+**Contexte** : l'utilisateur, avant de trancher le routage Neuneu/3ème borne, a demandé de d'abord
+"concevoir les outils permettant de faire un choix entre les 4 stratégies chaos/excès/tendance/
+range". Question posée directement en retour : comment traiter Chaos, sachant qu'il est
+indiscernable de RANGE_NEUTRE sans inventer un seuil (44e round) ? Réponse choisie explicitement :
+**"inventer un seuil explicitement marqué comme extrapolation"** — même statut que `use_sl_gain`/
+`use_mtf_cascade` avant lui, PAS une nouvelle lecture du corpus (le guide ne donne toujours aucun
+chiffre pour Chaos).
+
+**Implémenté** (`regime_classifier.py`, nouveau bloc en fin de fichier, `add_regime` INCHANGÉ) :
+- `compute_momentum_noise_rate`/`compute_chaos_momentum_noisy` — H-Chaos-Momentum-1 (EXTRAPOLATION) :
+  taux de retournement de signe des variations de clôture sur une fenêtre de 20 bougies (INVENTÉE),
+  seuil percentile adaptatif à 90% (INVENTÉ) — aucune primitive de bruit/whipsaw n'existait
+  ailleurs dans le projet (confirmé au 44e round).
+- `compute_chaos_irregular_context` — H-Chaos-Context-1 (EXTRAPOLATION) : réutilise `n_borders`
+  (déjà calculé par l'appelant, MÊME primitive que `MIN_BORDERS`), nouveau seuil percentile à 90%
+  (INVENTÉ), DISTINCT de `NEUNEU_MAX_BORDERS=4` (calibré pour une question différente).
+- `add_chaos_extrapolated(df, regime, n_borders)` — combine les 3 critères CUMULATIFS du guide
+  (`Chaos/Chaos.png`) : "moyenne plate" (AUCUNE invention, déjà la condition de RANGE_NEUTRE dans
+  `add_regime`), + les 2 critères inventés ci-dessus. Modélise Chaos comme un SOUS-ENSEMBLE STRICT
+  de RANGE_NEUTRE (H-Chaos-Scope-1, hypothèse de conception assumée) — ne touche JAMAIS TENDANCE/
+  RANGE_TENDANCIEL/EXCES. Retourne une COPIE de `regime`, jamais modifié en place.
+
+**10 nouveaux tests** (`test_regime_classifier.py`) : taux de retournement sur série alternée
+(maximal) vs monotone (nul) ; détection du pic + non-régression de causalité (troncature) pour les
+2 critères ; les 4 combinaisons bruyant×irrégulier sur un bar RANGE_NEUTRE (seul le cumul des 2
+donne CHAOS) ; TENDANCE/RANGE_TENDANCIEL/EXCES jamais réécrits même si les 2 critères seraient
+réunis ; retour par copie ; fréquence réelle sur BTC H4 (garde-fou de plausibilité, ni 0% ni 100%).
+
+**Mesuré sur données réelles** (`emile/core/chaos_measure.py`, BTC/ETH/BNB/SOL H4,
+`results/chaos_extrapolated_frequency_results.csv`) : CHAOS déclenche sur **0,26%-0,52%** de tous
+les bars (**0,51%-0,93%** des bars RANGE_NEUTRE), cohérent avec l'intersection de 2 événements
+~10% indépendants (~1% attendu) — ni dégénéré (0%) ni envahissant (100%), mais ce chiffre dépend
+ENTIÈREMENT des 2 seuils inventés (90e percentile, fenêtre 20 bougies), pas d'une propriété de
+marché confirmée par le corpus.
+
+**Ce que ce round NE fait PAS** : aucun câblage dans un moteur de trading (RANGE/TENDANCE/Neuneu) —
+l'outil de classification à 4 (en pratique 5 valeurs de sortie : RANGE_NEUTRE/RANGE_TENDANCIEL/
+TENDANCE/EXCES/CHAOS) est construit et mesuré, mais la décision de FILTRER des entrées sur la base
+de CHAOS reste à prendre dans un round séparé — exactement la séquence demandée par l'utilisateur
+("avant de décider [le routage], concevoir les outils").
+
+Suite de tests : `pytest -m ""` → 336/336 (326 + 10 nouveaux).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

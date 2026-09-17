@@ -16,6 +16,12 @@ tendanciel ~25%, Tendance ~20%, Bulle/Excès ~5%) :
 
 Règle du manuel explicitement respectée : "en cas de doute, toujours RANGE".
 
+4e branche du guide officiel, "CHAOS" (61e round) : cf. le bloc dédié en bas
+de fichier (`add_chaos_extrapolated`) -- EXTRAPOLATION EXPLICITE, modélisée
+ici comme un sous-ensemble de RANGE_NEUTRE, jamais produite par `add_regime`
+lui-même (inchangé) -- une 5e valeur de sortie possible pour QUI APPELLE
+`add_chaos_extrapolated` en plus, pas un changement de `add_regime`.
+
 AJOUT — détecteur "canal TRÈS LARGE" (`compute_wide_channel` en bas de
 fichier), support de la règle de volatilité "Stop Loss = taille du canal"
 de `TRADING_LESSONS_MAITRISE_GRADIENT_RISQUE.md` §5. Placé ICI et pas
@@ -267,6 +273,122 @@ def compute_use_neuneu(regime, range_border_count, max_borders: int = NEUNEU_MAX
     borders_arr = np.asarray(range_border_count, dtype=float)
     too_many_borders = borders_arr > max_borders   # NaN -> False (comparaison numpy), jamais "trop de bornes" par défaut
     return (~precedes_by_trend) | too_many_borders | no_prior_regime
+
+# ==============================================================================
+# CHAOS -- 4e état, EXTRAPOLATION EXPLICITE (61e round, `docs/PLAN.md`)
+# ==============================================================================
+# Décision DIRECTE de l'utilisateur (question posée en clair : "comment traiter
+# Chaos, sachant qu'il est indiscernable de RANGE_NEUTRE sans inventer un
+# seuil ?" -- réponse choisie : "inventer un seuil explicitement marqué comme
+# extrapolation"). Ceci RENVERSE la conclusion du 44e round ("Chaos reste
+# catégorie A, pas implémenté") -- pas parce que le corpus aurait changé
+# (il n'a pas changé), mais parce que l'utilisateur a explicitement choisi
+# d'accepter une extrapolation non corroborée, exactement le même statut que
+# `use_sl_gain`/`use_mtf_cascade` avant lui.
+#
+# Écran source (`docs/GUIDE_STRATEGIE_PRO_INDICATORS.md` section 1,
+# `Chaos/Chaos.png`), 3 critères CUMULATIFS (convention "cases numérotées =
+# critères cumulatifs" déjà observée sur d'autres écrans du même guide) :
+# **Contextes irréguliers**, **Moyenne plate**, **Momentum bruyant** ->
+# action "PARTEZ" (changer d'actif, aucune règle de trading proposée).
+#
+# 1. "Moyenne plate" -- AUCUNE invention : c'est DÉJÀ, dans `add_regime`
+#    ci-dessus, la condition par défaut de RANGE_NEUTRE (pente en dessous de
+#    `TREND_SLOPE_THRESHOLD * 0.5`). Chaos est donc modélisé ici comme un
+#    SOUS-ENSEMBLE de RANGE_NEUTRE (H-Chaos-Scope-1 -- hypothèse de
+#    conception assumée, pas une règle du corpus) : seuls les bars déjà
+#    classés RANGE_NEUTRE sont éligibles à devenir CHAOS, TENDANCE/
+#    RANGE_TENDANCIEL/EXCES ne sont jamais réécrits.
+# 2. "Momentum bruyant" -- AUCUNE primitive de bruit/oscillation/whipsaw
+#    n'existe ailleurs dans ce projet (grep exhaustif confirmé au 44e round).
+#    H-Chaos-Momentum-1 (EXTRAPOLATION) : taux de retournement de signe des
+#    variations de clôture sur une fenêtre glissante de `CHAOS_MOMENTUM_
+#    WINDOW` bougies (fenêtre INVENTÉE), comparé à un seuil PERCENTILE
+#    ADAPTATIF (même machinerie causale que squeeze/excès/canal large
+#    ci-dessus -- `CHAOS_MOMENTUM_NOISE_PCTL` INVENTÉ).
+# 3. "Contextes irréguliers" -- H-Chaos-Context-1 (EXTRAPOLATION) : réutilise
+#    `n_borders` (le compte glissant DÉJÀ calculé par l'appelant, ex.
+#    `backtest_phase2_v7.py::prepare` -- MÊME primitive que celle qui sert
+#    déjà `MIN_BORDERS`, jamais recalculée), mais avec un NOUVEAU seuil
+#    percentile INVENTÉ (`CHAOS_IRREGULAR_BORDERS_PCTL`), DISTINCT de
+#    `NEUNEU_MAX_BORDERS=4` (calibré pour une question totalement
+#    différente -- routage 3ème borne/Neuneu, pas irrégularité de contexte --
+#    cf. 44e round, qui avait explicitement rejeté cette confusion).
+#
+# `add_chaos_extrapolated` NE MODIFIE PAS `add_regime` (inchangé, réutilisé
+# tel quel) -- prend son résultat déjà calculé et le SURCHARGE en "CHAOS"
+# uniquement là où les 3 critères sont réunis. Strictement additif : tout
+# appelant qui n'invoque pas cette fonction voit un comportement RIGOUREUSEMENT
+# inchangé.
+
+CHAOS_MOMENTUM_WINDOW = 20            # H-Chaos-Momentum-1 -- fenêtre INVENTÉE
+CHAOS_MOMENTUM_NOISE_PCTL = 0.90       # H-Chaos-Momentum-1 -- percentile INVENTÉ
+CHAOS_IRREGULAR_BORDERS_PCTL = 0.90    # H-Chaos-Context-1 -- percentile INVENTÉ
+
+def compute_momentum_noise_rate(close, window: int = CHAOS_MOMENTUM_WINDOW) -> np.ndarray:
+    """Taux de retournement de signe des variations de clôture (close[i] -
+    close[i-1]) sur une fenêtre glissante de `window` bougies -- proxy de
+    "momentum bruyant" (H-Chaos-Momentum-1, EXTRAPOLATION, cf. bloc CHAOS
+    ci-dessus). Une variation nulle (`sign == 0`) ne compte ni comme
+    retournement ni comme continuation -- ignorée du dénominateur implicite
+    en ne matchant ni l'une ni l'autre condition. NaN pour les `window`
+    premières bougies (rolling), converti en 0.0 par l'appelant si besoin
+    (`compute_chaos_momentum_noisy` le traite comme "non bruyant" via le
+    comportement standard NaN->False de la comparaison percentile)."""
+    close_arr = np.asarray(close, dtype=float)
+    returns = np.diff(close_arr, prepend=close_arr[0])
+    sign = np.sign(returns)
+    reversal = np.zeros(len(sign), dtype=float)
+    valid = (sign[1:] != 0) & (sign[:-1] != 0)
+    reversal[1:] = np.where(valid & (sign[1:] != sign[:-1]), 1.0, 0.0)
+    return pd.Series(reversal).rolling(window).mean().to_numpy()
+
+def compute_chaos_momentum_noisy(close, window: int = CHAOS_MOMENTUM_WINDOW,
+                                  pctl: float = CHAOS_MOMENTUM_NOISE_PCTL,
+                                  pctl_window: int = PCTL_WINDOW) -> np.ndarray:
+    """"Momentum bruyant" (H-Chaos-Momentum-1, EXTRAPOLATION) : `True` quand
+    le taux de retournement de signe (`compute_momentum_noise_rate`) dépasse
+    son propre percentile adaptatif glissant -- MÊME construction causale
+    (`.shift(1)` avant le rolling) que `compute_wide_channel`/`compute_
+    squeeze` ci-dessus. NaN (warmup) -> False, même convention prudente que
+    le reste de ce fichier."""
+    rate = pd.Series(compute_momentum_noise_rate(close, window))
+    thresh = rate.shift(1).rolling(pctl_window).quantile(pctl)
+    return (rate > thresh).fillna(False).to_numpy(dtype=bool)
+
+def compute_chaos_irregular_context(n_borders, pctl: float = CHAOS_IRREGULAR_BORDERS_PCTL,
+                                     pctl_window: int = PCTL_WINDOW) -> np.ndarray:
+    """"Contextes irréguliers" (H-Chaos-Context-1, EXTRAPOLATION) : `True`
+    quand `n_borders` (le compte glissant DÉJÀ calculé par l'appelant, MÊME
+    primitive que `MIN_BORDERS`, jamais recalculée) dépasse son propre
+    percentile adaptatif glissant -- seuil DISTINCT de `NEUNEU_MAX_BORDERS`
+    (question différente, cf. bloc CHAOS ci-dessus). NaN (warmup) -> False."""
+    n = pd.Series(np.asarray(n_borders, dtype=float))
+    thresh = n.shift(1).rolling(pctl_window).quantile(pctl)
+    return (n > thresh).fillna(False).to_numpy(dtype=bool)
+
+def add_chaos_extrapolated(df: pd.DataFrame, regime, n_borders,
+                            momentum_window: int = CHAOS_MOMENTUM_WINDOW,
+                            momentum_pctl: float = CHAOS_MOMENTUM_NOISE_PCTL,
+                            borders_pctl: float = CHAOS_IRREGULAR_BORDERS_PCTL,
+                            pctl_window: int = PCTL_WINDOW) -> np.ndarray:
+    """4e état "CHAOS" -- EXTRAPOLATION EXPLICITE (cf. bloc CHAOS en tête de
+    cette section pour la citation exacte et les 3 hypothèses H-Chaos-*).
+
+    Ne modifie PAS `add_regime` : prend son résultat déjà calculé (`regime`,
+    un array/Series RANGE_NEUTRE/RANGE_TENDANCIEL/TENDANCE/EXCES) et retourne
+    une COPIE où "CHAOS" remplace "RANGE_NEUTRE" partout où les 3 critères
+    cumulatifs sont réunis (`compute_chaos_momentum_noisy` ET `compute_chaos_
+    irregular_context`, "moyenne plate" étant déjà la définition de
+    RANGE_NEUTRE -- H-Chaos-Scope-1). Jamais TENDANCE/RANGE_TENDANCIEL/EXCES,
+    quels que soient les 2 autres critères."""
+    regime_arr = np.asarray(regime, dtype=object).copy()
+    is_range_neutre = regime_arr == "RANGE_NEUTRE"
+    noisy = compute_chaos_momentum_noisy(df["close"].to_numpy(), momentum_window, momentum_pctl, pctl_window)
+    irregular = compute_chaos_irregular_context(n_borders, borders_pctl, pctl_window)
+    chaos_mask = is_range_neutre & noisy & irregular
+    regime_arr[chaos_mask] = "CHAOS"
+    return regime_arr
 
 if __name__ == "__main__":
     import sys
