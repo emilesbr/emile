@@ -322,3 +322,42 @@ captures avec légende complète (comme aux 54e/56e rounds) sur d'autres UT/acti
 désaccord du 51e round — en particulier une capture 1D avec une valeur de légende explicite (pas
 juste une mesure de nuage par pixels, plus sujette à contamination) permettrait de retester
 proprement l'hypothèse "UT au-dessus = Semaine" pour un graphique journalier.
+
+## 11. 57e round — clarification de l'utilisateur : au moins DEUX constructions grises distinctes coexistent sur chaque graphique, piste de réconciliation du désaccord du 51e round
+
+**Observation directe de l'utilisateur**, sur la capture "BTC Dominance 1W" déjà utilisée au 51e
+round (`docs/NEUNEU_COMMUNITY_OBSERVATIONS.md`) : *"ce ne sont pas les bandes de Bollinger, car nous
+observons sur cette image justement les bandes de Bollinger MAIS AUSSI les boîtes de contexte. Elles
+mesurent la même taille. Ce sont des boîtes de contexte [dérivées] des bandes de Bollinger, qui
+évoluent chaque semaine, d'où les décalages, et nous analysons l'unité temporelle 4h."* — un point
+que ni moi ni les rounds précédents n'avions isolé : **il y a AU MOINS DEUX constructions grises
+superposées sur chaque capture**, pas une seule.
+
+**Vérifié visuellement (zoom sur la capture, pas de nouvelle capture nécessaire)** : sur ce
+graphique BTC.D 1W, on distingue effectivement (1) une ligne en escalier à PAS LARGES, assez
+lente, qui forme un grand arc (visible en haut à gauche, descendant progressivement) — plausible
+candidat "bande de Bollinger" au sens de l'utilisateur ; (2) une ligne en escalier à PAS FINS qui
+suit le prix de beaucoup plus près (visible en escalier serré juste au-dessus/en dessous des
+bougies) ; (3) des zones grises REMPLIES (semi-transparentes), plus ponctuelles, qui ne suivent pas
+le prix en continu — le candidat le plus probable pour la "boîte de contexte" proprement dite.
+**Tentative de mesure pixel pour vérifier "la boîte mesure la même taille que la bande de
+Bollinger"** : non concluante à ce stade — les 3 constructions se chevauchent et sont toutes
+rendues en gris semi-transparent proche, une colonne de pixels isolée ne suffit pas à les séparer
+proprement (contrairement aux rounds précédents où on mesurait UNE seule zone grise cohérente).
+Pas assez fiable pour en tirer un chiffre.
+
+**Piste de réconciliation du désaccord du 51e round, plausible mais non vérifiée** : si le 51e
+round a mesuré par erreur la construction (2) (la ligne fine qui suit le prix de près, potentiellement
+la vraie "bande de Bollinger" native, continuellement recalculée) au lieu de la construction (3) (la
+vraie "boîte de contexte", gelée/mise à jour par intervalles) — cela expliquerait pourquoi ce point
+ne collait pas au test `Bollinger(20,2)` de l'UT supérieure alors que les rounds 52/54 (où la
+séparation entre constructions était visuellement plus nette) collaient bien. **Hypothèse non
+tranchée, pas retenue comme acquise** — nécessite une capture où une seule construction grise est
+isolée sans ambiguïté (idéalement via les réglages de l'indicateur, si l'outil permet de masquer
+certains tracés individuellement) pour trancher proprement, plutôt que de re-deviner sur une image
+où 3 éléments se superposent.
+
+**Ce que ce round NE fait PAS** : aucun changement de code, aucune correction rétroactive du 51e
+round (l'hypothèse de réconciliation ci-dessus reste non vérifiée). `H-Context-BB-UT+1` reste au
+statut du 56e round (2 corroborations fortes sur 3, désaccord du 51e round toujours non résolu —
+mais potentiellement expliqué, pas contredit, par cette clarification).

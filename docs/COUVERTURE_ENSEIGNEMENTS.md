@@ -645,6 +645,17 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   −29,7%, écart inexpliqué). 2/3 est la corroboration la plus solide trouvée à ce jour sur ce sujet,
   toujours pas suffisant pour toucher `regime_classifier.py`. Aucun changement de code. Détail
   complet : `PLAN.md` section "56e application".
+
+  **57e round — clarification utilisateur : au moins 2 constructions grises distinctes par
+  graphique.** L'utilisateur a fait remarquer que la capture BTC.D 1W du 51e round contient en fait
+  DEUX constructions grises superposées (bandes de Bollinger natives, continuellement recalculées ;
+  boîtes de contexte séparées, figées, de même taille que la bande au moment de leur formation) —
+  vérifié visuellement (3 tracés gris distincts identifiés). Tentative de mesure pixel pour vérifier
+  "boîte = taille de la bande" : non concluante (constructions trop chevauchantes pour être séparées
+  proprement). Piste de réconciliation plausible mais NON vérifiée pour le désaccord du 51e round :
+  la mesure d'origine aurait pu cibler par erreur la bande native au lieu de la vraie boîte figée.
+  `H-Context-BB-UT+1` reste au statut du 56e round. Aucun changement de code. Détail complet :
+  `PLAN.md` section "57e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre

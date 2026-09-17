@@ -2489,6 +2489,27 @@ suffisante pour toucher `regime_classifier.py`. Aucun changement de code.
 
 Suite de tests inchangée (`pytest -m ""` → 313/313).
 
+### 57e application — clarification utilisateur : au moins 2 constructions grises distinctes par graphique, piste de réconciliation du 51e round
+
+L'utilisateur a fait remarquer, sur la capture "BTC Dominance 1W" déjà utilisée au 51e round, que
+ce qu'on prenait pour UNE SEULE zone grise ("contexte") est en fait AU MOINS DEUX constructions
+superposées : des bandes de Bollinger (qui suivent le prix en continu, à pas fins) et des "boîtes de
+contexte" séparées (zones grises remplies, plus figées, de même taille que la bande de Bollinger au
+moment de leur formation). Détail complet : `docs/CONTEXT_CHANNEL_REVERSE_ENGINEERING.md` section
+11.
+
+Vérifié visuellement sur la capture (zoom, pas de nouvelle capture nécessaire) : on distingue bien
+3 tracés gris superposés (une ligne à pas larges/lents, une ligne à pas fins qui suit le prix de
+près, et des zones remplies plus ponctuelles). Tentative de mesure pixel pour vérifier "la boîte =
+la taille de la bande de Bollinger" : **non concluante** — les 3 constructions se chevauchent trop
+pour être séparées proprement par une simple colonne de pixels, contrairement aux rounds précédents.
+
+**Piste de réconciliation plausible, NON vérifiée** : le désaccord du 51e round pourrait s'expliquer
+si cette mesure avait par erreur ciblé la ligne fine "Bollinger natif" au lieu de la vraie boîte de
+contexte figée — les 2 constructions étant visuellement proches, une confusion est possible. Pas
+retenu comme acquis. `H-Context-BB-UT+1` reste au statut du 56e round (2/3, désaccord non résolu
+mais potentiellement expliqué). Aucun changement de code. Suite de tests inchangée (313/313).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.
