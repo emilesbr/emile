@@ -2636,6 +2636,80 @@ de CHAOS reste à prendre dans un round séparé — exactement la séquence dem
 
 Suite de tests : `pytest -m ""` → 336/336 (326 + 10 nouveaux).
 
+### 62e application — Repli Neuneu : deux hypothèses rejetées, une confirmée (`objectif_close_frac`), toutes trois testées à la demande directe de l'utilisateur
+
+**Contexte** : après le diagnostic du 46e round (taux de succès élevé mais facteur de profit
+faible sur `run_repli_neuneu`), l'utilisateur a demandé successivement : "comment peut-on avoir un
+taux de succès aussi élevé et un facteur de profit aussi faible ?", puis a proposé sa propre
+hypothèse ("comme on a créé les stops et les take profit ultérieurement à tout ce qui est concerné
+le contexte, je pense que nous avons fait des erreurs"), puis a demandé explicitement : "qu'est-ce
+qui améliorerait la rentabilité ? imagine et teste la validité de ton hypothèse."
+
+**Diagnostic préalable** (trade-level, `record_trace=True`) : la perte moyenne par trade est
+1,6x-5x plus grande que le gain moyen (BTC 3,3x, ETH 2,2x, BNB 5,0x, SOL 1,6x) ; la distance
+médiane du stop à l'entrée est 4,5x-12x plus grande que celle de l'Objectif (BTC 9,5x, ETH 12,1x,
+BNB 7,0x, SOL 4,5x). Cause structurelle, pas un bug : le stop est dimensionné sur une fraction du
+canal de contexte PLURI-JOURNALIER (règle littérale du corpus, "au moins la moitié du canal de
+contexte"), tandis que l'Objectif (TP partiel) est ancré sur un swing LOCAL proche (rebond de la
+zone bête) — deux échelles différentes par construction.
+
+**Hypothèse 1 rejetée — mauvaise définition du contexte** (celle proposée par l'utilisateur) :
+testée en comparant la largeur du canal de contexte Donchian actuel (`context_channel_bounds`,
+utilisé par `neuneu_repli.py`) contre le candidat Bollinger-UT+1 (`H-Context-BB`, 56e round) aux
+mêmes points de trade. Les deux définitions sont TRÈS PROCHES en échelle (ratio de largeur
+1,04x-1,21x sur les 4 actifs) — substituer l'une à l'autre ne changerait pas le déséquilibre
+stop/TP. Hypothèse infirmée : la cause n'est pas une erreur de mesure du contexte, mais le choix
+structurel des deux ancres différentes (canal pluri-journalier pour le stop, swing local pour le
+TP), qui lui reste conforme au corpus.
+
+**Hypothèse 2 rejetée — filtre reward:risk minimal à l'entrée** : diagnostic (pas d'implémentation)
+du ratio R:R des trades gagnants vs perdants. Sur 3 actifs sur 4, les GAGNANTS ont un R:R MÉDIAN
+plus faible que les perdants (BTC 0,078 vs 0,349 ; ETH 0,081 vs 0,196 ; BNB 0,085 vs 0,262 — seul
+SOL va dans le sens attendu, 0,254 vs 0,076). Un filtre R:R minimal exclurait donc préférentiellement
+des GAGNANTS, pas des perdants, sur la majorité des actifs. Hypothèse infirmée, non implémentée.
+
+**Hypothèse 3 confirmée — réduire `objectif_close_frac`** (fraction de la position soldée à l'étape
+Objectif de `process_repli_neuneu_tranche`, actuellement `NEUNEU_OBJECTIF_CLOSE_FRAC=0,50` depuis
+le 46e round) : balayage paramétrique (`main_objectif_close_frac_sweep`,
+`emile/core/neuneu_repli_measure.py`, `stop_k` inchangé à 0,5, valeur littérale du corpus) sur les
+5 valeurs 0,0/0,25/0,50/0,75/1,0, résultat officiel dans
+`results/neuneu_repli_objectif_close_frac_sweep_results.csv` :
+
+| Actif | `frac=1,0` (tout solder) | `frac=0,50` (défaut actuel) | `frac=0,0` (ne rien solder à l'Objectif) |
+|---|---|---|---|
+| BTC | -8,83% (PF 0,590) | -6,35% (PF 0,716) | **-3,80%** (PF 0,853) |
+| ETH | +2,98% (PF 1,407) | +5,65% (PF 1,741) | **+8,38%** (PF 2,090) |
+| BNB | -3,63% (PF 0,625) | -2,37% (PF 0,777) | **-1,08%** (PF 0,938) |
+| SOL | +5,09% (PF 1,359) | +9,26% (PF 1,647) | **+13,59%** (PF 1,969) |
+
+Amélioration **monotone et uniforme sur les 4 actifs**, à chacune des 5 valeurs testées, en
+laissant davantage de position courir vers l'étape Validation/Stop plutôt que de la solder tôt à
+l'Objectif. `n_trades` inchangé par construction (seule la taille des sorties change, pas leur
+déclenchement). Nombre de trades par actif inchangé entre les 5 colonnes (BTC 57, ETH 49, BNB 34,
+SOL 63) — confirme qu'aucun signal d'entrée n'est affecté, seule la gestion de sortie.
+
+**Statut de l'extrapolation** : ceci est une EXPLORATION de l'extrapolation déjà répertoriée
+H-Neuneu-Repli-7 (46e round) — le corpus ne chiffre jamais la fraction soldée à l'étape Objectif ;
+"0,50" était lui-même un emprunt non justifié à la fraction de Validation d'un autre profil.
+Réduire cette fraction reste donc dans le même statut d'extrapolation, pas une nouvelle lecture du
+corpus.
+
+**Implémenté** (`emile/core/neuneu_repli.py`) : nouveau paramètre optionnel
+`objectif_close_frac: float = NEUNEU_OBJECTIF_CLOSE_FRAC` sur `process_repli_neuneu_tranche` et
+`run_repli_neuneu`, comportement par défaut RIGOUREUSEMENT INCHANGÉ (valeur par défaut = constante
+existante). 4 nouveaux tests (`test_neuneu_repli.py`) : valeur par défaut inchangée, valeur
+personnalisée utilisée correctement, `frac=0,0` ne solde rien à l'Objectif sans casser
+Validation/Stop, forwarding bout-en-bout vérifié par calcul à la main. Suite de tests :
+`pytest -m ""` → 340/340 (336 + 4 nouveaux).
+
+**Caveat honnête, répété explicitement** : mesure IN-SAMPLE sur les 4 mêmes actifs déjà utilisés
+pour tout le reste du projet — risque réel de surapprentissage à cette fenêtre historique
+précise, pas une validation d'edge prospectif. Même à la meilleure valeur testée (`frac=0,0`),
+**BTC et BNB restent NÉGATIFS** (-3,80% et -1,08%) — seuls ETH et SOL deviennent nettement
+positifs. Aucun câblage dans `unified_protocol.py`/`faithful.py` à ce stade (`neuneu_repli.py`
+reste un moteur STANDALONE mesuré isolément, même statut qu'avant ce round) — ce round mesure et
+outille un paramètre existant, il ne change le comportement par défaut d'aucun moteur câblé.
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.

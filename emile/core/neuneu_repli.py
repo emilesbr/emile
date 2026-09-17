@@ -191,7 +191,7 @@ def compute_repli_neuneu_signal(df: pd.DataFrame, context_duration, local_durati
                                         local_low, local_high)
 
 
-def process_repli_neuneu_tranche(tr, i, high, low, c):
+def process_repli_neuneu_tranche(tr, i, high, low, c, objectif_close_frac: float = NEUNEU_OBJECTIF_CLOSE_FRAC):
     """Fait progresser une tranche Repli Neuneu ouverte, MÊME esprit que
     `position_engine.py::process_tranche` mais structure DIFFÉRENTE (2
     étapes, pas 3 : Objectif = TP partiel, Validation = stop remonté SANS
@@ -205,13 +205,26 @@ def process_repli_neuneu_tranche(tr, i, high, low, c):
     `tr` doit exposer : entry, stop, remaining, pnl_accum, objectif_target,
     dumb_zone_level, ctx_high_ref, `_max_high_since_entry` (tracé par
     l'appelant, cf. `run_repli_neuneu` -- même bookkeeping que "SL gain",
-    45e round)."""
+    45e round).
+
+    `objectif_close_frac` (62e round, additif, défaut `NEUNEU_OBJECTIF_
+    CLOSE_FRAC` -- comportement RIGOUREUSEMENT inchangé pour tout appelant
+    existant qui ne le passe pas) : PARAMÈTRE de la MÊME extrapolation déjà
+    documentée H-Neuneu-Repli-7 (le corpus ne chiffre pas la fraction du
+    "TP partiel") -- pas une nouvelle invention, une exploration de l'espace
+    déjà reconnu comme extrapolé. Question directe de l'utilisateur ("qu'est-
+    ce qui améliorerait la rentabilité ? imagine et teste") : mesuré sur
+    BTC/ETH/BNB/SOL réels que RÉDUIRE cette fraction améliore le rendement de
+    façon MONOTONE et UNIFORME sur les 4 actifs (0,50 -> 0,25 -> 0,0), cf.
+    `docs/PLAN.md` section "62e application" pour les chiffres complets et
+    les réserves (mesure IN-SAMPLE, BTC/BNB restent négatifs même au meilleur
+    réglage testé)."""
     fee_frac = 0.0
     # 1) Objectif (TP partiel, une seule fois) -- jamais au-delà de la zone
     # fibo opposée (`objectif_target` déjà plafonné à l'ouverture, cf.
     # `run_repli_neuneu`).
     if not tr.get("objectif_done", False) and c[i] >= tr["objectif_target"]:
-        close_amt = tr["remaining"] * NEUNEU_OBJECTIF_CLOSE_FRAC
+        close_amt = tr["remaining"] * objectif_close_frac
         pnl = (c[i] - tr["entry"]) / tr["entry"]
         tr["pnl_accum"] += pnl * close_amt
         fee_frac += close_amt
@@ -269,11 +282,15 @@ def open_repli_neuneu_tranche(entry_price, local_r, context_r, dz_level, ctx_hig
 
 
 def run_repli_neuneu(df: pd.DataFrame, context_duration, local_duration,
-                      fee: float = 0.0004, record_trace: bool = False) -> dict:
+                      fee: float = 0.0004, record_trace: bool = False,
+                      objectif_close_frac: float = NEUNEU_OBJECTIF_CLOSE_FRAC) -> dict:
     """Moteur COMPLET, mono-tranche (le corpus ne décrit aucune
     pyramidalisation pour ce mécanisme) : détecte le pattern, ouvre/gère une
     tranche à la fois, agrège les statistiques standard du projet
-    (n_trades/max_dd_%/total_return_%/win_rate_%/profit_factor)."""
+    (n_trades/max_dd_%/total_return_%/win_rate_%/profit_factor).
+
+    `objectif_close_frac` (62e round, additif, défaut inchangé) : transmis
+    tel quel à `process_repli_neuneu_tranche` (cf. sa docstring)."""
     n = len(df)
     o = df["open"].values
     high = df["high"].values
@@ -295,7 +312,8 @@ def run_repli_neuneu(df: pd.DataFrame, context_duration, local_duration,
             tr["_max_high_since_entry"] = max(tr.get("_max_high_since_entry", tr["entry"]), high[i])
             if record_trace:
                 trace[tr["_trade_id"]]["snapshots"].append((i, tr["remaining"]))
-            closed, fee_frac, realized = process_repli_neuneu_tranche(tr, i, high, low, c)
+            closed, fee_frac, realized = process_repli_neuneu_tranche(
+                tr, i, high, low, c, objectif_close_frac=objectif_close_frac)
             if closed:
                 equity *= (1 + realized)
             if fee_frac > 0:

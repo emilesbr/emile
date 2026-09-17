@@ -718,6 +718,27 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   factor <1) contre ETH +5,65%/SOL +9,26% — ni GO ni NO-GO franc, rapporté tel quel. PAS encore
   câblé dans `faithful.py`/`unified_protocol.py` (chantier de routage séparé). Détail complet :
   `PLAN.md` section "46e application".
+
+  **62e round — trois hypothèses testées sur la rentabilité du Repli Neuneu, décision directe de
+  l'utilisateur ("qu'est-ce qui améliorerait la rentabilité ? imagine et teste").** Hypothèse 1
+  (proposée par l'utilisateur — mauvaise définition du contexte, stops/TP créés avant que le
+  contexte soit bien défini) : INFIRMÉE — le canal Donchian actuel et le candidat Bollinger-UT+1
+  (`H-Context-BB`, 56e round) sont très proches en échelle (ratio 1,04x-1,21x) aux points de trade
+  réels, le déséquilibre stop/TP vient d'un choix structurel (ancres différentes : canal
+  pluri-journalier pour le stop, swing local pour le TP), pas d'une erreur de mesure du contexte.
+  Hypothèse 2 (filtre reward:risk minimal à l'entrée) : INFIRMÉE — sur 3 actifs/4, les trades
+  GAGNANTS ont un R:R médian PLUS FAIBLE que les perdants (ex. BTC 0,078 vs 0,349), un tel filtre
+  exclurait préférentiellement des gagnants. Hypothèse 3 (réduire `objectif_close_frac`, la
+  fraction soldée à l'étape Objectif du Repli Neuneu, exploration de l'extrapolation déjà notée
+  H-Neuneu-Repli-7 du 46e round) : CONFIRMÉE — amélioration monotone et uniforme sur les 4 actifs
+  à chacune des 5 valeurs testées (0,0 à 1,0), ex. BTC -8,83%→-3,80%, ETH +2,98%→+8,38%, BNB
+  -3,63%→-1,08%, SOL +5,09%→+13,59% (`frac=1,0`→`frac=0,0`, `stop_k=0,5` inchangé). Nouveau
+  paramètre optionnel sur `run_repli_neuneu`/`process_repli_neuneu_tranche`, défaut RIGOUREUSEMENT
+  INCHANGÉ (`NEUNEU_OBJECTIF_CLOSE_FRAC=0,50`), 4 nouveaux tests, suite 340/340. Caveat honnête
+  répété : mesure IN-SAMPLE sur les 4 mêmes actifs déjà utilisés partout dans ce projet — même à
+  la meilleure valeur testée, BTC et BNB restent NÉGATIFS. Toujours PAS câblé dans
+  `faithful.py`/`unified_protocol.py` (moteur standalone). Détail complet : `PLAN.md` section
+  "62e application".
 - ~~**Invalidation 3BR par SQUEEZE (`Range/3eme-borne/3ème-borne.png`), citation exacte** : *"On ne
   doit plus la trader si jamais le range produit un SQUEEZE... Si le range se forme juste après
   un SQUEEZE sur l'unité de temps supérieure, il faudra alors éviter de trader cette 3BR..."*~~ —

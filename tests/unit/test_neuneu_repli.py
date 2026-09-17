@@ -150,6 +150,80 @@ def test_objectif_does_not_retrigger_next_bar():
     assert fee_frac == 0.0
     assert abs(tr["remaining"] - remaining_after_first) < 1e-9
 
+def test_objectif_close_frac_default_matches_module_constant():
+    """Sans argument, `process_repli_neuneu_tranche` doit toujours utiliser
+    `NEUNEU_OBJECTIF_CLOSE_FRAC` -- non-régression bit-à-bit pour tout
+    appelant existant (62e round, nouveau paramètre `objectif_close_frac`)."""
+    tr = _make_tranche(objectif_target=115.0)
+    high = np.array([0, 116.0]); low = np.array([0, 114.0]); c = np.array([0, 116.0])
+    _, fee_frac, _ = process_repli_neuneu_tranche(tr, 1, high, low, c)
+    assert abs(fee_frac - NEUNEU_OBJECTIF_CLOSE_FRAC) < 1e-9
+
+def test_objectif_close_frac_custom_value_used_instead_of_default():
+    """`objectif_close_frac` explicite (62e round, demande directe de
+    l'utilisateur -- "qu'est-ce qui améliorerait la rentabilité ? imagine
+    et teste") remplace `NEUNEU_OBJECTIF_CLOSE_FRAC` sans le modifier."""
+    tr = _make_tranche(objectif_target=115.0)
+    high = np.array([0, 116.0]); low = np.array([0, 114.0]); c = np.array([0, 116.0])
+    closed, fee_frac, realized = process_repli_neuneu_tranche(tr, 1, high, low, c, objectif_close_frac=0.25)
+    assert closed is False
+    assert abs(fee_frac - 0.25) < 1e-9
+    assert abs(tr["remaining"] - 0.75) < 1e-9
+    assert tr["objectif_done"] is True
+
+def test_objectif_close_frac_zero_marks_done_without_closing_anything():
+    """Cas limite mesuré comme le meilleur réglage sur les 4 actifs
+    (`objectif_close_frac=0.0`) : Objectif ne clôture RIEN, mais
+    `objectif_done` passe quand même à `True` (ne redéclenche jamais), et la
+    Validation reste fonctionnelle ensuite."""
+    tr = _make_tranche(entry=100.0, stop=90.0, dumb_zone_level=120.0,
+                        ctx_high_ref=130.0, objectif_target=115.0)
+    high = np.array([0, 116.0]); low = np.array([0, 114.0]); c = np.array([0, 116.0])
+    closed, fee_frac, realized = process_repli_neuneu_tranche(tr, 1, high, low, c, objectif_close_frac=0.0)
+    assert closed is False
+    assert fee_frac == 0.0
+    assert tr["remaining"] == 1.0
+    assert tr["objectif_done"] is True
+    assert realized is None
+
+    tr["_max_high_since_entry"] = 121.0
+    high2 = np.array([0, 116.0, 121.0]); low2 = np.array([0, 114.0, 122.0]); c2 = np.array([0, 116.0, 122.0])
+    closed2, fee_frac2, _ = process_repli_neuneu_tranche(tr, 2, high2, low2, c2, objectif_close_frac=0.0)
+    assert closed2 is False
+    assert tr["validated"] is True
+    assert tr["stop"] == 121.0
+
+def test_run_repli_neuneu_objectif_close_frac_forwarded(monkeypatch):
+    """`run_repli_neuneu(objectif_close_frac=...)` doit se répercuter
+    jusqu'à `process_repli_neuneu_tranche` -- vérifié de bout en bout avec
+    un `realized_pnl` calculé À LA MAIN pour 2 valeurs de `objectif_close_
+    frac` distinctes (formule : `total = 0,012 - 0,001*frac`, dérivée de
+    entry_size=0,10 (risque 2%/stop 20%), pnl Objectif=0,11, pnl Stop=0,12,
+    tous deux déclenchés sur la MÊME bougie -- vérité terrain, pas devinée)."""
+    n = 8
+    o = np.full(n, 100.0); high = np.full(n, 100.0); low = np.full(n, 100.0); c = np.full(n, 100.0)
+    high[4] = 112.0; low[4] = 108.0; c[4] = 111.0
+    df = pd.DataFrame({"open": o, "high": high, "low": low, "close": c})
+
+    def fake_signal(df_in, context_duration, local_duration):
+        long_signal = np.zeros(n, dtype=bool); long_signal[3] = True
+        dumb_zone_level = np.full(n, np.nan); dumb_zone_level[3] = 110.0
+        local_range = np.full(n, np.nan); local_range[3] = 10.0
+        context_range = np.full(n, np.nan); context_range[3] = 40.0
+        ctx_high_ref = np.full(n, np.nan); ctx_high_ref[3] = 1000.0
+        return {"long_signal": long_signal, "dumb_zone_level": dumb_zone_level,
+                "local_range": local_range, "context_range": context_range,
+                "ctx_high_ref": ctx_high_ref}
+    monkeypatch.setattr(neuneu_repli_mod, "compute_repli_neuneu_signal", fake_signal)
+
+    for frac in (0.25, 0.75):
+        res = run_repli_neuneu(df, context_duration=5, local_duration=2, fee=0.0,
+                                record_trace=True, objectif_close_frac=frac)
+        expected = 0.012 - 0.001 * frac
+        assert abs(res["trace"][0]["realized_pnl"] - expected) < 1e-9, (
+            f"frac={frac}: realized_pnl={res['trace'][0]['realized_pnl']}, attendu {expected}"
+        )
+
 def test_validation_moves_stop_to_max_high_since_entry_no_close():
     """Validation (retour dans la dumb-zone OU au contexte opposé) : stop
     remonté au plus haut observé depuis l'ouverture, AUCUNE clôture."""
@@ -241,11 +315,11 @@ def test_run_repli_neuneu_stop_price_matches_hand_calc(monkeypatch):
 
     captured = {}
     orig_process = neuneu_repli_mod.process_repli_neuneu_tranche
-    def spy_process(tr, i, high, low, c):
+    def spy_process(tr, i, high, low, c, objectif_close_frac=NEUNEU_OBJECTIF_CLOSE_FRAC):
         if "stop_at_open" not in captured:
             captured["stop_at_open"] = tr["stop"]
             captured["objectif_target"] = tr["objectif_target"]
-        return orig_process(tr, i, high, low, c)
+        return orig_process(tr, i, high, low, c, objectif_close_frac=objectif_close_frac)
 
     monkeypatch.setattr(neuneu_repli_mod, "compute_repli_neuneu_signal", fake_signal)
     monkeypatch.setattr(neuneu_repli_mod, "process_repli_neuneu_tranche", spy_process)
