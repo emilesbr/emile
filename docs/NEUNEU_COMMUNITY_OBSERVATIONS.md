@@ -213,3 +213,70 @@ avait posé comme condition d'une discussion de mise en code — signalée expli
 conversation, mais PAS codée dans ce round : le "quoi" (disjonction de contexte = excès) est
 corroboré, le "combien" (seuil de distance entre canaux, nombre d'UT concernées) ne l'est pas encore,
 et la discussion de conception que l'utilisateur a annoncée n'a pas encore eu lieu.
+
+## 5. 3e fournée (55e round `PLAN.md`) — fil Discord "ETH M15 3BR" (salon "analyse-range")
+
+5 nouvelles captures : 4 captures du fil de discussion (2 membres, anonymisés "l'auteur du fil" et
+"un second membre") + 1 capture du graphique discuté (ETHUSD 3M/1M INDEX, avec le panneau multi-UT
+%/`dev` déjà vu au 52e round). Discussion RÉELLE entre praticiens sur un setup concret, sans
+indicateur visible cette fois (juste le graphique nu + les annotations manuelles des membres).
+
+### 5.1 "3BR en retard" corroboré une 2e fois, cette fois en discussion communautaire (pas juste une capture personnelle isolée)
+
+Le second membre écrit explicitement, à propos du même setup : *"Salut, n'y avait-il pas une 3BR en
+retard ? N'y a-t-il pas des squeezes ?"* puis, en réponse à la demande de détail de l'auteur du fil
+(*"Developpe ^^"*) : *"Je vois une 3br en retard et un squeeze de prix en 15m donc je me demande
+comment tu as pris ce trade en respectant les règles du [terme flou, transcrit tel quel : "prezi"]."*
+**Corrobore le terme "3BR en retard"** rencontré pour la première fois au 54e round (capture
+personnelle Sodexo) — cette fois dans un contexte de discussion communautaire indépendant, sur un
+autre actif (ETH). Toujours aucun chiffre associé (pas de fenêtre de tolérance donnée), mais la
+récurrence dans 2 sources indépendantes renforce que c'est un concept réel de la pratique, pas une
+étiquette isolée. Le terme *"règles du prezi"* reste incompris (pas assez de contexte pour trancher
+si c'est un raccourci pour "Philippe", une faute de frappe, ou un terme propre à ce salon) — transcrit
+tel quel, non interprété.
+
+### 5.2 Nouvelle nuance : un squeeze rendrait un range "de facto mature"
+
+Le second membre avance une hypothèse jamais rencontrée dans les 20 sources précédentes : *"j'aurais
+préféré avoir 50% de retracement [ndlr : déjà une règle connue et implémentée, `RULES_EXTRACTION.md`/
+`fibonacci.py::classify_regle_50`]. Et avec les squeezes, il me semblait que le range devient de
+facto mature, non ?"* — un lien entre l'OCCURRENCE d'un squeeze et une notion de "maturité" du range
+(peut-être : plus prêt à être invalidé/à produire un renversement). Aucune définition chiffrée de
+"mature" donnée ; l'auteur du fil ne confirme ni n'infirme explicitement ce point dans la suite
+capturée. Piste réelle mais un seul exemple, non actionnable en l'état.
+
+### 5.3 Écho qualitatif à notre propre trouvaille du 43e round (NO-GO M15)
+
+L'auteur du fil écrit : *"On est d'accord que lire la structure en dessous du daily sert à R...
+franchement... ?"* (scepticisme explicite sur l'utilité de lire la structure sous le Daily) et
+propose de préférer les UT *"W-M-3M"* (*"Je serai + d'avis d'inviter quiconque a regardé cette UT
+W-M-3M"*), ajoutant *"Le daily m'a déçu !"*. **Recoupement intéressant, qualitatif seulement** :
+notre propre 43e round avait mesuré, sur données réelles BTC/ETH/BNB/SOL, un retour NO-GO plus
+sévère en exécution M15 qu'en H1 (`docs/PLAN.md` section "43e application"). Un praticien réel
+exprime ici indépendamment la même méfiance envers les UT courtes/sous-Daily — pas une preuve
+supplémentaire en soi (une opinion n'est pas une mesure), mais un signal qualitatif cohérent avec
+notre propre résultat quantitatif, dans le même sens.
+
+### 5.4 Technique de "recharge"/"lissage du Bag" — un pratique de money management PERSONNEL du membre, pas une règle de Philippe
+
+L'auteur du fil décrit sa propre gestion d'un trade décevant : *"le trade a rien donné en terme de
+gains BE [ndlr: breakeven].. j'ai recharger + haut * et ici également pour lisser le Bag repris %"*
+— une technique de renforcement de position à des niveaux plus hauts pour lisser le prix de revient
+moyen ("Bag"). **Distinction importante à noter** : rien n'indique que cette technique fasse partie
+des tables de money management littérales de Philippe (§3/§3bis du manuel, déjà codées) — c'est une
+pratique personnelle du membre, présentée comme telle, pas une règle générale à absorber dans
+`position_engine.py`.
+
+### 5.5 Résultat honnête d'un trade réel rapporté par la communauté : ni gagnant ni perdant
+
+Le setup discuté ("Bougie 2K21 lol", ETHUSD, retour vers l'ancien plus bas de 2021 après -33,72% sur
+la bougie trimestrielle visible) s'est soldé, de l'aveu même de son auteur, par un trade "rien donné
+en terme de gains BE" — cohérent avec la discipline de ce projet de rapporter aussi les résultats
+mitigés/dégradés, pas seulement les succès. Noté pour mémoire, pas une donnée à absorber dans un
+backtest (anecdote individuelle, pas une série statistique).
+
+## 6. Ce que ce round NE fait PAS
+
+Aucun changement de code — discussion qualitative uniquement (aucun chiffre nouveau exploitable,
+aucune capture de l'indicateur réel cette fois, juste le graphique nu + les échanges). Les nuances
+5.1 (corroborée 2 fois) et 5.2 (nouvelle, isolée) sont notées pour suivi futur, pas codées.

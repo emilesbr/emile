@@ -625,6 +625,15 @@ par l'utilisateur — cf. `PLAN.md`)** : 3 écarts identifiés et VÉRIFIÉS CON
   round) — statut rétrogradé de "en attente de corroboration" à "hypothèse affaiblie", plus
   présentée comme piste prometteuse pour `regime_classifier.py`. Aucun changement de code. Détail
   complet : `PLAN.md` section "54e application".
+
+  **55e round (fil Discord "ETH M15 3BR")** : "3BR en retard" corroboré une 2e fois (discussion
+  communautaire indépendante, après la capture personnelle du 54e round) — concept réel, toujours
+  sans chiffre. 2 nouvelles nuances qualitatives non codées (squeeze→"range de facto mature" ;
+  technique de "recharge"/lissage du prix de revient moyen, explicitement personnelle au membre,
+  pas une règle de Philippe). Écho qualitatif intéressant : un membre exprime un scepticisme envers
+  la lecture de structure sous le Daily, cohérent avec notre propre NO-GO M15 mesuré au 43e round
+  (une opinion n'est pas une preuve supplémentaire, mais un signal dans le même sens). Aucun
+  changement de code. Détail complet : `PLAN.md` section "55e application".
   **"Repli Neuneu" (la moitié long) CONSTRUIT ET MESURÉ au 46e round** — décision directe de
   l'utilisateur ("trouve une solution") d'accepter la réutilisation du détecteur de swing déjà
   établi (`compute_swing_high_confirmed`) pour la "dumb zone" : le blocage initial ("aucun chiffre

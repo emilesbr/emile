@@ -2440,6 +2440,32 @@ position personnelle), pas des sorties de l'indicateur.
 Aucun changement de code — ce round illustre au contraire pourquoi ne JAMAIS coder sur un seul
 résultat favorable non reproduit. Suite de tests inchangée (`pytest -m ""` → 313/313).
 
+### 55e application — fil Discord "ETH M15 3BR" : "3BR en retard" corroboré, écho qualitatif au NO-GO M15 du 43e round
+
+5 nouvelles captures (fil de discussion Discord "analyse-range" + le graphique discuté, ETHUSD 3M/
+1M INDEX). Discussion qualitative entre 2 membres anonymisés, aucun indicateur réel visible cette
+fois. Détail complet : `docs/NEUNEU_COMMUNITY_OBSERVATIONS.md` section 5.
+
+**Corroboration** : "3BR en retard" (vu pour la 1ère fois au 54e round, capture personnelle Sodexo)
+réapparaît ici dans une discussion communautaire indépendante sur ETH — 2e occurrence indépendante,
+toujours sans chiffre associé, mais confirme que c'est un concept réel de la pratique.
+
+**2 nouvelles nuances qualitatives, aucune codée** :
+1. Un membre avance qu'un squeeze rendrait un range "de facto mature" — lien squeeze↔maturité
+   jamais rencontré, aucune définition chiffrée, un seul exemple.
+2. Une technique de "recharge"/lissage du prix de revient moyen ("Bag") décrite par l'auteur du fil
+   — explicitement sa pratique personnelle, pas une règle de Philippe à absorber dans
+   `position_engine.py`.
+
+**Recoupement intéressant, qualitatif seulement** : l'auteur du fil exprime un scepticisme explicite
+envers la lecture de structure sous le Daily et une préférence pour les UT W/M/3M — écho qualitatif
+à notre propre mesure quantitative du 43e round (NO-GO M15 plus sévère qu'en H1). Une opinion
+communautaire n'est pas une preuve supplémentaire, mais un signal cohérent dans le même sens que
+notre résultat déjà publié.
+
+Aucun changement de code — round de documentation pure. Suite de tests inchangée (`pytest -m ""`
+→ 313/313).
+
 ## Chantier différé volontairement en fin de backlog (décision directe de l'utilisateur)
 
 **Sizing par confiance de trade** (`trade_confidence.py`/`trade_confidence_bench.py`, 23e round) : construit et mesuré isolément, PAS câblé. Remis EXPRÈS en dernier dans ce backlog — l'utilisateur a explicitement demandé de le traiter APRÈS avoir fini de construire le protocole/la stratégie complète (architecture d'abord), parce que sa conception dépendra de ce qui aura été bâti d'ici là. Le changement structurel qui le débloquerait (`position_engine.py` risk_pct scalaire→par tranche) est désormais FAIT (24e round, ci-dessus) -- mais le câblage réel reste différé, comme demandé. Ne pas reprendre ce chantier avant que le protocole/la stratégie complète ne soit construit. Détail complet, trouvaille et 3 options : section "23e application" ci-dessus.
