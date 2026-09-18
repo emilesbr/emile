@@ -26,6 +26,21 @@ from emile.core.regime_classifier import add_regime, compute_wide_channel
 
 LOCAL_DURATION = "5D"
 CONTEXT_DURATION = "15D"
+# MÊMES valeurs que ci-dessus, exprimées en nombre de bougies H4 (39e round,
+# `PLAN.md`) -- PAS un nouveau paramètre inventé : 5 jours / 15 jours à 4h
+# par bougie, exact (aucun trou dans la donnée H4 de ce projet). Sert à
+# `prepare(df, local_duration=..., context_duration=...)` pour une UT AUTRE
+# que H4 (D1/Hebdomadaire), où "5D"/"15D" en CALENDAIRE dégénèrent (15
+# jours = une fraction d'une seule bougie Hebdomadaire -- trouvaille du 38e
+# round). Un compte de bougies UT-agnostique donne à chaque UT une fenêtre
+# "locale"/"de contexte" comparable en NOMBRE DE STRUCTURES observées,
+# plutôt qu'en durée calendaire absolue qui ne veut plus rien dire à cette
+# échelle -- cohérent avec la lecture du corpus lui-même ("chaque tendance
+# suit un schéma récurrent", section 4.2 du guide), jamais utilisées par
+# défaut (`prepare()` continue d'utiliser LOCAL_DURATION/CONTEXT_DURATION
+# tel quel pour tout appelant existant).
+LOCAL_DURATION_H4_BARS = 30    # 5D * 24h / 4h
+CONTEXT_DURATION_H4_BARS = 90  # 15D * 24h / 4h
 SWING_ORDER = 3
 MIN_BORDERS = 3
 RULE3_STREAK = 3
@@ -39,7 +54,24 @@ PROFILES_V4 = {
     "TRES_AGRESSIF": {"risk_pct": 0.05, "val_close": 0.00, "conf_close": 0.00},
 }
 
-def prepare(df: pd.DataFrame) -> pd.DataFrame:
+def prepare(df: pd.DataFrame, local_duration=LOCAL_DURATION, context_duration=CONTEXT_DURATION) -> pd.DataFrame:
+    """`local_duration`/`context_duration` (39e round, `PLAN.md` -- défauts
+    `LOCAL_DURATION`/`CONTEXT_DURATION`, comportement RIGOUREUSEMENT inchangé
+    pour tout appelant existant, aucun des 24 appelants de ce projet ne les
+    passe) : `LOCAL_DURATION="5D"`/`CONTEXT_DURATION="15D"` sont des durées
+    CALENDAIRES ABSOLUES, jamais recalibrées par UT -- correct pour H4 (leur
+    seul usage jusqu'ici) mais dégénéré sur une UT plus lente (15 jours =
+    ~90 bougies H4, mais une FRACTION d'une seule bougie Hebdomadaire :
+    `n_borders`/`local_range`/`context_range` ne peuvent structurellement pas
+    s'y former -- trouvaille du 38e round, `mtf_cascade_diagnostic.py`).
+    `pandas.rolling()` accepte indifféremment une durée calendaire (str/
+    Timedelta) OU un ENTIER (nombre de bougies) -- ce paramètre permet donc à
+    un appelant qui exécute sur une UT autre que H4 de passer un compte de
+    bougies UT-agnostique plutôt qu'une durée calendaire qui ne veut plus
+    rien dire à cette échelle. Aucune NOUVELLE valeur inventée : `LOCAL_
+    DURATION_H4_BARS`/`CONTEXT_DURATION_H4_BARS` (ci-dessous) sont les MÊMES
+    5D/15D, simplement exprimés en nombre de bougies H4 (30/90, exact --
+    5*24/4 et 15*24/4, aucune donnée manquante sur ce projet)."""
     df = add_proxy_v2_score(df)
     df["atr"] = atr(df, ATR_LEN)
     ema_slow = df["close"].ewm(span=EMA_SLOW, adjust=False).mean()
@@ -56,8 +88,8 @@ def prepare(df: pd.DataFrame) -> pd.DataFrame:
     df["ctx_width_pct"] = width_pct
 
     ts = df.set_index("date")
-    df["local_range"] = (ts["high"].rolling(LOCAL_DURATION).max() - ts["low"].rolling(LOCAL_DURATION).min()).values
-    df["context_range"] = (ts["high"].rolling(CONTEXT_DURATION).max() - ts["low"].rolling(CONTEXT_DURATION).min()).values
+    df["local_range"] = (ts["high"].rolling(local_duration).max() - ts["low"].rolling(local_duration).min()).values
+    df["context_range"] = (ts["high"].rolling(context_duration).max() - ts["low"].rolling(context_duration).min()).values
     # MÉDIANE du canal de contexte -- niveau structurel ABSOLU de l'étape
     # Confirmation (`RULES_EXTRACTION.md:41`, "médiane canal contexte,
     # clôturée" ; #5:55, "la médiane (50%) du contexte"). STRICTEMENT ADDITIF :
@@ -69,7 +101,7 @@ def prepare(df: pd.DataFrame) -> pd.DataFrame:
     # À NE PAS CONFONDRE avec `context_range` juste au-dessus : celle-ci est
     # une AMPLITUDE (max-min, sans `.shift(1)`), celle-là un NIVEAU DE PRIX
     # (médiane des deux bornes, avec `.shift(1)` causal).
-    df["ctx_median"] = context_channel_median(df, CONTEXT_DURATION)
+    df["ctx_median"] = context_channel_median(df, context_duration)
 
     # CAUSAL depuis le traitement de la réserve P0-bis (COUVERTURE_ENSEIGNEMENTS.md
     # / PLAN.md occurrence #4) : un swing low n'entre dans le compte de bornes
@@ -77,7 +109,7 @@ def prepare(df: pd.DataFrame) -> pd.DataFrame:
     # lui-même (qui dépendrait de SWING_ORDER barres futures).
     low_v = df["low"].values
     is_swing_low_confirmed = compute_swing_low_confirmed(low_v, order=SWING_ORDER)
-    df["n_borders"] = pd.Series(is_swing_low_confirmed, index=ts.index).rolling(CONTEXT_DURATION).sum().values
+    df["n_borders"] = pd.Series(is_swing_low_confirmed, index=ts.index).rolling(context_duration).sum().values
     return df
 
 def attach_higher_context(df_low: pd.DataFrame, df_high: pd.DataFrame, high_duration: pd.Timedelta,

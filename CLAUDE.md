@@ -48,12 +48,21 @@ requise) depuis le premier listing de chaque actif jusqu'à aujourd'hui.
 - **H1 natif** : BTC (2019-09-08, 61 439 bougies), ETH (2019-11-27, 59 529),
   BNB (2020-02-10, 57 728), SOL (2020-09-14, 52 521), **XRP** (2020-01-06,
   58 569 — n'existait avant que comme 365 barres D1 depuis une source
-  externe disparue, cf. `emile/core/oos_xrp_faithful.py`/
-  `oos_xrp_recommended.py`, toujours non branchés sur cette nouvelle donnée).
+  externe disparue). **Rebranché (41e round)** : `emile/core/oos_xrp_faithful.py`/
+  `oos_xrp_recommended.py` utilisent désormais cette donnée H1 native (plus
+  de décalage de rôles UT ni de gate désactivé faute d'historique) — cf.
+  `docs/PLAN.md` section "41e application" pour le détail et les chiffres.
 - **M15 natif** : BTC (245 751, déjà présent avant ce cycle, origine
   antérieure à cette session — intégrité revérifiée, pas juste supposée
-  bonne), ETH (238 114), BNB (230 913), SOL (210 085) — complète la Phase 1
-  (M15 BTC seul → NO-GO) sur les 4 actifs si ce chantier est rouvert.
+  bonne), ETH (238 114), BNB (230 913), SOL (210 085). **Rouvert et retesté
+  (43e round)** : `emile/core/m15_timeframe_bench.py` rejoue le vrai moteur
+  IP-fidèle (`run_faithful`) avec M15 natif en exécution sur les 4 actifs —
+  NO-GO reconfirmé, plus sévère qu'en H1 (retour négatif sur les 16
+  combinaisons actif×profil, profit factor 1,00-1,17) — cf. `docs/PLAN.md`
+  section "43e application". Corrige au passage un surclassement de
+  `docs/STATUS.md`, qui affirmait ce retest déjà fait alors que seul H1
+  l'avait été (Phase 1 ne l'avait mesuré qu'avec l'ancien proxy générique,
+  BTC seul).
 - H4/D1/Hebdomadaire/Mensuel : dérivés par `resample()` du H1, aucune
   donnée native séparée nécessaire (vérifié contre le corpus : aucune règle
   n'exige une UT calendaire fixe non dérivable — voir section ci-dessous).
@@ -73,12 +82,22 @@ n'est pas une unité de temps), mais un vrai trou à traiter séparément.
 explicite de l'utilisateur)** : vérifié contre le corpus (18 sources +
 `RULES_EXTRACTION.md`) qu'aucune UT calendaire fixe (M15 compris) n'est
 exigée nativement par un mécanisme précis — le mécanisme réel est relatif
-(UT/UT+1/UT+2), illustré avec des exemples différents selon la vidéo. En
-revanche, `faithful.py`/`unified_protocol.py` ne combinent que 7 mécanismes
-en dur ; 5+ autres déjà codés (Fibonacci RANGE, Andrews, canal manuel,
-Cluster Technique/diversification, "3ème borne squeezée", Confirmation
-structurelle) restent mesurés isolément, jamais dans un seul run agrégé —
-chantier réel, pas encore traité. Les GO/NO-GO déjà publiés (`STATUS.md`,
+(UT/UT+1/UT+2), illustré avec des exemples différents selon la vidéo.
+**Mis à jour (20e-22e rounds)** : `faithful.py`/`unified_protocol.py`
+combinaient jusqu'ici 7 mécanismes en dur ; 3 des 5+ mécanismes déjà codés
+mais jamais agrégés ont depuis été branchés sans condition (Fourchette
+d'Andrews lecture contextuelle, scopée RANGE_TENDANCIEL ; contrainte
+"espace libre" MTF avant Breakout, H13 ; variante d'entrée "3ème borne
+squeezée", #15) — détail et mesures honnêtes : `docs/PLAN.md` sections
+"20e/21e/22e application". **Restent hors périmètre, à raison, pas des
+oublis** : canal manuel comme stop (tie-break D1 non tranché par le
+corpus), Cluster Technique/diversification (paramètres réellement
+inventés, corpus sous-spécifié — H1-H5 de `diversification.py`) ; le
+tableau money management "Range Tendanciel" (§3bis, distinct du Range
+Neutre) reste également un chantier ouvert (19e round : moitié Faible/
+Modéré codable mais exige un changement structurel de `position_engine.py`,
+moitié Agressif/Très Agressif bloquée par "SL gain" indéfini nulle part
+dans le corpus). Les GO/NO-GO déjà publiés (`STATUS.md`,
 `PHASE1_CLOSEOUT.md`) portent sur le PROXY générique (confluence EMA), PAS
 sur la stratégie réelle de Philippe — reformulation de ces documents encore
 à faire pour que le qualificatif survive à une citation partielle.
@@ -94,15 +113,42 @@ avec n'importe quelle donnée, juste pas avec aucune). Avec la vraie donnée en
 place : **`pytest -m ""` (suite complète) → 197/197 passés, 0 échec** —
 vérifié par exécution réelle, pas affirmé.
 
-**Ce qui N'A PAS été fait, à ne pas confondre avec "tout est validé"** : les
-chiffres déjà cités dans `docs/PLAN.md`/`docs/STATUS.md` (win rates,
-drawdowns, walk-forward, OOS XRP...) ont été calculés sur l'ancienne donnée
-du sandbox disparu — cette nouvelle donnée vient de la même source (Binance
-Futures) et est intègre, mais n'a PAS été diffée bougie-par-bougie contre
-l'ancienne (impossible, l'ancienne n'existe plus nulle part). Avant de citer
-un chiffre historique comme "reconfirmé", rejouer et comparer au moins un
-`results/*.csv` très cité (ex. `phase2_v7_mtf_results.csv`,
-`walkforward_faithful_results.csv`) au nouveau résultat.
+**Mis à jour (37e round)** : la reconciliation demandée ci-dessus est désormais **faite pour
+les moteurs actuellement cités comme référence** (pas pour les 49 CSV d'archive
+d'engins supersédés — `v3/v4/v5/v6/CLOSES/CORRECTED/full_matrix/moneymanagement/patterns/
+capital_tiers/diversification/ut2/reverse/squeeze/fib`... — délibérément laissés tels quels,
+`STATUS.md` les classe déjà lui-même "historique, ne pas utiliser comme source de vérité", donc
+aucun enjeu à les rejouer). Régénérés et vérifiés : `phase2_v7_mtf_results.csv`,
+`phase2_recommended_results.csv`, `walkforward_recommended_results.csv`,
+`walkforward_faithful_results.csv`, `cross_stress_test_faithful_gates_*.csv`,
+`cross_stress_test_unified_capital_tiers_*.csv`,
+`backtest_phase2_faithful_manual_channel_walkforward_results.csv` (les autres — `faithful`/
+`unified`/`trend_table`/`risk_aggregation`/`walkforward_unified` — l'étaient déjà, régénérés lors
+de rounds précédents de ce même cycle). **Conclusion honnête** : `max_dd_%` change à peine
+(la donnée restaurée couvre surtout PLUS d'historique, pas un historique DIFFÉRENT sur les mêmes
+bougies) mais `n_trades`/`total_return_%` montent partout, mécaniquement, avec la période plus
+longue désormais disponible — v7 (BTC/MODERE H4_valide_par_D1 : 492→508 trades, +57,7%→+64,2%),
+`recommended` (BTC/FAIBLE : 343→354 trades, +21,1%→+26,8%) sont les deltas les plus significatifs.
+**Le chiffre le plus surveillé du projet, BNB/TRES_AGRESSIF (walk-forward)** : RECONFIRMÉ, pas
+infirmé — `cross_stress_test_unified_capital_tiers_*.csv` étaient en fait BEAUCOUP plus périmés
+que par la seule donnée (jamais régénérés depuis AVANT les corrections EXCES-H4/pyramidalisation-
+régime/Conflit MTF/Stop-Loss-canal déjà connues), d'où un "catastrophique" 2021 à -45,9%/-63,5%
+qui semblait réapparaître à tort ; recalculé sur la donnée actuelle avec le code actuel, 2021
+retombe à +8,0%/-9,4% (proche de -9,5%/+5,2% déjà documenté dans `STATUS.md`), 2024 reste la pire
+année (-12,2%/-26,3%, proche de -11,7%/-27,2% déjà documenté) — la conclusion "n'est plus à
+exclure d'un usage réel" tient toujours. **Bug indépendant trouvé et corrigé au passage** (voir
+paragraphe dédié ci-dessous) dans `backtest_phase2_faithful_manual_channel.py` — jamais testé
+unitairement avant ce round. Détail complet, chiffres exacts par fichier : `docs/PLAN.md` section
+"37e application".
+
+**Rebranché (41e round)** : `oos_xrp_recommended.py`/`oos_xrp_faithful.py`, qui restaient câblés
+sur un chemin de sandbox disparu (`/home/user/http-kaijin/...`, `FileNotFoundError` confirmé),
+utilisent désormais `data/processed/XRPUSDT_1h_processed.csv` — les 3 rôles UT (exécution/stop
+UT+1/gate UT+2) reprennent leur position naturelle (H4/D1/Hebdomadaire), plus de décalage ni de
+gate désactivé faute d'historique. Résultat honnête, échantillon bien plus substantiel qu'avant
+(3 trades sur 1 an → 137-140 trades sur ~6 ans côté fidèle, 215 côté recommandé) : `recommended`
+négatif sur les 4 profils (-18,4% à -27,3%), `faithful` quasi neutre à légèrement positif (-0,2% à
++6,7%) — rapporté tel quel. Détail complet : `docs/PLAN.md` section "41e application".
 
 Bug indépendant trouvé et corrigé au passage (`emile/config/env_config.py`) :
 le chemin de données par défaut était relatif (`Path("data/processed")`), donc
@@ -123,11 +169,15 @@ l'import.
   erreurs de citation/attribution ont été trouvées et corrigées après coup
   (`docs/STATUS.md`, rounds 6 à 8) — la citation de départ d'un item peut être fausse
   ou partiellement fausse.
-- **"Que ferait un ingénieur senior (directeur) ?" mobilise plusieurs agents en
-  parallèle, pas une analyse individuelle** (règle explicite de l'utilisateur,
-  `docs/PLAN.md`). Chaque retour d'agent reste vérifié indépendamment avant d'être
-  accepté — la mobilisation multi-agents ne remplace pas la vérification, elle s'y
-  ajoute.
+- **"Que ferait un ingénieur senior (directeur) ?" n'oblige PLUS à mobiliser
+  plusieurs agents en parallèle** (règle abrogée le 11 sept. 2026 — remplace la
+  version précédente de ce principe, qui l'imposait systématiquement). La
+  mobilisation multi-agents reste une option disponible, à utiliser quand le
+  chantier s'y prête (investigations indépendantes croisables, gros volume
+  d'exploration parallélisable) ou quand l'utilisateur la demande explicitement —
+  jamais par défaut au seul énoncé de la question. Si un ou plusieurs agents sont
+  mobilisés (à l'initiative de l'utilisateur ou de sa propre décision), chaque
+  retour reste vérifié indépendamment avant d'être accepté — ça, c'est inchangé.
 - **Un résultat honnête et dégradé est publié tel quel**, jamais habillé — la
   discipline de ce projet est de documenter ce qui ne marche pas autant que ce qui
   marche (voir le ton de `docs/STATUS.md`).

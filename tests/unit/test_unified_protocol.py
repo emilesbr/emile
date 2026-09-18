@@ -51,7 +51,10 @@ import sys
 from emile.backtests.backtest_phase2_v7 import MIN_BORDERS
 from emile.backtests.backtest_phase2_recommended import WARMUP
 from emile.backtests.backtest_phase2_faithful import _run_core as _run_core_faithful
-from emile.core.unified_protocol import _run_core_unified, _accumulation_active, decide_now, _aggregate_risk_warning
+from emile.core.unified_protocol import (
+    _run_core_unified, _accumulation_active, _campaign_ev, decide_now, _aggregate_risk_warning,
+)
+from emile.core.trend_table import breakout_space_ok, BREAKOUT_SPACE_MULT
 
 N = WARMUP + 25   # marge suffisante après warmup pour dérouler un scénario complet
 
@@ -76,6 +79,11 @@ def _make_base_feat(n=N):
         # défaut (aucune bougie "très large") -- comme `wall_street_active`
         # ci-dessus, un test dédié l'override pour injecter SON scénario.
         "wide_channel": np.full(n, False),
+        # Fourchette d'Andrews, lecture contextuelle : neutralisée ici
+        # (`close` toujours strictement au-dessus) -- même raison que
+        # `wall_street_active`/`wide_channel` ci-dessus, un test dédié
+        # override pour injecter SON scénario RANGE_TENDANCIEL.
+        "pitchfork_p1": close.copy() - 10.0,
         "local_range": np.full(n, 5.0),
         "context_range": np.full(n, 10.0),
         "n_borders": np.full(n, float(MIN_BORDERS)),
@@ -83,6 +91,7 @@ def _make_base_feat(n=N):
         "gate_regime": np.full(n, "RANGE_NEUTRE", dtype=object),
         "regime": np.full(n, "RANGE_NEUTRE", dtype=object),
         "regime_d1": np.full(n, "TENDANCE", dtype=object),   # jamais en range par défaut -- isole les tests du gate CONFLIT MTF (cf. tête de unified_protocol.py), overridé explicitement par les tests dédiés
+        "squeeze_d1": np.full(n, False),   # jamais squeezé par défaut -- isole les tests du gate d'invalidation 3BR, overridé explicitement par les tests dédiés
         "ctx_resistance": np.full(n, 110.0),
         "ctx_high": np.full(n, 105.0),
         "local_high": np.full(n, 102.0),
@@ -90,7 +99,56 @@ def _make_base_feat(n=N):
         "cycle_favorable": np.full(n, True),
         "ema_trend": np.full(n, 95.0),
         "volume_expansion": np.full(n, False),
+        # Contrainte "espace libre" MTF avant Breakout : neutralisée ici
+        # (niveaux d'obstacle déjà SOUS le prix -> marge infinie, cf.
+        # `trend_table.free_room_frac`) -- même raison que `pitchfork_p1`
+        # ci-dessus, un test dédié override pour injecter SON scénario.
+        "obstacle_ut1": close.copy() - 10.0,
+        "obstacle_ut2": close.copy() - 10.0,
+        # Variante d'entrée "3ème borne squeezée" : neutralisée ici
+        # (`squeeze_armed` toujours faux), même raison que ci-dessus.
+        "squeeze_armed": np.zeros(n, dtype=bool),
+        "squeeze_mid": np.full(n, np.nan),
+        "squeeze_sup": np.full(n, np.nan),
     }
+
+# ---------------------------------------------------------------------------
+# Contrainte "espace libre" MTF avant Breakout (H13-H17) : `_campaign_ev`
+# doit câbler `breakout_space_ok` depuis `feat["local_range"]`/
+# `feat["obstacle_ut1"]`/`feat["obstacle_ut2"]` -- comparé DIRECTEMENT à
+# `trend_table.breakout_space_ok` appelé à la main (pas une réimplémentation
+# qui pourrait diverger), pour un niveau bloquant ET un niveau non bloquant.
+# ---------------------------------------------------------------------------
+def test_campaign_ev_wires_breakout_space_ok_blocking():
+    feat = _make_base_feat()
+    j = WARMUP + 5
+    feat["close"][j] = 100.0
+    feat["local_range"][j] = 20.0   # "rendement escompté" = 20% du prix
+    # Obstacle à 105 -> marge (105-100)/100 = 5%, < 20% requis -> bloquant.
+    feat["obstacle_ut1"][j] = 105.0
+    feat["obstacle_ut2"][j] = 105.0
+    ev = _campaign_ev(feat, j + 1)
+    expected = breakout_space_ok(100.0, 0.20, (105.0, 105.0), BREAKOUT_SPACE_MULT)
+    assert expected is False, "scénario invalide : le calcul de référence devrait déjà être bloquant"
+    assert ev["breakout_space_ok"] is False, (
+        "_campaign_ev doit câbler breakout_space_ok=False quand l'obstacle est trop proche du "
+        "rendement escompté (H13-H17), pas laisser passer par défaut"
+    )
+
+def test_campaign_ev_wires_breakout_space_ok_passing():
+    feat = _make_base_feat()
+    j = WARMUP + 5
+    feat["close"][j] = 100.0
+    feat["local_range"][j] = 5.0   # "rendement escompté" = 5% du prix
+    # Obstacle à 200 -> marge (200-100)/100 = 100%, >= 5% requis -> passant.
+    feat["obstacle_ut1"][j] = 200.0
+    feat["obstacle_ut2"][j] = 200.0
+    ev = _campaign_ev(feat, j + 1)
+    expected = breakout_space_ok(100.0, 0.05, (200.0, 200.0), BREAKOUT_SPACE_MULT)
+    assert expected is True, "scénario invalide : le calcul de référence devrait déjà être passant"
+    assert ev["breakout_space_ok"] is True, (
+        "_campaign_ev doit câbler breakout_space_ok=True quand l'espace libre est suffisant"
+    )
 
 # ---------------------------------------------------------------------------
 # Test 1 (décision #1 révisée, indépendance) : accumulation_active devient
@@ -231,14 +289,19 @@ def test_pure_range_sequence_matches_faithful_engine():
     range_keys = [
         "date", "open", "high", "low", "close", "score", "atr", "ctx_support_d1",
         "local_range", "context_range", "n_borders", "gate_score", "gate_regime",
-        "wall_street_active", "wide_channel",
+        "wall_street_active", "wide_channel", "pitchfork_p1", "squeeze_d1",
+        "squeeze_armed", "squeeze_mid", "squeeze_sup",
     ]
     feat_range_only = {k: feat[k] for k in range_keys}
     # "regime" (unified) et "regime_h4" (faithful) désignent la MÊME grandeur
     # (régime H4 natif) sous deux noms différents -- cf. CORRECTION EXCES H4
     # dans les deux fichiers. "regime_d1" porte le même nom dans les deux
-    # fichiers (cf. CORRECTION CONFLIT MTF) -- copié tel quel.
+    # fichiers (cf. CORRECTION CONFLIT MTF) -- copié tel quel. Les DEUX clés
+    # ("regime_h4" ET "regime") sont désormais nécessaires côté faithful.py
+    # (l'alias "regime" alimente `range_gates.range_gate`, chantier
+    # d'architecture -- cf. PLAN.md).
     feat_range_only["regime_h4"] = feat["regime"]
+    feat_range_only["regime"] = feat["regime"]
     feat_range_only["regime_d1"] = feat["regime_d1"]
 
     for profile in ("FAIBLE", "MODERE", "AGRESSIF", "TRES_AGRESSIF"):
@@ -332,6 +395,80 @@ def test_range_entry_blocked_when_h4_regime_is_exces():
     assert n_open == 0, (
         f"{n_open} tranche(s) RANGE ouverte(s) alors que le régime H4 natif est EXCES, attendu 0 "
         "(le gate EXCES-H4 doit bloquer TOUTE ouverture, entrée fraîche incluse)"
+    )
+
+# ---------------------------------------------------------------------------
+# Tableau Range TENDANCIEL (§3bis, 19e/24e rounds) : câblage dans
+# `_run_core_unified` -- `range_money_management_fracs` (réutilisée de
+# `backtest_phase2_faithful.py`, pas dupliquée) doit fixer les fractions de
+# clôture PAR TRANCHE dès l'ouverture, lisibles sur `live_state["range_
+# tranches"]`.
+# ---------------------------------------------------------------------------
+def test_range_tranche_carries_range_tendanciel_fracs_for_faible():
+    feat = _make_pyramid_range_feat("RANGE_TENDANCIEL")
+    res = _run_core_unified(feat, "FAIBLE", record_state=True)
+    trs = res["live_state"]["range_tranches"]
+    assert len(trs) >= 1, "aucune tranche RANGE ouverte -- scénario invalide"
+    assert abs(trs[0]["val_close_frac"] - 0.25) < 1e-9, (
+        f"val_close_frac={trs[0]['val_close_frac']}, attendu 0.25 (§3bis FAIBLE, RANGE_TENDANCIEL)"
+    )
+    assert abs(trs[0]["conf_close_frac"] - 0.50) < 1e-9, (
+        f"conf_close_frac={trs[0]['conf_close_frac']}, attendu 0.50 (§3bis FAIBLE, RANGE_TENDANCIEL)"
+    )
+
+def test_range_tranche_carries_range_neutre_fracs_for_faible():
+    """Contrôle positif : le MÊME profil FAIBLE, mais régime RANGE_NEUTRE --
+    doit porter la grille §3 par défaut (0,50/0,00), pas celle de §3bis."""
+    feat = _make_pyramid_range_feat("RANGE_NEUTRE")
+    res = _run_core_unified(feat, "FAIBLE", record_state=True)
+    trs = res["live_state"]["range_tranches"]
+    assert len(trs) >= 1, "aucune tranche RANGE ouverte -- scénario invalide"
+    assert abs(trs[0]["val_close_frac"] - 0.50) < 1e-9, (
+        f"val_close_frac={trs[0]['val_close_frac']}, attendu 0.50 (§3, RANGE_NEUTRE)"
+    )
+    assert abs(trs[0]["conf_close_frac"] - 0.00) < 1e-9, (
+        f"conf_close_frac={trs[0]['conf_close_frac']}, attendu 0.00 (§3, RANGE_NEUTRE)"
+    )
+
+def test_range_tranche_modere_unaffected_by_regime():
+    """MODERE : §3bis est un no-op bit-à-bit (cf. `backtest_phase2_
+    faithful.py`) -- mêmes fractions dans les 2 régimes."""
+    feat_n = _make_pyramid_range_feat("RANGE_NEUTRE")
+    feat_t = _make_pyramid_range_feat("RANGE_TENDANCIEL")
+    tr_n = _run_core_unified(feat_n, "MODERE", record_state=True)["live_state"]["range_tranches"][0]
+    tr_t = _run_core_unified(feat_t, "MODERE", record_state=True)["live_state"]["range_tranches"][0]
+    assert abs(tr_n["val_close_frac"] - tr_t["val_close_frac"]) < 1e-9
+    assert abs(tr_n["conf_close_frac"] - tr_t["conf_close_frac"]) < 1e-9
+    assert abs(tr_n["val_close_frac"] - 0.25) < 1e-9
+    assert abs(tr_n["conf_close_frac"] - 0.25) < 1e-9
+
+def test_range_entry_blocked_by_andrews_contextual_gate_when_below_pitchfork_p1():
+    """Fourchette d'Andrews, lecture CONTEXTUELLE (cf. `backtest_phase2_
+    faithful.py`, `andrews_gate_alternative.py`) : régime H4 RANGE_TENDANCIEL
+    partout, `close <= pitchfork_p1` partout -- AUCUNE tranche RANGE ne doit
+    s'ouvrir ("prend le relais" bloque tant que le prix n'a pas repassé
+    au-dessus de la médiane P1)."""
+    feat = _make_pyramid_range_feat("RANGE_TENDANCIEL")
+    feat["pitchfork_p1"] = feat["close"] + 10.0
+    res = _run_core_unified(feat, "MODERE", record_state=True)
+    n_open = len(res["live_state"]["range_tranches"])
+    assert n_open == 0, (
+        f"{n_open} tranche(s) RANGE ouverte(s) alors que le régime H4 est RANGE_TENDANCIEL et "
+        "close <= pitchfork_p1 partout, attendu 0 (le gate Andrews contextuel doit bloquer)"
+    )
+
+def test_range_entry_allowed_by_andrews_contextual_gate_outside_range_tendanciel():
+    """Contrôle positif du test ci-dessus : le MÊME `pitchfork_p1`
+    défavorable, mais régime H4 TENDANCE (pas RANGE_TENDANCIEL) -- le gate
+    Andrews contextuel ne s'applique QUE dans RANGE_TENDANCIEL, donc
+    plusieurs tranches doivent s'ouvrir malgré tout."""
+    feat = _make_pyramid_range_feat("TENDANCE")
+    feat["pitchfork_p1"] = feat["close"] + 10.0
+    res = _run_core_unified(feat, "MODERE", record_state=True)
+    n_open = len(res["live_state"]["range_tranches"])
+    assert n_open > 1, (
+        f"{n_open} tranche(s) RANGE ouverte(s) en régime TENDANCE malgré pitchfork_p1 défavorable, "
+        "attendu plusieurs (le gate Andrews contextuel ne doit s'appliquer qu'en RANGE_TENDANCIEL)"
     )
 
 # ---------------------------------------------------------------------------
@@ -477,6 +614,309 @@ def test_decide_now_requires_volume_column():
         assert "volume" in str(e)
     else:
         raise AssertionError("decide_now aurait dû lever ValueError sans colonne 'volume'")
+
+# ---------------------------------------------------------------------------
+# Canal Neuneu (48e round) -- OPT-IN, câblage indépendant RANGE/TENDANCE.
+# `compute_repli_neuneu_signal`/`compute_borne_neuneu_signal`/`context_
+# channel_median` monkeypatchés (même technique "monkeypatch-and-observe"
+# déjà établie dans ce projet) pour injecter un signal à un bar précis SANS
+# reproduire un vrai canal glissant à la main -- `_make_base_feat` ne couvre
+# que WARMUP+25 bougies, trop court pour un vrai warmup de canal (90/30
+# bougies, `CONTEXT_DURATION_H4_BARS`/`LOCAL_DURATION_H4_BARS`).
+# ---------------------------------------------------------------------------
+import emile.core.unified_protocol as unified_protocol_mod
+
+def _feat_with_neuneu(n=N, use_neuneu_val=True, regime_val="RANGE_NEUTRE"):
+    feat = _make_base_feat(n)
+    feat["use_neuneu"] = np.full(n, use_neuneu_val)
+    feat["regime"] = np.full(n, regime_val, dtype=object)
+    return feat
+
+def _empty_borne_sig(n):
+    return {"short_signal": np.zeros(n, dtype=bool), "context_range": np.full(n, np.nan),
+            "ctx_high_ref": np.full(n, np.nan), "ctx_low_ref": np.full(n, np.nan),
+            "local_range": np.full(n, np.nan), "local_low_ref": np.full(n, np.nan)}
+
+def _empty_repli_sig(n):
+    return {"long_signal": np.zeros(n, dtype=bool), "dumb_zone_level": np.full(n, np.nan),
+            "local_range": np.full(n, np.nan), "context_range": np.full(n, np.nan),
+            "ctx_high_ref": np.full(n, np.nan)}
+
+def test_use_neuneu_false_default_never_calls_neuneu_signals(monkeypatch):
+    """`use_neuneu=False` (défaut) : `compute_repli_neuneu_signal`/
+    `compute_borne_neuneu_signal` ne doivent JAMAIS être appelées --
+    comportement rigoureusement inchangé pour tout appelant existant."""
+    feat = _feat_with_neuneu()
+    def boom(*a, **k):
+        raise AssertionError("ne doit jamais être appelé quand use_neuneu=False")
+    monkeypatch.setattr(unified_protocol_mod, "compute_repli_neuneu_signal", boom)
+    monkeypatch.setattr(unified_protocol_mod, "compute_borne_neuneu_signal", boom)
+    res = _run_core_unified(feat, "MODERE", use_neuneu=False)
+    assert res["n_neuneu_opened"] == 0
+
+def test_use_neuneu_true_opens_long_tranche_via_repli_signal(monkeypatch):
+    """Signal Repli Neuneu fabriqué à un bar précis : la tranche doit
+    s'ouvrir avec exactement les entry/stop calculés par
+    `open_repli_neuneu_tranche` (réutilisée, pas réimplémentée), et rester
+    seule ouverte tout le reste de la fenêtre (prix plat, ne retouche ni
+    l'objectif ni le stop)."""
+    n = N
+    open_i = WARMUP + 5
+    feat = _feat_with_neuneu(n, use_neuneu_val=True, regime_val="RANGE_NEUTRE")
+
+    def fake_repli(df, context_duration, local_duration):
+        sig = _empty_repli_sig(n)
+        sig["long_signal"][open_i] = True
+        sig["dumb_zone_level"][open_i] = 200.0
+        sig["local_range"][open_i] = 10.0
+        sig["context_range"][open_i] = 40.0
+        sig["ctx_high_ref"][open_i] = 300.0
+        return sig
+
+    monkeypatch.setattr(unified_protocol_mod, "compute_repli_neuneu_signal", fake_repli)
+    monkeypatch.setattr(unified_protocol_mod, "compute_borne_neuneu_signal",
+                         lambda df, cd, ld, regime=None: _empty_borne_sig(n))
+    monkeypatch.setattr(unified_protocol_mod, "context_channel_median", lambda df, d: np.full(n, np.nan))
+
+    res = _run_core_unified(feat, "MODERE", use_neuneu=True, record_state=True)
+    assert res["n_neuneu_opened"] == 1
+    live = res["live_state"]
+    assert live["neuneu_active"] is True
+    tr = live["neuneu_tranche"]
+    assert tr["_side"] == "long"
+    assert abs(tr["entry"] - 100.0) < 1e-9   # open[open_i] du feat de base
+    # stop_distance = max(local_range=10, 0.5*context_range=20) = 20 -> stop=80
+    assert abs(tr["stop"] - 80.0) < 1e-9
+
+def test_use_neuneu_true_opens_short_tranche_via_borne_signal(monkeypatch):
+    """Symétrique : signal Borne Neuneu fabriqué -- tranche SHORT ouverte
+    avec entry/stop calculés par `open_borne_neuneu_tranche`."""
+    n = N
+    open_i = WARMUP + 5
+    feat = _feat_with_neuneu(n, use_neuneu_val=True, regime_val="RANGE_NEUTRE")
+
+    def fake_borne(df, context_duration, local_duration, regime=None):
+        sig = _empty_borne_sig(n)
+        sig["short_signal"][open_i] = True
+        sig["context_range"][open_i] = 50.0
+        sig["ctx_high_ref"][open_i] = 90.0
+        sig["ctx_low_ref"][open_i] = 40.0
+        sig["local_range"][open_i] = 10.0
+        sig["local_low_ref"][open_i] = 60.0
+        return sig
+
+    monkeypatch.setattr(unified_protocol_mod, "compute_repli_neuneu_signal",
+                         lambda df, cd, ld: _empty_repli_sig(n))
+    monkeypatch.setattr(unified_protocol_mod, "compute_borne_neuneu_signal", fake_borne)
+    monkeypatch.setattr(unified_protocol_mod, "context_channel_median", lambda df, d: np.full(n, 65.0))
+
+    res = _run_core_unified(feat, "MODERE", use_neuneu=True, record_state=True)
+    assert res["n_neuneu_opened"] == 1
+    tr = res["live_state"]["neuneu_tranche"]
+    assert tr["_side"] == "short"
+    # stop_distance = max(entry-ctx_high_ref=100-90=10, 0.5*local_range=5) = 10 -> stop=110
+    assert abs(tr["stop"] - 110.0) < 1e-9
+
+def test_use_neuneu_blocked_when_regime_is_tendance(monkeypatch):
+    """H-Borne-6 (47e round), appliqué aussi à Repli Neuneu par cohérence :
+    le canal Neuneu ne doit JAMAIS s'ouvrir sur un bar en régime TENDANCE,
+    même si le signal prix serait par ailleurs présent."""
+    n = N
+    open_i = WARMUP + 5
+    feat = _feat_with_neuneu(n, use_neuneu_val=True, regime_val="TENDANCE")
+
+    def fake_repli(df, context_duration, local_duration):
+        sig = _empty_repli_sig(n)
+        sig["long_signal"][open_i] = True
+        sig["dumb_zone_level"][open_i] = 200.0
+        sig["local_range"][open_i] = 10.0
+        sig["context_range"][open_i] = 40.0
+        sig["ctx_high_ref"][open_i] = 300.0
+        return sig
+
+    monkeypatch.setattr(unified_protocol_mod, "compute_repli_neuneu_signal", fake_repli)
+    monkeypatch.setattr(unified_protocol_mod, "compute_borne_neuneu_signal",
+                         lambda df, cd, ld, regime=None: _empty_borne_sig(n))
+    monkeypatch.setattr(unified_protocol_mod, "context_channel_median", lambda df, d: np.full(n, np.nan))
+
+    res = _run_core_unified(feat, "MODERE", use_neuneu=True)
+    assert res["n_neuneu_opened"] == 0, "régime TENDANCE -- doit bloquer même avec un signal prix présent"
+
+# ---------------------------------------------------------------------------
+# Candidat H-Context-BB-UT+1 pour le gate régime de Neuneu (58e round) --
+# `use_bb_context_for_neuneu` fait consommer `feat["regime_bb"]` au lieu de
+# `feat["regime"]`, SEULEMENT pour le gate Neuneu.
+# ---------------------------------------------------------------------------
+
+def test_use_bb_context_for_neuneu_false_ignores_regime_bb(monkeypatch):
+    """Défaut (`False`) : même si `feat["regime_bb"]` existe et diffère de
+    `feat["regime"]`, le gate Neuneu doit continuer à lire `feat["regime"]`
+    -- comportement rigoureusement inchangé."""
+    n = N
+    open_i = WARMUP + 5
+    feat = _feat_with_neuneu(n, use_neuneu_val=True, regime_val="TENDANCE")
+    feat["regime_bb"] = np.full(n, "RANGE_NEUTRE", dtype=object)  # favorable, mais ignoré
+
+    def fake_repli(df, context_duration, local_duration):
+        sig = _empty_repli_sig(n)
+        sig["long_signal"][open_i] = True
+        sig["dumb_zone_level"][open_i] = 200.0
+        sig["local_range"][open_i] = 10.0
+        sig["context_range"][open_i] = 40.0
+        sig["ctx_high_ref"][open_i] = 300.0
+        return sig
+
+    monkeypatch.setattr(unified_protocol_mod, "compute_repli_neuneu_signal", fake_repli)
+    monkeypatch.setattr(unified_protocol_mod, "compute_borne_neuneu_signal",
+                         lambda df, cd, ld, regime=None: _empty_borne_sig(n))
+    monkeypatch.setattr(unified_protocol_mod, "context_channel_median", lambda df, d: np.full(n, np.nan))
+
+    res = _run_core_unified(feat, "MODERE", use_neuneu=True, use_bb_context_for_neuneu=False)
+    assert res["n_neuneu_opened"] == 0, "regime (TENDANCE) doit primer, regime_bb ignoré par défaut"
+
+def test_use_bb_context_for_neuneu_true_uses_regime_bb_instead_of_regime(monkeypatch):
+    """`True` : le gate Neuneu doit suivre `feat["regime_bb"]`, pas
+    `feat["regime"]` -- ici `regime`=TENDANCE (bloquerait normalement) mais
+    `regime_bb`=RANGE_NEUTRE (favorable) : la tranche doit s'ouvrir."""
+    n = N
+    open_i = WARMUP + 5
+    feat = _feat_with_neuneu(n, use_neuneu_val=True, regime_val="TENDANCE")
+    feat["regime_bb"] = np.full(n, "RANGE_NEUTRE", dtype=object)
+
+    def fake_repli(df, context_duration, local_duration):
+        sig = _empty_repli_sig(n)
+        sig["long_signal"][open_i] = True
+        sig["dumb_zone_level"][open_i] = 200.0
+        sig["local_range"][open_i] = 10.0
+        sig["context_range"][open_i] = 40.0
+        sig["ctx_high_ref"][open_i] = 300.0
+        return sig
+
+    monkeypatch.setattr(unified_protocol_mod, "compute_repli_neuneu_signal", fake_repli)
+    monkeypatch.setattr(unified_protocol_mod, "compute_borne_neuneu_signal",
+                         lambda df, cd, ld, regime=None: _empty_borne_sig(n))
+    monkeypatch.setattr(unified_protocol_mod, "context_channel_median", lambda df, d: np.full(n, np.nan))
+
+    res = _run_core_unified(feat, "MODERE", use_neuneu=True, use_bb_context_for_neuneu=True)
+    assert res["n_neuneu_opened"] == 1, "regime_bb (RANGE_NEUTRE) doit primer quand use_bb_context_for_neuneu=True"
+
+def test_use_bb_context_for_neuneu_true_blocked_when_regime_bb_is_tendance(monkeypatch):
+    """Symétrique : `regime`=RANGE_NEUTRE (favorable) mais `regime_bb`=
+    TENDANCE -- doit bloquer, exactement H-Borne-6 appliqué au candidat."""
+    n = N
+    open_i = WARMUP + 5
+    feat = _feat_with_neuneu(n, use_neuneu_val=True, regime_val="RANGE_NEUTRE")
+    feat["regime_bb"] = np.full(n, "TENDANCE", dtype=object)
+
+    def fake_repli(df, context_duration, local_duration):
+        sig = _empty_repli_sig(n)
+        sig["long_signal"][open_i] = True
+        sig["dumb_zone_level"][open_i] = 200.0
+        sig["local_range"][open_i] = 10.0
+        sig["context_range"][open_i] = 40.0
+        sig["ctx_high_ref"][open_i] = 300.0
+        return sig
+
+    monkeypatch.setattr(unified_protocol_mod, "compute_repli_neuneu_signal", fake_repli)
+    monkeypatch.setattr(unified_protocol_mod, "compute_borne_neuneu_signal",
+                         lambda df, cd, ld, regime=None: _empty_borne_sig(n))
+    monkeypatch.setattr(unified_protocol_mod, "context_channel_median", lambda df, d: np.full(n, np.nan))
+
+    res = _run_core_unified(feat, "MODERE", use_neuneu=True, use_bb_context_for_neuneu=True)
+    assert res["n_neuneu_opened"] == 0
+
+def test_use_bb_context_for_neuneu_true_without_regime_bb_key_raises():
+    """`feat` non préparé avec `regime_bb` -- ValueError explicite plutôt
+    qu'un KeyError opaque."""
+    feat = _feat_with_neuneu(N, use_neuneu_val=True, regime_val="RANGE_NEUTRE")
+    assert "regime_bb" not in feat
+    try:
+        _run_core_unified(feat, "MODERE", use_neuneu=True, use_bb_context_for_neuneu=True)
+    except ValueError as e:
+        assert "regime_bb" in str(e)
+    else:
+        raise AssertionError("aurait dû lever ValueError sans feat['regime_bb']")
+
+def test_prepare_unified_bb_context_level_selects_d1_or_weekly(monkeypatch):
+    """`bb_context_level` (59e round, demande directe de l'utilisateur --
+    "place le contexte sur UT+2 et non plus UT+1") : `'ut1'` doit passer
+    `d1` à `compute_regime_bb_context`, `'ut2'` doit passer `weekly` --
+    vérifié en interceptant l'appel (`compute_regime_bb_context` monkeypatché)
+    plutôt qu'en construisant un historique assez long pour un vrai calcul
+    de régime (`add_regime` a besoin de 250+ bougies pour ses seuils
+    percentile, hors de portée d'un test unitaire ciblé)."""
+    n_h4 = WARMUP + 10
+    h4 = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=n_h4, freq="4h", tz="UTC"),
+        "open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0, "volume": 100.0,
+    })
+    d1 = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=40, freq="D", tz="UTC"),
+        "open": 111.0, "high": 111.0, "low": 111.0, "close": 111.0,
+    })
+    weekly = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=10, freq="W", tz="UTC"),
+        "open": 222.0, "high": 222.0, "low": 222.0, "close": 222.0,
+    })
+
+    seen = {}
+    def fake_compute_regime_bb_context(df_low, df_higher, k=None):
+        seen["higher_close"] = df_higher["close"].iloc[0]
+        return np.full(len(df_low), "RANGE_NEUTRE", dtype=object)
+    monkeypatch.setattr(unified_protocol_mod, "compute_regime_bb_context", fake_compute_regime_bb_context)
+
+    unified_protocol_mod._prepare_unified(h4, d1, weekly, use_bb_context_for_neuneu=True, bb_context_level="ut1")
+    assert seen["higher_close"] == 111.0, "'ut1' doit utiliser d1"
+    unified_protocol_mod._prepare_unified(h4, d1, weekly, use_bb_context_for_neuneu=True, bb_context_level="ut2")
+    assert seen["higher_close"] == 222.0, "'ut2' doit utiliser weekly"
+
+def test_prepare_unified_bb_k_forwarded_to_compute_regime_bb_context(monkeypatch):
+    """`bb_k` (60e round, demande directe de l'utilisateur -- faire varier
+    le multiplicateur d'écart-type) doit être transmis tel quel à
+    `compute_regime_bb_context`, jamais recalculé ni ignoré."""
+    n_h4 = WARMUP + 10
+    h4 = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=n_h4, freq="4h", tz="UTC"),
+        "open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0, "volume": 100.0,
+    })
+    d1 = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=40, freq="D", tz="UTC"),
+        "open": 111.0, "high": 111.0, "low": 111.0, "close": 111.0,
+    })
+    weekly = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=10, freq="W", tz="UTC"),
+        "open": 222.0, "high": 222.0, "low": 222.0, "close": 222.0,
+    })
+    seen = {}
+    def fake_compute_regime_bb_context(df_low, df_higher, k=None):
+        seen["k"] = k
+        return np.full(len(df_low), "RANGE_NEUTRE", dtype=object)
+    monkeypatch.setattr(unified_protocol_mod, "compute_regime_bb_context", fake_compute_regime_bb_context)
+
+    unified_protocol_mod._prepare_unified(h4, d1, weekly, use_bb_context_for_neuneu=True, bb_k=2.5)
+    assert seen["k"] == 2.5
+
+def test_prepare_unified_bb_context_level_unknown_raises():
+    feat_inputs = dict(use_mtf_gate=True, use_bb_context_for_neuneu=True, bb_context_level="ut3")
+    n_h4 = WARMUP + 10
+    h4 = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=n_h4, freq="4h", tz="UTC"),
+        "open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0, "volume": 100.0,
+    })
+    d1 = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=40, freq="D", tz="UTC"),
+        "open": 111.0, "high": 111.0, "low": 111.0, "close": 111.0,
+    })
+    weekly = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=10, freq="W", tz="UTC"),
+        "open": 222.0, "high": 222.0, "low": 222.0, "close": 222.0,
+    })
+    try:
+        unified_protocol_mod._prepare_unified(h4, d1, weekly, **{k: v for k, v in feat_inputs.items() if k != "use_mtf_gate"})
+    except ValueError as e:
+        assert "bb_context_level" in str(e)
+    else:
+        raise AssertionError("aurait dû lever ValueError pour un bb_context_level inconnu")
 
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]

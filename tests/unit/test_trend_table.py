@@ -13,12 +13,16 @@ de leur fournir des scénarios entièrement maîtrisés ici.
 """
 from fractions import Fraction as F
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from emile.core.trend_table import (
     add_leg, make_campaign, step_campaign, try_open_campaign, step_reverse,
     PROFILES_TREND, MAX_CAMPAIGN_RISK_PCT,
     free_room_frac, breakout_space_ok, attach_obstacle_level, CLOSURE_DELAY,
+    compute_suivi_conditions, SUIVI_MAX,
+    attach_regime_is_tendance, compute_multi_timeframe_trend, MTF_CASCADE_RISK_PCT,
 )
 
 def fclose(a, b, tol=1e-9):
@@ -659,6 +663,322 @@ def test_range_limit_is_not_independent_of_the_broken_level():
         "aucune barre où local_high (100) < ctx_high (200) : le test ne "
         "distingue pas réellement les deux fenêtres, il est vacant")
 
+def test_cassure_3br_arms_then_fills_adds_a_leg_without_moving_stop():
+    """Branche "Cassure de 3BR" (34e round) -- scénario à vérité terrain
+    construit à la main, bougie par bougie, via `step_campaign` directement
+    (même patron que `test_step_campaign_breakout_space_gate`) :
+      i=0 : swing bas confirmé (`ev["swing_low_confirmed"]=True`) -> arme un
+            niveau au `swing_high` courant (110.0). Prix ne dépasse pas ce
+            niveau -> rien ne se remplit.
+      i=1 : le prix dépasse enfin le niveau armé (high > 110.0) -> la jambe
+            se remplit à l'open (ou au niveau armé si pas de gap), stop
+            INCHANGÉ (H-Suivi-Cassure3BR-1), n_suivis passe à 1.
+
+    `breakout_frac` volontairement réduit à 0.2 (plutôt que le 1.0 du profil
+    MODERE) : sinon la 1ère jambe sature déjà, seule, le plafond de risque
+    de campagne (H3, MAX_CAMPAIGN_RISK_PCT=5%) et ne laisse aucune place à
+    la jambe "suivi" -- ce test vérifie le REMPLISSAGE, pas le plafond
+    (déjà couvert par `test_add_leg_risk_cap`)."""
+    p = PROFILES_TREND["MODERE"]
+    campaign = make_campaign(entry=100.0, stop=95.0)
+    campaign["stage"] = "POST_BREAKOUT"
+    campaign["swing_high"] = 110.0
+    add_leg(campaign, 0.2, 100.0)
+    stop_before = campaign["stop"]
+
+    # i=0 : swing bas confirmé, prix encore sous le niveau armé (110.0) -> arme, ne remplit pas
+    ev0 = {"regime_excess": False, "divergence_raw": False, "suivi_ok": True, "swing_low_confirmed": True}
+    closed0, fee0, realized0, rev0 = step_campaign(
+        campaign, 0, o=[105.0], high=[108.0], low=[104.0], c=[106.0], ev=ev0, profile=p)
+    assert closed0 is False and fee0 == 0.0 and realized0 is None
+    assert campaign.get("suivi_armed_level") == 110.0, "doit armer exactement au swing_high courant"
+    assert campaign.get("n_suivis", 0) == 0
+
+    remaining_before_fill = campaign["remaining"]
+    # bougie suivante : le prix dépasse le niveau armé -> remplissage (même
+    # convention que le reste de ce fichier : chaque appel de step_campaign
+    # utilise i=0 sur un array à un seul élément représentant CETTE bougie,
+    # l'état de la campagne persistant entre les appels).
+    ev1 = {"regime_excess": False, "divergence_raw": False, "suivi_ok": True, "swing_low_confirmed": False}
+    closed1, fee1, realized1, rev1 = step_campaign(
+        campaign, 0, o=[111.0], high=[113.0], low=[110.5], c=[112.0], ev=ev1, profile=p)
+    assert closed1 is False and realized1 is None
+    assert fee1 > 0.0, "une jambe doit avoir été ajoutée (fee_frac = fraction ajoutée)"
+    assert campaign["remaining"] > remaining_before_fill, "la jambe doit augmenter la taille de la campagne"
+    assert campaign.get("n_suivis") == 1
+    assert campaign.get("suivi_armed_level") is None, "le niveau armé doit être consommé après remplissage"
+    assert fclose(campaign["stop"], stop_before), (
+        "H-Suivi-Cassure3BR-1 : le stop de campagne ne doit PAS bouger au remplissage"
+    )
+
+def test_cassure_3br_does_not_arm_when_suivi_not_ok():
+    """Contrôle négatif : `suivi_ok=False` (moyenne baissière ou squeeze,
+    cf. `compute_suivi_conditions`) doit empêcher l'armement, même si un
+    swing bas se confirme."""
+    p = PROFILES_TREND["MODERE"]
+    campaign = make_campaign(entry=100.0, stop=95.0)
+    campaign["stage"] = "POST_BREAKOUT"
+    campaign["swing_high"] = 110.0
+    add_leg(campaign, p["breakout_frac"], 100.0)
+
+    ev = {"regime_excess": False, "divergence_raw": False, "suivi_ok": False, "swing_low_confirmed": True}
+    step_campaign(campaign, 0, o=[105.0], high=[108.0], low=[104.0], c=[106.0], ev=ev, profile=p)
+    assert campaign.get("suivi_armed_level") is None, "suivi_ok=False doit empêcher tout armement"
+
+def test_cassure_3br_respects_suivi_max():
+    """Contrôle négatif : une campagne ayant déjà atteint `SUIVI_MAX` suivis
+    ne doit plus jamais armer de nouveau niveau, même avec toutes les
+    conditions par ailleurs réunies."""
+    p = PROFILES_TREND["MODERE"]
+    campaign = make_campaign(entry=100.0, stop=95.0)
+    campaign["stage"] = "POST_BREAKOUT"
+    campaign["swing_high"] = 110.0
+    campaign["n_suivis"] = SUIVI_MAX
+    add_leg(campaign, p["breakout_frac"], 100.0)
+
+    ev = {"regime_excess": False, "divergence_raw": False, "suivi_ok": True, "swing_low_confirmed": True}
+    step_campaign(campaign, 0, o=[105.0], high=[108.0], low=[104.0], c=[106.0], ev=ev, profile=p)
+    assert campaign.get("suivi_armed_level") is None, f"n_suivis déjà à SUIVI_MAX={SUIVI_MAX} doit bloquer l'armement"
+
+def test_cassure_3br_absent_ev_keys_preserve_historical_behavior():
+    """Garde-fou de non-régression : un `ev` qui ne fournit PAS `suivi_ok`/
+    `swing_low_confirmed` (tous les appelants historiques) doit se comporter
+    EXACTEMENT comme avant ce round -- `.get(..., False)` retombe sur False,
+    donc jamais d'armement ni de remplissage, quel que soit le prix."""
+    p = PROFILES_TREND["MODERE"]
+    campaign = make_campaign(entry=100.0, stop=95.0)
+    campaign["stage"] = "POST_BREAKOUT"
+    campaign["swing_high"] = 110.0
+    add_leg(campaign, p["breakout_frac"], 100.0)
+    remaining_before = campaign["remaining"]
+
+    ev = {"regime_excess": False, "divergence_raw": False}   # ni suivi_ok ni swing_low_confirmed
+    closed, fee, realized, rev = step_campaign(
+        campaign, 0, o=[200.0], high=[300.0], low=[100.0], c=[250.0], ev=ev, profile=p)
+    assert closed is False and fee == 0.0 and realized is None
+    assert fclose(campaign["remaining"], remaining_before), "sans les clés, aucune jambe suivi ne doit s'ajouter"
+    assert "suivi_armed_level" not in campaign
+
+def test_suivi_conditions_ema_rising_ground_truth_short_series():
+    """Sur une série COURTE (moins que la fenêtre `PCTL_WINDOW`=250 de
+    `compute_squeeze`), le seuil de squeeze reste NaN partout -> `compute_
+    squeeze` retombe sur son défaut prudent (jamais squeeze, cf. sa propre
+    docstring) -- `compute_suivi_conditions` se réduit alors exactement à
+    la pente de l'EMA, vérifiée à la main :
+      ema_trend = [1, 2, 3, 2, 3] -> rising = [F, T, T, F, T] (idx0 -> False
+      par convention, aucune bougie antérieure)."""
+    ema_trend = np.array([1.0, 2.0, 3.0, 2.0, 3.0])
+    width = np.array([1.0, 4.0, 3.0, 2.0, 1.0])   # trop court pour que le squeeze morde -- warmup
+    got = compute_suivi_conditions(ema_trend, width)
+    expected = np.array([False, True, True, False, True])
+    assert np.array_equal(got, expected), f"attendu {expected.tolist()}, obtenu {got.tolist()}"
+
+def test_suivi_conditions_squeeze_blocks_even_when_ema_rising():
+    """Contrôle que le squeeze BLOQUE réellement la condition, même quand
+    l'EMA monte -- sur une série assez longue pour que `compute_squeeze`
+    sorte de son warmup (>250 bougies), avec une chute nette et récente de
+    la largeur du canal (squeeze réel, pas juste warmup) pendant que l'EMA
+    continue de monter partout."""
+    n = 300
+    ema_trend = np.linspace(1.0, 2.0, n)   # monte strictement partout
+    width = np.full(n, 10.0)
+    width[-10:] = 0.1   # chute nette et récente -> squeeze sur les 10 dernières bougies
+    got = compute_suivi_conditions(ema_trend, width)
+    assert got[200:-10].all(), "avant la chute de largeur, EMA montante + pas de squeeze -> True partout"
+    assert not got[-10:].any(), "pendant le squeeze, même avec l'EMA montante, la condition doit être False"
+
+def test_suivi_conditions_false_on_first_bar():
+    """Pas de bougie précédente pour juger la pente à l'indice 0 -> False
+    par convention, jamais une comparaison hors limites."""
+    ema_trend = np.array([1.0, 2.0, 3.0])
+    width = np.array([10.0, 10.0, 10.0])
+    got = compute_suivi_conditions(ema_trend, width)
+    assert not got[0], "idx 0 doit être False (aucune bougie antérieure pour juger la pente)"
+
+def test_suivi_max_is_two():
+    """Garde-fou documentaire : la citation exacte du guide est "pas plus de
+    2 suivis dans une tendance" -- verrouille la constante contre une
+    modification accidentelle."""
+    assert SUIVI_MAX == 2
+
+# ---------------------------------------------------------------------------
+# Test 20 : BUG TROUVÉ ET CORRIGÉ (35e round) -- campagne "zombie" si le
+# remplissage du Breakout est refusé faute de capital réellement engageable
+# ---------------------------------------------------------------------------
+def test_breakout_zero_fill_does_not_transition_to_post_breakout():
+    """Diagnostic du 35e round (investigation de l'effet nul de "Suivi de
+    tendance", cf. PLAN.md) : pour un profil à `accum_frac=0.00` (FAIBLE, seul
+    concerné -- aucun autre profil n'entre en Accumulation avec 0 capital
+    engagé), `campaign["stop"]` est fixé une fois pour toutes à l'ouverture de
+    l'Accumulation et ne peut plus être invalidé tant que `remaining==0` (le
+    stop de protection en tête de `step_campaign` exige `remaining>0`). Si le
+    Breakout finit par se déclencher (cassure LOCALE, indépendante du niveau
+    global) à un prix qui a entre-temps glissé SOUS ce stop devenu obsolète,
+    `add_leg` refuse le remplissage (`stop_dist_pct<=0` -> `actual_add=0.0`).
+
+    AVANT ce correctif, `step_campaign` basculait quand même vers
+    "POST_BREAKOUT" -- créant une campagne "zombie" (remaining=0, stage !=
+    ACCUMULATION) qui ne peut plus jamais se clôturer (Divergence/Cassure de
+    3BR/Excès exigent tous `remaining>0` dans leurs conditions de sortie) ni
+    laisser s'ouvrir une nouvelle Accumulation (`campaign is not None` bloque
+    à vie `run_trend_table`). Observé sur données réelles avant correctif :
+    BTC/FAIBLE, entrée 29300/stop 28949.8, remplissage refusé à 28940.7 --
+    48,2% de l'historique H4 bloqué jusqu'à la fin des données, 0 trade
+    (cf. PLAN.md, 35e round, pour la mesure complète avant/après)."""
+    p = PROFILES_TREND["FAIBLE"]  # accum_frac=0.00, breakout_frac=1.00
+    campaign = make_campaign(entry=100.0, stop=95.0)
+    add_leg(campaign, p["accum_frac"], 100.0)  # 0.00 -> remaining reste 0.0
+    assert fclose(campaign["remaining"], 0.0)
+    ev = {"regime_excess": False, "breakout_raw": True}
+    # Prix de remplissage du Breakout (o[i]) SOUS le stop fixé à l'ouverture
+    # (94.0 < 95.0) -- même situation que le cas réel ci-dessus.
+    closed, fee, realized, rev = step_campaign(
+        campaign, 0, o=[94.0], high=[96.0], low=[93.0], c=[95.5], ev=ev, profile=p)
+    assert closed is False and realized is None and rev is None
+    assert fee == 0.0, "aucun capital n'a pu être engagé -- aucun frais"
+    assert campaign["stage"] == "ACCUMULATION", (
+        "AVANT le correctif : basculait à tort vers POST_BREAKOUT sans capital "
+        "engagé -- campagne zombie, plus jamais clôturable")
+    assert fclose(campaign["remaining"], 0.0)
+    assert "swing_high" not in campaign, "swing_high ne doit être initialisé qu'au vrai passage du breakout"
+
+def test_breakout_saturated_cap_still_transitions_when_capital_already_at_risk():
+    """Garde-fou contre une régression DU correctif ci-dessus : celui-ci teste
+    `campaign["remaining"] > 0` (capital RÉELLEMENT engagé après l'appel), PAS
+    `actual_add > 0` (la seule jambe tentée À CET INSTANT) -- une distinction
+    nécessaire. Si le plafond de risque de campagne (H3, `MAX_CAMPAIGN_RISK_
+    PCT`) est DÉJÀ saturé par la jambe d'Accumulation (profil avec `accum_
+    frac` élevé, ex. AGRESSIF/TRES_AGRESSIF), la jambe de Breakout peut se
+    voir plafonnée à 0 par `add_leg` alors que du capital RÉEL est déjà
+    engagé depuis l'Accumulation -- la transition vers POST_BREAKOUT reste
+    alors légitime et ne doit PAS être bloquée par ce correctif."""
+    p = PROFILES_TREND["MODERE"]
+    campaign = make_campaign(entry=100.0, stop=95.0)  # stop_dist_pct = 5%
+    # Déjà au plafond H3 (0.05 / 0.05 = 1.0) -- construit directement (arrange
+    # du test), pas via add_leg, pour isoler la seule jambe de Breakout.
+    campaign["remaining"] = 1.0
+    ev = {"regime_excess": False, "breakout_raw": True}
+    closed, fee, realized, rev = step_campaign(
+        campaign, 0, o=[102.0], high=[103.0], low=[101.0], c=[102.5], ev=ev, profile=p)
+    assert closed is False and realized is None and rev is None
+    assert fee == 0.0, "le plafond de risque bloque bien CETTE jambe de Breakout"
+    assert campaign["stage"] == "POST_BREAKOUT", (
+        "capital déjà engagé (remaining>0) -- la transition doit avoir lieu "
+        "même si cette jambe précise est plafonnée à 0 (pas le bug du 35e round)")
+    assert fclose(campaign["remaining"], 1.0)
+
+# ---------------------------------------------------------------------------
+# Test 21 : "Tendance Multi-timeframe" (36e-37e rounds) -- jointure causale du
+# régime d'une UT supérieure + condition d'agrégation des 3 UT
+# ---------------------------------------------------------------------------
+def test_attach_regime_is_tendance_no_lookahead_ground_truth():
+    """Vérité terrain calculée à la main, même patron que `attach_obstacle_
+    level`/`_attach_channel_support_d1` : une bougie D1 n'est disponible qu'
+    APRÈS sa clôture + `closure_delay`, jamais avant."""
+    d1 = pd.DataFrame({
+        "date": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
+        "regime": ["RANGE_NEUTRE", "TENDANCE", "TENDANCE"],
+    })
+    closure_delay = pd.Timedelta(hours=1)
+    # available_at : 01/01 01:00, 02/01 01:00, 03/01 01:00
+    h4_dates = pd.to_datetime([
+        "2024-01-01 00:30",  # aucune bougie D1 encore dispo -> False (pas TENDANCE, pas de donnée)
+        "2024-01-02 00:30",  # bougie du 01/01 dispo (RANGE_NEUTRE) -> False
+        "2024-01-03 00:30",  # bougie du 02/01 dispo (TENDANCE) -> True
+    ]).values
+    result = attach_regime_is_tendance(h4_dates, d1, closure_delay=closure_delay)
+    assert list(result) == [False, False, True]
+
+def test_compute_multi_timeframe_trend_requires_all_three():
+    """H-MTF-Cascade-1 : "Tendance Multi-timeframe" exige le régime TENDANCE
+    SIMULTANÉMENT sur les 3 UT -- toute combinaison où une seule UT n'est pas
+    en TENDANCE doit rendre False (ground truth, les 2**3 combinaisons)."""
+    regime_exec = np.array(["TENDANCE", "TENDANCE", "TENDANCE", "RANGE_NEUTRE",
+                             "TENDANCE", "RANGE_NEUTRE", "RANGE_NEUTRE", "RANGE_NEUTRE"])
+    ut1 = np.array([True, True, False, True, False, True, False, False])
+    ut2 = np.array([True, False, True, True, False, False, True, False])
+    expected = np.array([True, False, False, False, False, False, False, False])
+    result = compute_multi_timeframe_trend(regime_exec, ut1, ut2)
+    assert list(result) == list(expected)
+
+def test_mtf_cascade_risk_pct_is_two_percent():
+    """Garde-fou documentaire : citation exacte "2% chacun" -- verrouille la
+    constante contre une modification accidentelle."""
+    assert MTF_CASCADE_RISK_PCT == 0.02
+
+# ---------------------------------------------------------------------------
+# Test 22 : consommation de "Tendance Multi-timeframe" (42e round) --
+# H-MTF-Cascade-4 (gate d'ouverture) / H-MTF-Cascade-5 (sizing par risque de
+# la jambe de Breakout SEULEMENT)
+# ---------------------------------------------------------------------------
+def test_step_campaign_mtf_cascade_breakout_sized_by_risk_not_profile_fraction():
+    """entry=100, stop=95 (distance 5%) -> add_frac attendu = 0,02/0,05 = 0,4
+    (calcul indépendant via Fraction), PAS `profile["breakout_frac"]`
+    (MODERE=1.00, chiffre très différent) -- vérifie que le sizing bascule
+    bien sur le risque, pas seulement que la clé ne casse rien."""
+    p = PROFILES_TREND["MODERE"]  # breakout_frac=1.00, pour contraste
+
+    def fresh():
+        campaign = make_campaign(entry=100.0, stop=95.0)
+        add_leg(campaign, p["accum_frac"], 100.0)  # jambe d'Accumulation inchangée (H-MTF-Cascade-5)
+        return campaign
+
+    expected_add_frac = F(2, 100) / (F(100 - 95, 1) / F(100, 1))
+    assert expected_add_frac == F(2, 5)  # 0,4
+
+    # (a) Absent de `ev` -> comportement historique inchangé (fraction du profil).
+    c_a = fresh()
+    closed, fee_a, realized, rev = step_campaign(
+        c_a, 0, o=[100.0], high=[101.0], low=[99.0], c=[100.5],
+        ev={"regime_excess": False, "breakout_raw": True}, profile=p)
+    assert c_a["stage"] == "POST_BREAKOUT"
+    assert fclose(fee_a, p["breakout_frac"]) or fee_a <= p["breakout_frac"] + 1e-9  # plafonné par H3 si besoin
+
+    # (b) Présent -> jambe de Breakout dimensionnée par le risque, PAS par
+    #     `breakout_frac` (MODERE=1.00, chiffre très différent de 0,4).
+    c_b = fresh()
+    remaining_before = c_b["remaining"]
+    closed_b, fee_b, realized_b, rev_b = step_campaign(
+        c_b, 0, o=[100.0], high=[101.0], low=[99.0], c=[100.5],
+        ev={"regime_excess": False, "breakout_raw": True, "mtf_cascade_risk_pct": 0.02}, profile=p)
+    assert c_b["stage"] == "POST_BREAKOUT"
+    added = c_b["remaining"] - remaining_before
+    assert fclose(added, float(expected_add_frac)), f"attendu 0.4, obtenu {added}"
+    assert not fclose(added, p["breakout_frac"]), "ne doit PAS retomber sur la fraction du profil"
+
+def test_run_trend_table_use_mtf_cascade_requires_gate_array():
+    """`use_mtf_cascade=True` sans `mtf_cascade_gate` (ou de mauvaise
+    longueur) doit échouer explicitement -- même discipline que
+    `use_breakout_space_gate` sans `df_ut1`/`df_ut2` : un mécanisme activé à
+    moitié échoue au lieu de se dégrader en silence."""
+    from emile.core.trend_table import run_trend_table
+    dates = pd.date_range("2024-01-01", periods=50, freq="4h")
+    prices = np.linspace(100.0, 110.0, 50)
+    df = pd.DataFrame({
+        "date": dates, "open": prices, "high": prices + 1.0, "low": prices - 1.0, "close": prices,
+    })
+    vol = pd.DataFrame({"volume": np.full(50, 1000.0)})
+    with pytest.raises(ValueError, match="mtf_cascade_gate"):
+        run_trend_table(df.copy(), vol.copy(), "MODERE", use_mtf_cascade=True)
+    with pytest.raises(ValueError, match="mtf_cascade_gate"):
+        run_trend_table(df.copy(), vol.copy(), "MODERE", use_mtf_cascade=True,
+                         mtf_cascade_gate=np.zeros(10, dtype=bool))  # mauvaise longueur
+
+def test_mtf_cascade_absent_ev_keys_preserve_historical_behavior():
+    """Non-régression explicite, même patron que `test_cassure_3br_absent_
+    ev_keys_preserve_historical_behavior` : un `ev` qui ne fournit PAS
+    `mtf_cascade_risk_pct` doit produire un résultat identique à un appel
+    d'avant ce round (aucune clé nouvelle n'est jamais lue avec `ev[...]`,
+    toujours `ev.get(..., None)`)."""
+    p = PROFILES_TREND["FAIBLE"]
+    campaign = make_campaign(entry=100.0, stop=95.0)
+    add_leg(campaign, p["accum_frac"], 100.0)
+    ev = {"regime_excess": False, "breakout_raw": True}  # aucune clé MTF cascade
+    closed, fee, realized, rev = step_campaign(
+        campaign, 0, o=[100.0], high=[101.0], low=[99.0], c=[100.5], ev=ev, profile=p)
+    assert campaign["stage"] == "POST_BREAKOUT"
+    assert fclose(fee, p["breakout_frac"])
+
 TESTS = [
     test_add_leg_risk_cap,
     test_add_leg_blended_entry_price,
@@ -674,6 +994,22 @@ TESTS = [
     test_breakout_space_gate_requires_both_levels,
     test_overlap_convention_already_in_breakout_raw,
     test_range_limit_is_not_independent_of_the_broken_level,
+    test_suivi_conditions_ema_rising_ground_truth_short_series,
+    test_suivi_conditions_squeeze_blocks_even_when_ema_rising,
+    test_suivi_conditions_false_on_first_bar,
+    test_suivi_max_is_two,
+    test_cassure_3br_arms_then_fills_adds_a_leg_without_moving_stop,
+    test_cassure_3br_does_not_arm_when_suivi_not_ok,
+    test_cassure_3br_respects_suivi_max,
+    test_cassure_3br_absent_ev_keys_preserve_historical_behavior,
+    test_breakout_zero_fill_does_not_transition_to_post_breakout,
+    test_breakout_saturated_cap_still_transitions_when_capital_already_at_risk,
+    test_attach_regime_is_tendance_no_lookahead_ground_truth,
+    test_compute_multi_timeframe_trend_requires_all_three,
+    test_mtf_cascade_risk_pct_is_two_percent,
+    test_step_campaign_mtf_cascade_breakout_sized_by_risk_not_profile_fraction,
+    test_run_trend_table_use_mtf_cascade_requires_gate_array,
+    test_mtf_cascade_absent_ev_keys_preserve_historical_behavior,
 ]
 
 def main():

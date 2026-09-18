@@ -1,0 +1,13 @@
+symbol,timeframe,n_trades_off,n_trades_on,return_off_%,return_on_%,max_dd_off_%,max_dd_on_%,gate_pct_bars
+BTCUSDT,H4,7,2,0.1,1.0,-1.5,-1.5,2.96
+BTCUSDT,D1,3,0,0.9,0.0,-14.7,0.0,3.08
+BTCUSDT,Weekly,0,0,0.0,0.0,0.0,0.0,3.27
+ETHUSDT,H4,8,0,-2.8,0.0,-3.3,0.0,0.29
+ETHUSDT,D1,1,0,-0.4,0.0,-0.4,0.0,0.4
+ETHUSDT,Weekly,0,0,0.0,0.0,0.0,0.0,0.56
+BNBUSDT,H4,16,1,-8.1,-0.8,-8.1,-1.1,2.34
+BNBUSDT,D1,1,0,-3.7,0.0,-4.2,0.0,2.33
+BNBUSDT,Weekly,0,0,0.0,0.0,0.0,0.0,2.62
+SOLUSDT,H4,8,0,-5.1,0.0,-5.3,0.0,0.8
+SOLUSDT,D1,3,0,-6.4,0.0,-6.6,0.0,0.82
+SOLUSDT,Weekly,0,0,0.0,0.0,0.0,0.0,0.64

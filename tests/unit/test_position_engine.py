@@ -858,6 +858,297 @@ def test_squeeze_half_configured_raises():
         return
     raise AssertionError("un armement sans mid/sup/low doit lever ValueError")
 
+# ---------------------------------------------------------------------------
+# Chantier d'architecture (cf. PLAN.md, section dédiée) : `val_close_frac`/
+# `conf_close_frac` PAR TRANCHE (`tr.get(...)`) et `risk_pct` en array,
+# strictement additifs -- débloque le tableau Range Tendanciel (§3bis) et le
+# sizing par confiance sans changer le comportement d'aucun appelant existant.
+# ---------------------------------------------------------------------------
+def test_process_tranche_reads_val_conf_close_frac_from_tr_when_present():
+    """Si `tr` porte ses PROPRES `val_close_frac`/`conf_close_frac`, ils
+    priment sur les paramètres scalaires passés à `process_tranche` --
+    prouvé en passant des scalaires OPPOSÉS (0.0) à ceux stockés dans `tr`
+    (1.0) : si `tr` ne primait pas, rien ne se clôturerait à la Validation."""
+    tr = make_tranche(entry=100.0, stop=90.0, remaining=1.0,
+                       val_px=105.0, conf_px=115.0, lim_px=130.0)
+    tr["val_close_frac"] = 1.0
+    tr["conf_close_frac"] = 1.0
+    o = np.array([100.0, 106.0])
+    low = np.array([99.0, 105.0])
+    c = np.array([100.0, 106.0])
+    closed, fee_frac, realized = process_tranche(
+        tr, 1, o, low, c, long_signal_prev=True,
+        val_close_frac=0.0, conf_close_frac=0.0, conf_to_be=True,
+    )
+    assert tr["val_done"] is True
+    assert abs(fee_frac - 1.0) < 1e-9, (
+        f"fee_frac={fee_frac}, attendu 1.0 -- tr['val_close_frac']=1.0 aurait dû primer "
+        "sur le paramètre scalaire val_close_frac=0.0"
+    )
+    assert closed is True and abs(tr["remaining"] - 0.0) < 1e-9
+
+def test_process_tranche_falls_back_to_scalar_args_when_tr_has_no_override():
+    """Non-régression explicite : un `tr` SANS ces 2 clés (comportement de
+    TOUS les appelants existants, `make_open_tranche_fn` compris tant que
+    `val_close_frac_v`/`conf_close_frac_v` ne sont pas fournis) doit se
+    comporter EXACTEMENT comme avant ce chantier -- paramètres scalaires
+    utilisés tels quels."""
+    tr = make_tranche(entry=100.0, stop=90.0, remaining=1.0,
+                       val_px=105.0, conf_px=115.0, lim_px=130.0)
+    assert "val_close_frac" not in tr and "conf_close_frac" not in tr
+    o = np.array([100.0, 106.0])
+    low = np.array([99.0, 105.0])
+    c = np.array([100.0, 106.0])
+    closed, fee_frac, realized = process_tranche(
+        tr, 1, o, low, c, long_signal_prev=True,
+        val_close_frac=0.5, conf_close_frac=0.5, conf_to_be=True,
+    )
+    assert tr["val_done"] is True
+    assert abs(fee_frac - 0.5) < 1e-9, f"fee_frac={fee_frac}, attendu 0.5 (paramètre scalaire, tr sans clé)"
+
+def _confidence_factory(risk_pct, val_close_frac_v=None, conf_close_frac_v=None):
+    n = 6
+    atr_v = np.ones(n)
+    ctx_support_v = np.full(n, 90.0)
+    local_range_v = np.full(n, 10.0)
+    context_range_v = np.full(n, 20.0)
+    n_borders_v = np.full(n, 5.0)
+    high = np.full(n, 101.0)
+    o = np.full(n, 100.0)
+    score = np.full(n, 3.0)
+    state = {"last_pyramid_high": -np.inf}
+    fn = make_open_tranche_fn(
+        atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v,
+        high, o, score, 0, 3, 3, 99, 1.0, risk_pct, state,
+        val_close_frac_v=val_close_frac_v, conf_close_frac_v=conf_close_frac_v,
+    )
+    return fn, state
+
+def test_open_tranche_fn_risk_pct_accepts_per_bar_array():
+    """`risk_pct` en array : la taille de la tranche ouverte à la bougie `i`
+    doit utiliser `risk_pct[i-1]` (résolu à l'ouverture), PAS une moyenne ni
+    une valeur d'une autre bougie -- comparé au calcul manuel exact."""
+    n = 6
+    risk_pct_v = np.array([0.01, 0.01, 0.05, 0.01, 0.01, 0.01])   # 0.05 à j=2
+    fn, state = _confidence_factory(risk_pct_v)
+    tr = fn(3, [], 0)   # j = i-1 = 2 -> risk_pct[2] = 0.05
+    assert tr is not None
+    stop_pct = (100.0 - 90.0) / 100.0   # ctx_support_v=90, entry=o[3]=100
+    expected_size = min(1.0 / 3, 0.05 / stop_pct)
+    assert abs(tr["remaining"] - expected_size) < 1e-9, (
+        f"remaining={tr['remaining']}, attendu {expected_size} (risk_pct[j=2]=0.05, pas le "
+        "scalaire ni une autre bougie de l'array)"
+    )
+
+def test_open_tranche_fn_stores_val_conf_close_frac_when_arrays_given():
+    """Si `val_close_frac_v`/`conf_close_frac_v` sont fournis, la tranche
+    ouverte doit porter EXACTEMENT `array[j]` dans ses propres clés -- pour
+    que `process_tranche` les lise ensuite via `tr.get(...)` toute la vie de
+    la tranche (cf. tête de fichier de `position_engine.py`)."""
+    n = 6
+    vcf_v = np.array([0.1, 0.1, 0.3, 0.1, 0.1, 0.1])
+    ccf_v = np.array([0.2, 0.2, 0.4, 0.2, 0.2, 0.2])
+    fn, state = _confidence_factory(0.02, val_close_frac_v=vcf_v, conf_close_frac_v=ccf_v)
+    tr = fn(3, [], 0)   # j = 2
+    assert tr is not None
+    assert abs(tr["val_close_frac"] - 0.3) < 1e-9, tr.get("val_close_frac")
+    assert abs(tr["conf_close_frac"] - 0.4) < 1e-9, tr.get("conf_close_frac")
+
+def test_open_tranche_fn_scalar_risk_pct_and_no_frac_arrays_unchanged():
+    """Non-régression explicite : sans `val_close_frac_v`/`conf_close_frac_v`
+    et avec `risk_pct` scalaire (les 9+ appelants existants), la tranche
+    ouverte ne doit PORTER AUCUNE des 2 nouvelles clés -- `process_tranche`
+    retombera donc sur ses paramètres scalaires, comportement historique
+    inchangé."""
+    fn, state = _confidence_factory(0.02)
+    tr = fn(3, [], 0)
+    assert tr is not None
+    assert "val_close_frac" not in tr and "conf_close_frac" not in tr
+
+# ---------------------------------------------------------------------------
+# "SL GAIN" (45e round) -- étape "Target 1" du tableau §3bis, AGRESSIF/
+# TRES_AGRESSIF, décision utilisateur d'accepter la lecture extrapolée
+# H-SLGain-1 (cf. bloc dédié en tête de `position_engine.py`).
+# ---------------------------------------------------------------------------
+
+def test_lim_partial_close_with_sl_gain_moves_stop_and_keeps_tranche_open():
+    """`lim_close_frac=0.25`/`lim_stop_action="SL_GAIN"` : seule une fraction
+    du reliquat est clôturée à la Limite/Target 1, le stop est remonté au
+    plus haut observé depuis l'ouverture (`_max_high_since_entry`, JAMAIS à
+    l'entrée ni à un niveau inventé), et la tranche reste ouverte (closed=
+    False) pour son reliquat -- comparé au calcul manuel exact."""
+    tr = make_tranche(entry=100.0, stop=90.0, remaining=1.0,
+                       val_px=105.0, conf_px=108.0, lim_px=112.0)
+    tr["val_done"] = True
+    tr["conf_done"] = True
+    tr["lim_close_frac"] = 0.25
+    tr["lim_stop_action"] = "SL_GAIN"
+    tr["_max_high_since_entry"] = 120.0   # plus haut observé avant cette bougie
+    o = np.array([100.0, 113.0])
+    low = np.array([99.0, 112.0])
+    c = np.array([100.0, 113.0])
+    closed, fee_frac, realized = process_tranche(
+        tr, 1, o, low, c, long_signal_prev=True,
+        val_close_frac=0.0, conf_close_frac=0.0, conf_to_be=True,
+    )
+    assert closed is False, "reliquat > 0 (75%) -> la tranche doit rester ouverte"
+    assert realized is None
+    assert abs(fee_frac - 0.25) < 1e-9, f"fee_frac={fee_frac}, attendu 0.25 (25% du reliquat)"
+    assert abs(tr["remaining"] - 0.75) < 1e-9, tr["remaining"]
+    assert tr["stop"] == 120.0, f"stop={tr['stop']}, attendu 120.0 (_max_high_since_entry, pas l'entrée)"
+    expected_pnl = ((113.0 - 100.0) / 100.0) * 0.25
+    assert abs(tr["pnl_accum"] - expected_pnl) < 1e-9
+    assert tr["lim_done"] is True
+
+def test_lim_done_prevents_repeat_partial_close_next_bar():
+    """Une fois `lim_done=True`, une bougie ultérieure qui reste au-dessus de
+    `lim_px` ne doit PAS reclôturer une 2e fois -- sinon un prix qui reste
+    élevé plusieurs bougies grignoterait le reliquat à chaque pas, jamais
+    prescrit par le corpus (une seule prise partielle à Target 1)."""
+    tr = make_tranche(entry=100.0, stop=90.0, remaining=1.0,
+                       val_px=105.0, conf_px=108.0, lim_px=112.0)
+    tr["val_done"] = True
+    tr["conf_done"] = True
+    tr["lim_close_frac"] = 0.25
+    tr["lim_stop_action"] = "SL_GAIN"
+    tr["_max_high_since_entry"] = 113.0
+    # `low` reste AU-DESSUS du nouveau stop (113.0, remonté par SL_GAIN au
+    # 1er appel) sur les 2 bougies -- isole la question testée (pas de
+    # reclôture au même niveau Limite) de la question DIFFÉRENTE (et
+    # correcte, cf. autre test) d'un stop légitimement touché après SL_GAIN.
+    o = np.array([100.0, 113.0, 113.0])
+    low = np.array([99.0, 113.5, 113.5])
+    c = np.array([100.0, 113.0, 113.0])
+    process_tranche(tr, 1, o, low, c, long_signal_prev=True,
+                     val_close_frac=0.0, conf_close_frac=0.0, conf_to_be=True)
+    remaining_after_first = tr["remaining"]
+    closed, fee_frac, realized = process_tranche(
+        tr, 2, o, low, c, long_signal_prev=True,
+        val_close_frac=0.0, conf_close_frac=0.0, conf_to_be=True,
+    )
+    assert fee_frac == 0.0, "2e bougie au-dessus de lim_px : aucune reclôture (lim_done déjà vrai)"
+    assert abs(tr["remaining"] - remaining_after_first) < 1e-9
+
+def test_lim_close_frac_absent_full_close_bit_identical_to_before():
+    """Non-régression explicite : sans `lim_close_frac`/`lim_stop_action`
+    (les 9+ appelants existants, cf. `make_open_tranche_fn`), l'étape Limite
+    doit rester une clôture TOTALE en un seul appel -- comportement
+    historique inchangé bit-à-bit."""
+    tr = make_tranche(entry=100.0, stop=90.0, remaining=1.0,
+                       val_px=105.0, conf_px=108.0, lim_px=112.0)
+    tr["val_done"] = True
+    tr["conf_done"] = True
+    assert "lim_close_frac" not in tr and "lim_stop_action" not in tr
+    o = np.array([100.0, 113.0])
+    low = np.array([99.0, 112.0])
+    c = np.array([100.0, 113.0])
+    closed, fee_frac, realized = process_tranche(
+        tr, 1, o, low, c, long_signal_prev=True,
+        val_close_frac=0.0, conf_close_frac=0.0, conf_to_be=True,
+    )
+    assert closed is True
+    assert abs(fee_frac - 1.0) < 1e-9
+    assert tr["remaining"] == 0.0
+    assert tr["stop"] == 90.0, "stop inchangé (pas de SL_GAIN demandé)"
+
+def test_reverse_at_limit_does_not_fire_on_partial_sl_gain_close():
+    """`reverse_at_limit=True` (profil TRES_AGRESSIF, §3) NE DOIT PAS ouvrir
+    de jambe +Reverse sur une clôture PARTIELLE (§3bis, Target 1) -- le
+    tableau §3bis ne mentionne aucune jambe Reverse pour ces 2 profils, la
+    jambe +Reverse reste un mécanisme du §3 seul (cf. tête de fichier)."""
+    tr = make_tranche(entry=100.0, stop=90.0, remaining=1.0,
+                       val_px=105.0, conf_px=108.0, lim_px=112.0)
+    tr["val_done"] = True
+    tr["conf_done"] = True
+    tr["lim_close_frac"] = 0.25
+    tr["lim_stop_action"] = "SL_GAIN"
+    o = np.array([100.0, 113.0])
+    low = np.array([99.0, 112.0])
+    c = np.array([100.0, 113.0])
+    closed, fee_frac, realized = process_tranche(
+        tr, 1, o, low, c, long_signal_prev=True,
+        val_close_frac=0.0, conf_close_frac=0.0, conf_to_be=True,
+        reverse_at_limit=True,
+    )
+    assert closed is False
+    assert "reverse_request" not in tr, "aucune jambe +Reverse sur une clôture partielle"
+
+def _sl_gain_factory(lim_close_frac_v=None, sl_gain_v=None):
+    n = 6
+    atr_v = np.ones(n)
+    ctx_support_v = np.full(n, 90.0)
+    local_range_v = np.full(n, 10.0)
+    context_range_v = np.full(n, 20.0)
+    n_borders_v = np.full(n, 5.0)
+    high = np.full(n, 101.0)
+    o = np.full(n, 100.0)
+    score = np.full(n, 3.0)
+    state = {"last_pyramid_high": -np.inf}
+    fn = make_open_tranche_fn(
+        atr_v, ctx_support_v, local_range_v, context_range_v, n_borders_v,
+        high, o, score, 0, 3, 3, 99, 1.0, 0.02, state,
+        lim_close_frac_v=lim_close_frac_v, sl_gain_v=sl_gain_v,
+    )
+    return fn, state
+
+def test_open_tranche_fn_stores_lim_close_frac_and_sl_gain_when_arrays_given():
+    """Si `lim_close_frac_v`/`sl_gain_v` sont fournis, la tranche ouverte doit
+    porter EXACTEMENT `array[j]` (fraction) et `"SL_GAIN"` (flag vrai
+    uniquement) dans ses propres clés."""
+    n = 6
+    lcf_v = np.array([1.0, 1.0, 0.25, 1.0, 1.0, 1.0])
+    sg_v = np.array([False, False, True, False, False, False])
+    fn, state = _sl_gain_factory(lim_close_frac_v=lcf_v, sl_gain_v=sg_v)
+    tr = fn(3, [], 0)   # j = 2
+    assert tr is not None
+    assert abs(tr["lim_close_frac"] - 0.25) < 1e-9
+    assert tr["lim_stop_action"] == "SL_GAIN"
+
+def test_open_tranche_fn_no_sl_gain_arrays_omits_both_keys():
+    """Non-régression explicite : sans `lim_close_frac_v`/`sl_gain_v` (les
+    9+ appelants existants), la tranche ouverte ne porte NI `lim_close_frac`
+    NI `lim_stop_action` -- `process_tranche` retombe sur son défaut (1.0,
+    clôture totale), comportement historique inchangé."""
+    fn, state = _sl_gain_factory()
+    tr = fn(3, [], 0)
+    assert tr is not None
+    assert "lim_close_frac" not in tr and "lim_stop_action" not in tr
+
+def test_run_position_engine_tracks_max_high_since_entry_unconditionally():
+    """`run_position_engine` doit tracer `_max_high_since_entry` pour TOUTE
+    tranche ouverte, même quand personne ne le consomme (`lim_stop_action`
+    absent) -- bookkeeping additif pur, vérifié comme un vrai MAX GLISSANT sur
+    plusieurs bougies APRÈS l'ouverture (`open_tranche_fn` est appelé APRÈS la
+    boucle `for tr in tranches` qui trace `_max_high_since_entry`, donc une
+    tranche ouverte à la bougie `i` n'est tracée qu'À PARTIR de `i+1` --
+    cohérent avec la sémantique déjà documentée de `mark_new_tranches` pour
+    le reste du bookkeeping de ce moteur, pas un cas particulier inventé ici)."""
+    n = 7
+    o = np.full(n, 100.0)
+    high = np.array([100.0, 100.0, 100.0, 100.0, 135.0, 130.0, 140.0])
+    low = np.full(n, 99.0)
+    c = np.full(n, 100.0)
+    long_signal = np.array([True] * n)
+
+    captured = {}
+    def open_tranche_fn(i, tranches, win_streak):
+        if i == 3 and not tranches:
+            tr = {"entry": 100.0, "stop": 90.0, "remaining": 1.0,
+                  "val_done": False, "conf_done": False, "pnl_accum": 0.0,
+                  "val_px": 1e9, "conf_px": 1e9, "lim_px": 1e9}
+            captured["tr"] = tr
+            return tr
+        return None
+
+    run_position_engine(n, o, high, low, c, long_signal, open_tranche_fn,
+                         val_close_frac=0.0, conf_close_frac=0.0, conf_to_be=True,
+                         max_tranches=1, fee=0.0)
+    # Ouverte à i=3 -> tracée à partir de i=4 : max(135, 130, 140) = 140.0
+    assert captured["tr"]["_max_high_since_entry"] == 140.0, (
+        f"attendu 140.0 (max des high[4..6]=135/130/140), obtenu "
+        f"{captured['tr']['_max_high_since_entry']}"
+    )
+
 TESTS = [
     test_validation_confirmation_limite_sequence,
     test_immediate_stop_loss,
@@ -887,6 +1178,11 @@ TESTS = [
     test_squeeze_order_expires_after_SQUEEZE_LIFETIME_bars,
     test_squeeze_disabled_by_default_no_behavior_change,
     test_squeeze_half_configured_raises,
+    test_process_tranche_reads_val_conf_close_frac_from_tr_when_present,
+    test_process_tranche_falls_back_to_scalar_args_when_tr_has_no_override,
+    test_open_tranche_fn_risk_pct_accepts_per_bar_array,
+    test_open_tranche_fn_stores_val_conf_close_frac_when_arrays_given,
+    test_open_tranche_fn_scalar_risk_pct_and_no_frac_arrays_unchanged,
 ]
 
 def main():
